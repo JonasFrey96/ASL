@@ -18,7 +18,7 @@ __all__ = ['FastSCNN', 'get_fast_scnn']
 
 class FastSCNN(nn.Module):
     def __init__(self, num_classes, aux=False, **kwargs):
-        super(FastSCNN, self).__init__()
+        super().__init__()
         self.aux = aux
         self.learning_to_downsample = LearningToDownsample(32, 48, 64)
         self.global_feature_extractor = GlobalFeatureExtractor(64, [64, 96, 128], 128, 6, [3, 3, 3])

@@ -39,8 +39,9 @@ class Cityscapes(data.Dataset):
     NUM_CLASS = 19
 
     def __init__(self, root='./datasets/citys', split='train', mode=None, transform=None,
-                 base_size=520, crop_size=480, **kwargs):
+                 base_size=520, crop_size=480, overfit=-1, **kwargs):
         super(Cityscapes, self).__init__()
+        self.overfit = overfit
         self.root = root
         self.split = split
         self.mode = mode if mode is not None else split
@@ -60,6 +61,9 @@ class Cityscapes(data.Dataset):
                               10, 11, 12, 13, 14, 15,
                               -1, -1, 16, 17, 18])
         self._mapping = np.array(range(-1, len(self._key) - 1)).astype('int32')
+        
+        if self.overfit != -1:
+            self.overfit_idx = np.random.randint(0,len(self.images), (self.overfit))
 
     def _class_to_index(self, mask):
         values = np.unique(mask)
@@ -69,6 +73,9 @@ class Cityscapes(data.Dataset):
         return self._key[index].reshape(mask.shape)
 
     def __getitem__(self, index):
+        if self.overfit != -1:
+            index = np.random.choice( self.overfit_idx )
+
         img = Image.open(self.images[index]).convert('RGB')
         if self.mode == 'test':
             if self.transform is not None:

@@ -1,3 +1,12 @@
+###########################################################################
+# Created by: Tramac
+# Date: 2019-03-25
+# Copyright (c) 2017
+# https://github.com/Tramac/Fast-SCNN-pytorch 
+# modified by Jonas Frey
+# Licensed under Apache 2.0
+###########################################################################
+
 from pytorch_lightning.metrics import Metric
 import torch
 import numpy as np
