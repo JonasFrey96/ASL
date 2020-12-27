@@ -1,0 +1,81 @@
+name: 'debug_experiment'
+timestamp: True
+checkpoint_restore: False
+checkpoint_load: path_to_ckpts
+
+lr: 0.0001
+lr_scheduler: 
+  active: False
+  cfg:
+    mode: poly
+    power: 0.9
+    max_epochs: 10
+    target_lr: 1.0e-6
+
+trainer:
+  precision: 16
+  accumulate_grad_batches: 1
+  fast_dev_run: false
+  limit_train_batches: 10
+  limit_val_batches: 10
+  limit_test_batches: 10
+  progress_bar_refresh_rate: 1
+  max_epochs: 20
+  gpus: -1
+  # accelerator: ddp
+
+loader:
+  pin_memory: True
+  batch_size: 2
+  shuffle: True
+  num_workers: 0
+
+visu:
+  train_images: 3
+  val_images: 3
+  test_images: 3
+  
+model:
+  name: Fast-SCNN
+  cfg:
+    num_classes: 19
+    aux: false
+
+d_val:
+  name: cityscapes
+  base_size: 1024
+  crop_size: 768
+  split: 'val'
+  mode: 'val'
+
+d_train:
+  name: cityscapes
+  base_size: 1024
+  crop_size: 768
+  split: 'train'
+  mode: 'train'
+
+cb_early_stopping:
+  cfg:
+    monitor: 'avg_train_loss'
+    patience: 10
+    strict: False
+    verbose: True
+    mode: min
+    min_delta: 0.001
+
+cb_checkpoint:
+  #nameing:
+  #- avg_val_loss
+  #- avg_train_loss
+  cfg:
+    verbose: true
+    monitor: val_loss
+    mode: 'min'
+    prefix: ""
+    save_last: true
+    save_top_k: 10
+
+lr_monitor:
+  cfg:
+    logging_interval: step
