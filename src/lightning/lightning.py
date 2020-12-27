@@ -83,7 +83,7 @@ class Network(LightningModule):
       pred = torch.argmax(outputs[0], 1)
       self.logged_images_train += 1
       self.visualizer.plot_segmentation(tag='pred_train', seg=pred[0])
-
+      self.visualizer.plot_segmentation(tag='gt_train', seg=targets[0])
     return {'loss': loss}
 
   def validation_step(self, batch, batch_idx):
