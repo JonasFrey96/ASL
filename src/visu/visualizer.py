@@ -94,3 +94,20 @@ class Visualizer():
       for w in range(W):
         img[h, w, :] = col_map[int(seg[h, w])][:3]
     return img
+
+  @image_functionality
+  def plot_image(self, img, *args,**kwargs):
+    try:
+      img = img.clone().cpu().numpy()
+    except:
+      pass
+    
+    if img.shape[2] == 3:
+      pass
+    elif img.shape[0] == 3:
+      img = np.moveaxis(img, [0, 1, 2], [2, 0, 1])
+    else:
+      raise Exception('Invalid Shape')  
+      
+    img = np.uint8(img)
+    return img

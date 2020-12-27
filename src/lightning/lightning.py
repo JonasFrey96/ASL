@@ -43,7 +43,7 @@ class Network(LightningModule):
       self.model = FastSCNN(**self._exp['model']['cfg'])
     else:
       raise Exception('Model name not implemented')
-    self.criterion = MixSoftmaxCrossEntropyOHEMLoss(aux=False, aux_weight=0.001,
+    self.criterion = MixSoftmaxCrossEntropyLoss(aux=False, aux_weight=0.001,
       ignore_index=-1)
     p_visu = os.path.join( self._exp['name'], 'visu')
     
@@ -62,6 +62,7 @@ class Network(LightningModule):
   def forward(self, batch):
     outputs = self.model(batch)
     return outputs
+    
   def on_train_start(self):
     self.visualizer.writer = self.logger.experiment
 
@@ -74,10 +75,11 @@ class Network(LightningModule):
   def training_step(self, batch, batch_idx):
     images = batch[0]
     targets = batch[1]
+    st = time.time()
     outputs = self(images)
     loss = self.criterion(outputs, targets)
-    
-    if self._exp['visu'].get('train_images',0):
+
+    if self._exp['visu'].get('train_images',0) > self.logged_images_train:
       pred = torch.argmax(outputs[0], 1)
       self.logged_images_train += 1
       self.visualizer.plot_segmentation(tag='pred_train', seg=pred[0])
@@ -96,10 +98,9 @@ class Network(LightningModule):
     self.log('metric_val_IoU', self.metric_val_IoU, on_step=True, on_epoch=True)
     self.log('metric_val_PixAcc', self.metric_val_PixAcc, on_step=True, on_epoch=True)
 
-    if self._exp['visu'].get('val_images',0):
+    if self._exp['visu'].get('val_images',0) > self.logged_images_val:
       self.logged_images_val += 1
       self.visualizer.plot_segmentation(tag='pred_val', seg=pred[0])
-
 
     return {'val_loss': loss}
 
@@ -113,13 +114,11 @@ class Network(LightningModule):
     if self._exp.get('lr_scheduler',{}).get('active', False):
       #polynomial lr-scheduler
       init_lr = self.hparams['lr']
-      max_epochs = self._exp['lr_scheduler']['max_epochs'] 
-      target_lr = self._exp['lr_scheduler']['target_lr'] 
-      power = self._exp['lr_scheduler']['power'] 
+      max_epochs = self._exp['lr_scheduler']['cfg']['max_epochs'] 
+      target_lr = self._exp['lr_scheduler']['cfg']['target_lr'] 
+      power = self._exp['lr_scheduler']['cfg']['power'] 
       lambda_lr= lambda epoch: (((max_epochs-epoch)/max_epochs)**(power) ) + (1-(((max_epochs -epoch)/max_epochs)**(power)))*target_lr/init_lr
-      
-      torch.optim.lr_scheduler.LambdaLR(optimizer, lr_lambda, last_epoch=max_epochs, verbose=True)
-
+      scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr, last_epoch=-1, verbose=True)
       ret = [optimizer], [scheduler]
     else:
       ret = [optimizer]
