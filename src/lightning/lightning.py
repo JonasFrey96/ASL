@@ -32,8 +32,8 @@ from datasets import get_dataset
 from loss import  MixSoftmaxCrossEntropyLoss, MixSoftmaxCrossEntropyOHEMLoss
 #from .metrices import IoU, PixAcc
 from visu import Visualizer
-from lightning import IoUTorch 
-
+from lightning import IoUTorch, meanIoUTorch
+from lightning import IoU
 __all__ = ['Network']
 
 class Network(LightningModule):
@@ -56,12 +56,16 @@ class Network(LightningModule):
       writer=None,
       num_classes=self._exp['model']['cfg']['num_classes']+1)
 
+    self.test_acc = pl_metrics.classification.Accuracy()
     self.train_acc = pl_metrics.classification.Accuracy()
     self.val_acc = pl_metrics.classification.Accuracy()
 
+    self.test_iou = IoUTorch(self._exp['model']['cfg']['num_classes'])
     self.train_iou = IoUTorch(self._exp['model']['cfg']['num_classes'])
     self.val_iou = IoUTorch(self._exp['model']['cfg']['num_classes'])
 
+    self.test_mIoU = meanIoUTorch(self._exp['model']['cfg']['num_classes'])
+    self.test_mIoUnp = IoU(self._exp['model']['cfg']['num_classes'])
     self.logged_images_train = 0
     self.logged_images_val = 0
     self.logged_images_test = 0
@@ -89,8 +93,8 @@ class Network(LightningModule):
     if self._exp['visu'].get('train_images',0) > self.logged_images_train:
       pred = torch.argmax(outputs[0], 1)
       self.logged_images_train += 1
-      self.visualizer.plot_segmentation(tag='pred_train', seg=pred[0])
-      self.visualizer.plot_segmentation(tag='gt_train', seg=target[0])
+      self.visualizer.plot_segmentation(tag=f'pred_train_{self.logged_images_train}', seg=pred[0])
+      self.visualizer.plot_segmentation(tag=f'gt_train_{self.logged_images_train}', seg=target[0])
 
     if False: 
       pred = torch.argmax(outputs[0], 1)
@@ -122,14 +126,60 @@ class Network(LightningModule):
 
     if self._exp['visu'].get('val_images',0) > self.logged_images_val:
       self.logged_images_val += 1
-      self.visualizer.plot_segmentation(tag='pred_val', seg=pred[0])
+      self.visualizer.plot_segmentation(tag=f'pred_val_{self.logged_images_val}', seg=pred[0])
+      self.visualizer.plot_segmentation(tag=f'gt_val_{self.logged_images_val}', seg=target[0])
 
     self.log('val_loss', loss, on_step=True, on_epoch=True)
 
     return {'val_loss': loss}
+  
+  def test_step(self, batch, batch_idx):
+    images = batch[0]
+    target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
+    outputs = self(images)
+    
+    pred = torch.argmax(outputs[0], 1)
+    v1 = self.test_iou(pred,target)
+    v2 = self.test_mIoU(pred,target)
+    v3 = self.test_mIoUnp(pred,target)
 
-  # def validation_epoch_end(self, outputs):
-  #   print("END")
+    # calculates acc only for valid labels
+    m  =  target > -1
+    self.test_acc(pred[m], target[m])
+    self.log('test_iounp', self.test_mIoUnp, on_step=True, on_epoch=True)
+    self.log('test_iou', self.test_iou, on_step=True, on_epoch=True)
+    self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True)
+    self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
+
+    pred = pred[0].cpu().numpy() + 1 
+    label = target[0].cpu().numpy() +1
+    classes = self._exp['model']['cfg']['num_classes']+1
+    ignore_index = 0
+    only_present = True
+    pred[label == ignore_index] = 0
+    ious = []
+    for c in range( classes) :
+        label_c = label == c
+        if only_present and np.sum(label_c) == 0:
+            ious.append(np.nan)
+            continue
+        pred_c = pred == c
+        intersection = np.logical_and(pred_c, label_c).sum()
+        union = np.logical_or(pred_c, label_c).sum()
+        if union != 0:
+            ious.append(intersection / union)
+    res =  ious if ious else [1]
+    num = np.nanmean(res[1:])
+    self.log('mIoU', torch.tensor(num, device=images.device) , on_step=True, on_epoch=True)
+
+    if self._exp['visu'].get('test_images',0) > self.logged_images_test:
+      self.logged_images_test += 1
+      self.visualizer.plot_segmentation(tag=f'pred_test_{self.logged_images_test}', seg=pred[0])
+      self.visualizer.plot_segmentation(tag=f'gt_test_{self.logged_images_val}', seg=target[0])
+
+
+    return {}
+
 
   def configure_optimizers(self):
     if self._exp['optimizer']['name'] == 'ADAM':
@@ -194,6 +244,24 @@ class Network(LightningModule):
       batch_size = self._exp['loader']['batch_size'])
     return dataloader_val
 
+  def test_dataloader(self):
+    input_transform = transforms.Compose([
+      transforms.ToTensor(),
+      transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+    ])
+    dataset_test = get_dataset(
+      **self._exp['d_test'],
+      root = self._env['cityscapes'],
+      transform = input_transform
+    )
+
+    dataloader_test = torch.utils.data.DataLoader(dataset_test,
+      shuffle = False,
+      num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
+      pin_memory = self._exp['loader']['pin_memory'],
+      batch_size = 1)
+    return dataloader_test
+
 
 import pytest
 class TestLightning:
@@ -218,31 +286,3 @@ class TestLightning:
     )
     BS, H, W = 1,100,100
     NC = 4
-    target = torch.zeros( (BS,H,W) )
-    
-    target[:,:10,:10] = -1 # 100 pixels invalid
-    target[:,20:,20:] = 2 # 640 pixel correct
-    print((target==0).sum())
-    pred = torch.zeros( (BS,H,W) )
-    pred[:,:,:] = 2
-    
-
-
-    #self.val_iou = pl_metrics.functional.classification.iou()
-    self.val_acc = pl_metrics.classification.Accuracy()
-
-
-    pred = pred.type(torch.int) + 1
-    target = target.type(torch.int) + 1
-    m  =  target > 0
-    acc1 = self.val_acc(pred[m], target[m]) # only call acc for labeld pixels !    
-    
-    pred = pred * (target > 0).type(pred.dtype) 
-    iou = pl_metrics.functional.classification.iou(pred, target, num_classes=NC, reduction='none')[1:]
-    m = torch.zeros( iou.shape, device=iou.device, dtype=torch.bool)
-    for i in range(NC-1):
-      if ((target-1) == i).any():
-        m[i] = True
-    masked_iou = iou[m]
-    mIOU = masked_iou.mean()
-    assert acc_or ==  acc1

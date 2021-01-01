@@ -117,6 +117,14 @@ if __name__ == "__main__":
       callbacks=cb_ls, 
       resume_from_checkpoint = exp['checkpoint_load'])       
   else:
+    if exp.get('tramac_restore', False): 
+      p = env['tramac_weights']
+      if os.path.isfile( p ):
+        name, ext = os.path.splitext( p )
+        assert ext == '.pkl' or '.pth', 'Sorry only .pth and .pkl files supported.'
+        print( f'Resuming training TRAMAC, loading {p}...' )
+        model.model.load_state_dict(torch.load(p, map_location=lambda storage, loc: storage))
+
     trainer = Trainer(**exp['trainer'],
       checkpoint_callback=checkpoint_callback,
       default_root_dir=model_path,
