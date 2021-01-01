@@ -11,7 +11,7 @@ from pytorch_lightning.metrics import Metric
 import torch
 import numpy as np
 
-
+__all__ = ['IoU', 'PixAcc']
 class IoU(Metric):
   def __init__(self, num_classes, dist_sync_on_step=False):
     super().__init__(dist_sync_on_step=dist_sync_on_step)
@@ -65,6 +65,7 @@ class PixAcc(Metric):
         pixAcc and mIoU
     """
     # synchronizes accross threads
+    
     pixAcc = 1.0 * self.total_correct / (np.spacing(1) + self.total_label)
     return pixAcc
 
@@ -99,6 +100,12 @@ def batch_intersection_union(predict, target, nclass):
   area_pred, _ = np.histogram(predict.cpu().numpy(), bins=nbins, range=(mini, maxi))
   area_lab, _ = np.histogram(target.cpu().numpy(), bins=nbins, range=(mini, maxi))
   area_union = area_pred + area_lab - area_inter
+
+  print('area_inter',area_inter)
+  print('area_pred',area_pred)
+  print('area_lab',area_lab)
+  print('area_union',area_union)
+  
   assert (area_inter <= area_union).all(), "Intersection area should be smaller than Union area"
   return torch.tensor( area_inter, device=target.device) , torch.tensor( area_union, device=target.device)
 

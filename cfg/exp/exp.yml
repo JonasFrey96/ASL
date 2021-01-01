@@ -10,29 +10,36 @@ lr_scheduler:
     power: 0.9
     max_epochs: 160
     target_lr: 1.0e-6
+optimizer: 
+  name: ADAM #SGD
+  sgd_cfg:
+    momentum: 0.9
+    weight_decay: 0 #1.0e-4
+
 
 trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 1.0
-  limit_val_batches: 1.0
+  limit_train_batches: 10
+  limit_val_batches: 10
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs: 160
+  max_epochs:  50
   gpus: -1
-  accelerator: ddp
+  #accelerator: ddp
+  profiler: False
 
 loader:
   pin_memory: True
-  batch_size: 12
+  batch_size: 2
   shuffle: True
   num_workers: 16
 
 visu:
-  train_images: 3
-  val_images: 3
-  test_images: 3
+  train_images: 1
+  val_images: 1
+  test_images: 1
 
 model:
   name: Fast-SCNN
@@ -46,7 +53,7 @@ d_val:
   crop_size: 768
   split: 'val'
   mode: 'val'
-  overfit: 5
+  overfit: -1
 
 d_train:
   name: cityscapes
@@ -54,21 +61,21 @@ d_train:
   crop_size: 768
   split: 'train'
   mode: 'train'
-  overfit: 5
+  overfit: -1
 
 cb_early_stopping:
   cfg:
-    monitor: 'avg_train_loss'
+    monitor: 'train_loss_epoch'
     patience: 10
-    strict: False
+    strict: True
     verbose: True
     mode: min
     min_delta: 0.001
 
 cb_checkpoint:
-  #nameing:
-  #- avg_val_loss
-  #- avg_train_loss
+  nameing:
+  - val_acc_epoch
+  - val_iou_epoch
   cfg:
     verbose: true
     monitor: val_loss
