@@ -18,9 +18,9 @@ from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 
 from lightning import Network
-
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks import Callback
+from pytorch_lightning.profiler import AdvancedProfiler
 
 def file_path(string):
   if os.path.isfile(string):
@@ -61,14 +61,14 @@ if __name__ == "__main__":
   if exp.get('timestamp',True):
     timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
     exp['name'] = str(timestamp)+'_'+exp['name']
+    model_path = os.path.join(env['base'], exp['name'])
   else:
+    model_path = os.path.join(env['base'], exp['name'])
     try:
-      shutil.rmtree(p)
+      shutil.rmtree(model_path)
     except:
       pass
       
-  model_path = os.path.join(env['base'], exp['name'])
-  
   if not os.path.exists(model_path):
     try:
       os.makedirs(model_path)
@@ -103,7 +103,13 @@ if __name__ == "__main__":
     **exp['lr_monitor']['cfg'])
 
   cb_ls = [early_stop_callback, lr_monitor]
-
+  
+  # Always use advanced profiler
+  if exp['trainer'].get('profiler', False):
+    exp['trainer']['profiler'] = AdvancedProfiler(output_filename=os.path.join(model_path, 'profile.out'))
+  else:
+    exp['trainer']['profiler']  = False
+      
   if exp.get('checkpoint_restore', False): 
     trainer = Trainer( **exp['trainer'],
       checkpoint_callback=checkpoint_callback,
