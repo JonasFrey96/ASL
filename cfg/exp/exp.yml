@@ -2,15 +2,15 @@ name: 'debug_experiment'
 timestamp: False
 checkpoint_restore: False
 checkpoint_load: path_to_ckpts
-tramac_restore: True
+tramac_restore: False
 
-lr: 1.0e-6
+lr: 1.0e-3
 lr_scheduler: 
   active: True
   cfg:
     power: 0.9
     max_epochs: 160
-    target_lr: 1.0e-7  #1.0e-6
+    target_lr: 1.0e-6  #1.0e-6
 optimizer: 
   name: ADAM #SGD
   sgd_cfg:
@@ -25,14 +25,14 @@ trainer:
   limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs:  1
+  max_epochs:  160
   gpus: -1
   #accelerator: ddp
   profiler: False
 
 loader:
   pin_memory: True
-  batch_size: 6
+  batch_size: 16
   batch_size_test: 4
   shuffle: True
   num_workers: 8

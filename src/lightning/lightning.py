@@ -113,7 +113,7 @@ class Network(LightningModule):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
     outputs = self(images)
-    loss = self.criterion(outputs, target)
+    loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
 
     pred = torch.argmax(outputs[0], 1)
 
