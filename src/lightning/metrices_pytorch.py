@@ -141,19 +141,21 @@ class meanIoUTorchCorrect(Metric):
     # executed individual non-blocking on each thread/GPU
     assert pred.shape == target.shape
     BS = pred.shape[0]
-    pred = pred.type(torch.int) + 1
-    target = target.type(torch.int) + 1
-    pred[target == 0] = 0
+
+    p = pred.clone().type(torch.int) + 1
+    t = target.clone().type(torch.int) + 1
+    
+    p[t == 0] = 0
     for b in range(BS):
       ious = torch.zeros( (self._num_classes) ) -1
       for c in range(0, self._num_classes) :
           # c+1 to ignore the first index
-          target_c = target[b] == c+1 
-          if torch.sum(target_c) == 0:
+          t_c = t[b] == c+1 
+          if torch.sum(t_c) == 0:
               continue
-          pred_c = pred[b] == c+1
-          intersection = torch.logical_and(pred_c, target_c).sum()
-          union = torch.logical_or(pred_c, target_c).sum()
+          p_c = p[b] == c+1
+          intersection = torch.logical_and(p_c, t_c).sum()
+          union = torch.logical_or(p_c, t_c).sum()
           if union != 0:
               ious[c] = intersection / union
       self.iou_sum += (ious[ious!=-1]).sum()/((ious!=-1).sum())
