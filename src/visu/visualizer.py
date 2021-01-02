@@ -90,9 +90,9 @@ class Visualizer():
     
     H,W = seg.shape[:2]
     img = np.zeros((H,W,3), dtype=np.uint8)
-    for h in range(H):
-      for w in range(W):
-        img[h, w, :] = col_map[int(seg[h, w])][:3]
+    for i, color in enumerate( col_map ) :
+      img[ seg==i ] = color[:3]
+
     return img
 
   @image_functionality
