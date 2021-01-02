@@ -124,6 +124,11 @@ class Network(LightningModule):
   def validation_step_end( self, outputs):
     # Logging + Visu
     pred, target = outputs['pred'],outputs['target']
+    if self._exp['visu'].get('val_images',0) > self.logged_images_val:
+      self.logged_images_val += 1
+      self.visualizer.plot_segmentation(tag=f'pred_val_{self.logged_images_val}', seg=pred[0])
+      self.visualizer.plot_segmentation(tag=f'gt_val_{self.logged_images_val}', seg=target[0])
+      
     self.val_mIoU(pred,target)
     # calculates acc only for valid labels
 
@@ -132,10 +137,7 @@ class Network(LightningModule):
     self.log('val_acc', self.val_acc, on_step=True, on_epoch=True)
     self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True)
     
-    if self._exp['visu'].get('val_images',0) > self.logged_images_val:
-      self.logged_images_val += 1
-      self.visualizer.plot_segmentation(tag=f'pred_val_{self.logged_images_val}', seg=pred[0])
-      self.visualizer.plot_segmentation(tag=f'gt_val_{self.logged_images_val}', seg=target[0])
+    
 
   def test_step(self, batch, batch_idx):
     images = batch[0]
