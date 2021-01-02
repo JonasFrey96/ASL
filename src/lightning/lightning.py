@@ -32,8 +32,7 @@ from datasets import get_dataset
 from loss import  MixSoftmaxCrossEntropyLoss, MixSoftmaxCrossEntropyOHEMLoss
 #from .metrices import IoU, PixAcc
 from visu import Visualizer
-from lightning import IoUTorch, meanIoUTorch
-from lightning import IoU
+from lightning import meanIoUTorchCorrect
 __all__ = ['Network']
 
 class Network(LightningModule):
@@ -60,12 +59,10 @@ class Network(LightningModule):
     self.train_acc = pl_metrics.classification.Accuracy()
     self.val_acc = pl_metrics.classification.Accuracy()
 
-    self.test_iou = IoUTorch(self._exp['model']['cfg']['num_classes'])
-    self.train_iou = IoUTorch(self._exp['model']['cfg']['num_classes'])
-    self.val_iou = IoUTorch(self._exp['model']['cfg']['num_classes'])
+    self.test_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
+    self.train_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
+    self.val_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
 
-    self.test_mIoU = meanIoUTorch(self._exp['model']['cfg']['num_classes'])
-    self.test_mIoUnp = IoU(self._exp['model']['cfg']['num_classes'])
     self.logged_images_train = 0
     self.logged_images_val = 0
     self.logged_images_test = 0
@@ -88,26 +85,29 @@ class Network(LightningModule):
     target = batch[1]
     outputs = self(images)
     #_loss = self.criterion(outputs, target)
-    loss =  F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
-    #print(_loss, loss)
-    if self._exp['visu'].get('train_images',0) > self.logged_images_train:
-      pred = torch.argmax(outputs[0], 1)
-      self.logged_images_train += 1
-      self.visualizer.plot_segmentation(tag=f'pred_train_{self.logged_images_train}', seg=pred[0])
-      self.visualizer.plot_segmentation(tag=f'gt_train_{self.logged_images_train}', seg=target[0])
-
-    if False: 
-      pred = torch.argmax(outputs[0], 1)
-      train_iou = self.train_iou(pred,target)
-      # calculates acc only for valid labels
-      m  =  target > -1
-      train_acc = self.train_acc(pred[m], target[m])
-      
-      self.log('train_iou', self.train_iou, on_step=True, on_epoch=True)
-      self.log('train_acc', self.train_acc, on_step=True, on_epoch=True)
+    loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
 
     self.log('train_loss', loss, on_step=True, on_epoch=True)
-    return {'loss': loss}
+    return {'loss': loss, 'pred': outputs[0], 'target': target}
+  
+  def training_step_end(self, outputs):
+    # Logging + Visu
+    if self._exp['visu'].get('train_images',0) > self.logged_images_train:
+      pred = torch.argmax(outputs['pred'], 1)
+      self.logged_images_train += 1
+      self.visualizer.plot_segmentation(tag=f'pred_train_{self.logged_images_train}', seg=pred[0])
+      self.visualizer.plot_segmentation(tag=f'gt_train_{self.logged_images_train}', seg=outputs['target'][0])
+
+    if False: 
+      pred = torch.argmax(outputs['pred'], 1)
+      train_mIoU = self.train_mIoU(pred,outputs['target'])
+      # calculates acc only for valid labels
+      m  =  target > -1
+      train_acc = self.train_acc(pred[m], outputs['target'][m])
+      
+      self.log('train_mIoU', self.train_iou, on_step=True, on_epoch=True)
+      self.log('train_acc', self.train_acc, on_step=True, on_epoch=True)
+    return {'loss': outputs['loss'] }
 
   def validation_step(self, batch, batch_idx):
     images = batch[0]
@@ -116,70 +116,50 @@ class Network(LightningModule):
     loss = self.criterion(outputs, target)
 
     pred = torch.argmax(outputs[0], 1)
-    self.val_iou(pred,target)
+
+    self.log('val_loss', loss, on_step=True, on_epoch=True)
+
+    return {'pred': pred, 'target': target}
+
+  def validation_step_end( self, outputs):
+    # Logging + Visu
+    pred, target = outputs['pred'],outputs['target']
+    self.val_mIoU(pred,target)
     # calculates acc only for valid labels
+
     m  =  target > -1
     self.val_acc(pred[m], target[m])
-    
-    self.log('val_iou', self.val_iou, on_step=True, on_epoch=True)
     self.log('val_acc', self.val_acc, on_step=True, on_epoch=True)
-
+    self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True)
+    
     if self._exp['visu'].get('val_images',0) > self.logged_images_val:
       self.logged_images_val += 1
       self.visualizer.plot_segmentation(tag=f'pred_val_{self.logged_images_val}', seg=pred[0])
       self.visualizer.plot_segmentation(tag=f'gt_val_{self.logged_images_val}', seg=target[0])
 
-    self.log('val_loss', loss, on_step=True, on_epoch=True)
-
-    return {'val_loss': loss}
-  
   def test_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
-    outputs = self(images)
-    
+    outputs = self(images) 
     pred = torch.argmax(outputs[0], 1)
-    v1 = self.test_iou(pred,target)
-    v2 = self.test_mIoU(pred,target)
-    v3 = self.test_mIoUnp(pred,target)
+   
+    return {'pred': pred, 'target': target}
 
+  def test_step_end( self, outputs):
+    # Logging + Visu
+    pred, target = outputs['pred'],outputs['target']
+    self.test_mIoU(pred,target)
     # calculates acc only for valid labels
+
     m  =  target > -1
     self.test_acc(pred[m], target[m])
-    self.log('test_iounp', self.test_mIoUnp, on_step=True, on_epoch=True)
-    self.log('test_iou', self.test_iou, on_step=True, on_epoch=True)
-    self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True)
     self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
-
-    pred = pred[0].cpu().numpy() + 1 
-    label = target[0].cpu().numpy() +1
-    classes = self._exp['model']['cfg']['num_classes']+1
-    ignore_index = 0
-    only_present = True
-    pred[label == ignore_index] = 0
-    ious = []
-    for c in range( classes) :
-        label_c = label == c
-        if only_present and np.sum(label_c) == 0:
-            ious.append(np.nan)
-            continue
-        pred_c = pred == c
-        intersection = np.logical_and(pred_c, label_c).sum()
-        union = np.logical_or(pred_c, label_c).sum()
-        if union != 0:
-            ious.append(intersection / union)
-    res =  ious if ious else [1]
-    num = np.nanmean(res[1:])
-    self.log('mIoU', torch.tensor(num, device=images.device) , on_step=True, on_epoch=True)
-
+    self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True)
+    
     if self._exp['visu'].get('test_images',0) > self.logged_images_test:
       self.logged_images_test += 1
       self.visualizer.plot_segmentation(tag=f'pred_test_{self.logged_images_test}', seg=pred[0])
       self.visualizer.plot_segmentation(tag=f'gt_test_{self.logged_images_val}', seg=target[0])
-
-
-    return {}
-
 
   def configure_optimizers(self):
     if self._exp['optimizer']['name'] == 'ADAM':
@@ -259,7 +239,7 @@ class Network(LightningModule):
       shuffle = False,
       num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
       pin_memory = self._exp['loader']['pin_memory'],
-      batch_size = 1)
+      batch_size =  self._exp['loader']['batch_size_test'])
     return dataloader_test
 
 
