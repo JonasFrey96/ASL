@@ -13,6 +13,7 @@ from pathlib import Path
 import random 
 from math import pi
 from math import ceil
+import logging
 
 # MISC 
 import numpy as np
@@ -25,6 +26,8 @@ from pytorch_lightning import Trainer, seed_everything
 import pytorch_lightning as pl
 from torchvision import transforms
 from pytorch_lightning import metrics as pl_metrics
+from pytorch_lightning.utilities import rank_zero_info
+
 from torch.nn import functional as F
 # MODULES
 from models import FastSCNN
@@ -80,6 +83,7 @@ class Network(LightningModule):
     self.logged_images_val = 0
     self.logged_images_test = 0
 
+  
   def training_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]
@@ -109,6 +113,7 @@ class Network(LightningModule):
       self.log('train_acc', self.train_acc, on_step=True, on_epoch=True)
     return {'loss': outputs['loss'] }
 
+  
   def validation_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
@@ -137,7 +142,27 @@ class Network(LightningModule):
     self.log('val_acc', self.val_acc, on_step=True, on_epoch=True)
     self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True)
     
+  def validation_epoch_end(self, outputs):
+    metrics = self.trainer.logger_connector.callback_metrics
+    me =  copy.deepcopy ( metrics ) 
+    for k in me.keys():
+      try:
+        me[k] = "{:10.4f}".format( me[k])
+      except:
+        pass
     
+    if 'train_loss_epoch' in me.keys():
+      t_l = me[ 'train_loss_epoch']  
+    else:
+      t_l = me.get('train_loss', 'Not Defined')
+    
+    v_acc = me.get('val_acc_epoch', 'Not Defined')
+    v_mIoU = me.get('val_mIoU_epoch', 'Not Defined')  
+    epoch = self.current_epoch
+    rank_zero_info(
+      f"Epoch: {epoch} >> Train-Loss: {t_l } <<    >> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<"
+    )
+
 
   def test_step(self, batch, batch_idx):
     images = batch[0]
@@ -162,6 +187,20 @@ class Network(LightningModule):
       self.logged_images_test += 1
       self.visualizer.plot_segmentation(tag=f'pred_test_{self.logged_images_test}', seg=pred[0])
       self.visualizer.plot_segmentation(tag=f'gt_test_{self.logged_images_val}', seg=target[0])
+
+  def test_epoch_end( self, outputs):
+    metrics = self.trainer.logger_connector.callback_metrics
+    me =  copy.deepcopy ( metrics ) 
+    new_dict = {}
+    for k in me.keys():
+      if k.find('test') != -1 and k.find('epoch') != -1:  
+        try:
+          new_dict[k] = "{:10.4f}".format( me[k])
+        except:
+          pass
+    rank_zero_info(
+      f"Test Epoch Results: "+ str(new_dict)
+    )
 
   def configure_optimizers(self):
     if self._exp['optimizer']['name'] == 'ADAM':
