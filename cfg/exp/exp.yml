@@ -1,21 +1,21 @@
-name: 'debug_experiment'
-timestamp: False
+name: 'train_scratch_SGD'
+timestamp: True
 checkpoint_restore: False
 checkpoint_load: path_to_ckpts
 tramac_restore: False
 
-lr: 1.0e-3
+lr: 0.045
 lr_scheduler: 
   active: True
   cfg:
     power: 0.9
-    max_epochs: 160
+    max_epochs: 320
     target_lr: 1.0e-6  #1.0e-6
 optimizer: 
-  name: ADAM #SGD
+  name: SGD
   sgd_cfg:
     momentum: 0.9
-    weight_decay: 0 #1.0e-4
+    weight_decay: 4.0e-5
 
 trainer:
   precision: 16
@@ -25,7 +25,7 @@ trainer:
   limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs:  160
+  max_epochs:  320
   gpus: -1
   #accelerator: ddp
   profiler: False
@@ -76,11 +76,11 @@ d_test:
 cb_early_stopping:
   cfg:
     monitor: 'val_loss_epoch'
-    patience: 10
+    patience: 100
     strict: True
     verbose: True
     mode: min
-    min_delta: 0.001
+    min_delta: -0.0001
 
 cb_checkpoint:
   nameing:

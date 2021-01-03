@@ -21,6 +21,7 @@ from lightning import Network
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.profiler import AdvancedProfiler
+import logging
 
 def file_path(string):
   if os.path.isfile(string):
@@ -78,9 +79,17 @@ if __name__ == "__main__":
   else:
     print("Network run folder already exits")
 
+  # SETUP Logger
+  logging.getLogger("lightning").setLevel(logging.DEBUG)
+  logger = logging.getLogger("lightning")
+  fh = logging.FileHandler( os.path.join(model_path, 'info.log') )
+  fh.setLevel(logging.DEBUG)
+  logger.addHandler(fh)
+  
+
   exp_cfg_fn = os.path.split(exp_cfg_path)[-1]
   env_cfg_fn = os.path.split(env_cfg_path)[-1]
-  print(f'Copy {env_cfg_path} to {model_path}/{exp_cfg_fn}')
+  logger.info(f'Copy {env_cfg_path} to {model_path}/{exp_cfg_fn}')
   shutil.copy(exp_cfg_path, f'{model_path}/{exp_cfg_fn}')
   shutil.copy(env_cfg_path, f'{model_path}/{env_cfg_fn}')
   exp['name'] = model_path
@@ -122,7 +131,7 @@ if __name__ == "__main__":
       if os.path.isfile( p ):
         name, ext = os.path.splitext( p )
         assert ext == '.pkl' or '.pth', 'Sorry only .pth and .pkl files supported.'
-        print( f'Resuming training TRAMAC, loading {p}...' )
+        logger.info( f'Resuming training TRAMAC, loading {p}...' )
         model.model.load_state_dict(torch.load(p, map_location=lambda storage, loc: storage))
 
     trainer = Trainer(**exp['trainer'],
@@ -142,7 +151,7 @@ if __name__ == "__main__":
 #       sug = str(  lr_finder.suggestion() )
 #       p = exp['model_path']+f'/visu/lr_{a}_{b}_{sug}.png'
 #       savefig(p)
-#       print( 'SUGGESTION', lr_finder.suggestion())
+#       logger.info( 'SUGGESTION', lr_finder.suggestion())
 #   else:
-#       print("Wrong model_mode defined in exp config")
+#       logger.info("Wrong model_mode defined in exp config")
 #       raise Exception
