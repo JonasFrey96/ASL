@@ -4,7 +4,6 @@ import numpy as np
 from matplotlib import cm
 import os
 import imageio
-
 __all__ = ['Visualizer']
 
 def image_functionality(func):

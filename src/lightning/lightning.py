@@ -219,7 +219,7 @@ class Network(LightningModule):
       max_epochs = self._exp['lr_scheduler']['cfg']['max_epochs'] 
       target_lr = self._exp['lr_scheduler']['cfg']['target_lr'] 
       power = self._exp['lr_scheduler']['cfg']['power'] 
-      lambda_lr= lambda epoch: (((max_epochs-epoch)/max_epochs)**(power) ) + (1-(((max_epochs -epoch)/max_epochs)**(power)))*target_lr/init_lr
+      lambda_lr= lambda epoch: (((max_epochs-min(max_epochs,epoch) )/max_epochs)**(power) ) + (1-(((max_epochs -min(max_epochs,epoch))/max_epochs)**(power)))*target_lr/init_lr
       scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr, last_epoch=-1, verbose=True)
       ret = [optimizer], [scheduler]
     else:
