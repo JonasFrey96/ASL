@@ -58,11 +58,13 @@ if __name__ == "__main__":
 
   exp = load_yaml(exp_cfg_path)
   env = load_yaml(env_cfg_path)
-  print(exp)
+  
   if exp.get('timestamp',True):
     timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
-    exp['name'] = str(timestamp)+'_'+exp['name']
+    
     model_path = os.path.join(env['base'], exp['name'])
+    p = model_path.split('/')
+    model_path = os.path.join(*p[:-1] ,str(timestamp)+'_'+ p[-1] )
   else:
     model_path = os.path.join(env['base'], exp['name'])
     try:
@@ -139,8 +141,18 @@ if __name__ == "__main__":
       default_root_dir=model_path,
       callbacks=cb_ls)
 
-  trainer.fit(model)
-  trainer.test(model)
+  from pytorch_lightning.loggers import TensorBoardLogger
+  
+  tasks= ['task1', 'task2', 'task3']
+  for task in tasks:
+    # New Logger
+    tbl = TensorBoardLogger(
+      save_dir = model_path,
+      name = task)
+    trainer.logger_connector.configure_logger(tbl)
+    
+    trainer.fit(model)
+    trainer.test(model)
 
 #  elif exp.get('model_mode', 'fit') == 'lr_finder':
 #      lr_finder = trainer.tuner.lr_find(model, min_lr= 0.0000001, max_lr=0.01) # Run learning rate finder

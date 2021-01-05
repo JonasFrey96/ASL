@@ -73,7 +73,36 @@ The repository is organized in the following way:
 	- **natrix/**
 - main.py
 
+### Tasks and Evaluation
+We define a task T being offered by a dataloader. A dataloader can offer multiple tasks. 
+Each task is trained once. As normal training a task might consists of multiple epochs to keep it general!
+```
+Task1:
+	Name: Kitchens
+	Epochs: 10
+	DatasetConfig: 'something'
+```
+```
+monitoring = []
+ 
+for task in tasks:
+	model.set_task( task.train_cfg )
+	trainer.fit()
+	model.set_tasks_to_eval( tasks.eval_cfg )
+	res = model.eval()
+	monitoring.append( res )
+```
 
+Logging: 
+For each task a seperate tensorboard logfile is created.
+Also a logfile for tracking the joint results is created at the beginning. 
+
+```
+model.set_task( 1 )
+   -> sets up dataloader correctly
+	 -> maybe updates the optimizer
+	 -> sets up  tensorboard logfile
+```
 
 # Acknowledgement
 Special thanks to:
