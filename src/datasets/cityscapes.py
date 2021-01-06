@@ -4,7 +4,7 @@ import random
 import numpy as np
 import torch
 import torch.utils.data as data
-
+from torchvision import transforms
 from PIL import Image, ImageOps, ImageFilter
 
 __all__ = ['Cityscapes']
@@ -38,14 +38,14 @@ class Cityscapes(data.Dataset):
     BASE_DIR = 'cityscapes'
     NUM_CLASS = 19
 
-    def __init__(self, root='./datasets/citys', split='train', mode=None, transform=None,
+    def __init__(self, root='./datasets/citys', split='train', mode=None, output_trafo=None,
                  base_size=520, crop_size=480, overfit=-1, **kwargs):
         super(Cityscapes, self).__init__()
         self.overfit = overfit
         self.root = root
         self.split = split
         self.mode = mode if mode is not None else split
-        self.transform = transform
+        self.transform = output_trafo
         self.base_size = base_size
         self.crop_size = crop_size
         self.images, self.mask_paths = _get_city_pairs(self.root, self.split)
@@ -61,7 +61,7 @@ class Cityscapes(data.Dataset):
                               10, 11, 12, 13, 14, 15,
                               -1, -1, 16, 17, 18])
         self._mapping = np.array(range(-1, len(self._key) - 1)).astype('int32')
-        
+        self._to_tensor = transforms.ToTensor()
         if self.overfit != -1:
             self.overfit_idx = np.random.randint(0,len(self.images), (self.overfit))
 
@@ -80,6 +80,7 @@ class Cityscapes(data.Dataset):
         if self.mode == 'test':
             if self.transform is not None:
                 img = self.transform(img)
+                img = self._to_tensor(img)
             return img, os.path.basename(self.images[index])
         mask = Image.open(self.mask_paths[index])
         # synchrosized transform
@@ -93,6 +94,7 @@ class Cityscapes(data.Dataset):
         # general resize, normalize and toTensor
         if self.transform is not None:
             img = self.transform(img)
+            img = self._to_tensor(img)
         return img, mask
 
     def _val_sync_transform(self, img, mask):
