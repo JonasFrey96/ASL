@@ -96,7 +96,8 @@ class Network(LightningModule):
   
   def training_step_end(self, outputs):
     # Logging + Visu
-    if self._exp['visu'].get('train_images',0) > self.logged_images_train:
+    if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
+         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)):
       pred = torch.argmax(outputs['pred'], 1)
       self.logged_images_train += 1
       self.visualizer.plot_segmentation(tag=f'pred_train_{self.logged_images_train}', seg=pred[0])
@@ -111,7 +112,12 @@ class Network(LightningModule):
       
       self.log('train_mIoU', self.train_iou, on_step=True, on_epoch=True)
       self.log('train_acc', self.train_acc, on_step=True, on_epoch=True)
-    return {'loss': outputs['loss'] }
+      return {'loss': outputs['loss'],
+              'progress_bar': { 'mIoU': train_mIoU, 
+                                'Acc': train_acc} }
+    
+    return {'loss': outputs['loss']}
+    
 
   
   def validation_step(self, batch, batch_idx):
@@ -129,7 +135,8 @@ class Network(LightningModule):
   def validation_step_end( self, outputs):
     # Logging + Visu
     pred, target = outputs['pred'],outputs['target']
-    if self._exp['visu'].get('val_images',0) > self.logged_images_val:
+    if ( self._exp['visu'].get('val_images',0) > self.logged_images_val and 
+         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)):
       self.logged_images_val += 1
       self.visualizer.plot_segmentation(tag=f'pred_val_{self.logged_images_val}', seg=pred[0])
       self.visualizer.plot_segmentation(tag=f'gt_val_{self.logged_images_val}', seg=target[0])
@@ -183,7 +190,8 @@ class Network(LightningModule):
     self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
     self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True)
     
-    if self._exp['visu'].get('test_images',0) > self.logged_images_test:
+    if ( self._exp['visu'].get('test_images',0) > self.logged_images_test  and 
+         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)):
       self.logged_images_test += 1
       self.visualizer.plot_segmentation(tag=f'pred_test_{self.logged_images_test}', seg=pred[0])
       self.visualizer.plot_segmentation(tag=f'gt_test_{self.logged_images_val}', seg=target[0])
@@ -227,15 +235,14 @@ class Network(LightningModule):
     return ret
   
   def train_dataloader(self):
-    input_transform = transforms.Compose([
-            transforms.ToTensor(),
+    output_transform = transforms.Compose([
             transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
     ])
     # dataset and dataloader
     dataset_train = get_dataset(
       **self._exp['d_train'],
-      root = self._env['cityscapes'],
-      transform = input_transform,
+      env = self._env,
+      output_trafo = output_transform,
     )
                                       
     # initalize train and validation indices
@@ -248,14 +255,13 @@ class Network(LightningModule):
     return dataloader_train
     
   def val_dataloader(self):
-    input_transform = transforms.Compose([
-      transforms.ToTensor(),
+    output_transform = transforms.Compose([
       transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
     ])
     dataset_val = get_dataset(
       **self._exp['d_val'],
-      root = self._env['cityscapes'],
-      transform = input_transform
+      env = self._env,
+      output_trafo = output_transform
     )
 
     dataloader_val = torch.utils.data.DataLoader(dataset_val,
@@ -266,14 +272,13 @@ class Network(LightningModule):
     return dataloader_val
 
   def test_dataloader(self):
-    input_transform = transforms.Compose([
-      transforms.ToTensor(),
+    output_transform = transforms.Compose([
       transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
     ])
     dataset_test = get_dataset(
       **self._exp['d_test'],
-      root = self._env['cityscapes'],
-      transform = input_transform
+      env = self._env,
+      output_trafo = output_transform
     )
 
     dataloader_test = torch.utils.data.DataLoader(dataset_test,
@@ -287,7 +292,7 @@ class Network(LightningModule):
 import pytest
 class TestLightning:
   def  test_iout(self):
-    input_transform = transforms.Compose([
+    output_transform = transforms.Compose([
             transforms.ToTensor(),
             transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
     ])
@@ -303,7 +308,7 @@ class TestLightning:
     self.dataset_train = get_dataset(
       **di,
       root = root,
-      transform = input_transform,
+      transform = output_transform,
     )
     BS, H, W = 1,100,100
     NC = 4

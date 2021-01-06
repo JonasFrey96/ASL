@@ -64,7 +64,7 @@ if __name__ == "__main__":
     
     model_path = os.path.join(env['base'], exp['name'])
     p = model_path.split('/')
-    model_path = os.path.join(*p[:-1] ,str(timestamp)+'_'+ p[-1] )
+    model_path = os.path.join('/',*p[:-1] ,str(timestamp)+'_'+ p[-1] )
   else:
     model_path = os.path.join(env['base'], exp['name'])
     try:
