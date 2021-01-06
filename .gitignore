@@ -124,7 +124,7 @@ venv.bak/
 .mypy_cache/
 .dmypy.json
 dmypy.json
-
+notebooks/tmp/*
 # Pyre type checker
 .pyre/
 nohup.out
