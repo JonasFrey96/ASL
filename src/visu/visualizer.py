@@ -6,6 +6,12 @@ import os
 import imageio
 __all__ = ['Visualizer']
 
+col = { "red":[255,89,94],
+ "yellow":[255,202,58],
+ "green":[138,201,38],
+ "blue":[25,130,196],
+ "purple":[106,76,147] }
+
 def image_functionality(func):
   def wrap(*args, **kwargs):
     # return the standarized numpy array: H,W,C, np.uint8
