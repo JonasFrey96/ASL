@@ -6,6 +6,7 @@ from os.path import expanduser
 """
 For execution run:
 python tools/leonhard/push_and_run_folder.py --exp=1 --time=00:30 --gpus=1 --mem=10240 --workers=20 --ram=60
+python tools/leonhard/push_and_run_folder.py --exp=1 --time=00:30 --gpus=1 --mem=10240 --workers=20 --ram=60 --fake=True
 
 python tools/leonhard/push_and_run_folder.py --exp=1 --time=4 --gpus=4 --workers=20 --ram=60
 """
@@ -20,6 +21,7 @@ parser.add_argument('--workers', default=20)
 parser.add_argument('--ram', default=60)
 parser.add_argument('--env', default='cfg/env/leonhard.yml')
 parser.add_argument('--scratch', default=0, help="Total Scratch space in GB")
+parser.add_argument('--fake', default=False, help="Not schedule")
 
 args = parser.parse_args()
 w = int(args.workers)
@@ -39,7 +41,7 @@ elif  isinstance( args.time, str):
 else:
   raise Exception
 scratch = int( int(args.scratch) / w)
-
+fake = args.fake
  
 # Get all model_paths
 home = expanduser("~")
@@ -55,8 +57,10 @@ for j,e in enumerate(exps):
   # Validate if config trainer settings fits with job.
   if gpus > 1 and doc['trainer']['accelerator'] != 'ddp':
     print('Error in exp {e}: Mutiple GPUs but not using ddp')
+    exps.remove(e)
   elif doc['trainer']['gpus'] != gpus and doc['trainer']['gpus'] != -1:
     print('Error in exp {e}: Nr GPUS does not match job')
+    exps.remove(e)
   else:
     model_paths.append( doc['name'] ) 
     
@@ -89,7 +93,8 @@ try:
   N = len(exps)
   print(f'Using bsub to schedule {N}-jobs:')
   for j, e in enumerate(exps):
-
+    e = e.replace('/home/jonfrey/ASL/','')
+    print('MP', model_paths)
     p = model_paths[j].split('/')
     p = '/'.join(p[:-1])
 
@@ -105,14 +110,21 @@ try:
     cmd += f"""./tools/leonhard/submit.sh --env={env} --exp={e}"""  
     
     cmd = cmd.replace('\n', '')
-    stdin, stdout, stderr = ssh.exec_command(cmd)
     print(f'   {j}-Command: {cmd}')
-    #a = stdin.readlines()
-    b = stdout.readlines()[0]
-    c = stderr.readlines()
-    print(f'   {j}-Results: {b}')
+    
+    if not fake:
+      stdin, stdout, stderr = ssh.exec_command(cmd)
+      #a = stdin.readlines()
+      b = stdout.readlines()[0]
+      c = stderr.readlines()
+      print(f'   {j}-Results: {b}')
+    else:
+      print('   Fake Flag is set')
     #Remote schedule jobs
 finally:  
   if ssh is not None:
     ssh.close()
-    del ssh, stdin, stdout, stderr
+    try:
+      del ssh, stdin, stdout, stderr
+    except:
+      pass

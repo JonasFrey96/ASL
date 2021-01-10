@@ -22,6 +22,7 @@ from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.profiler import AdvancedProfiler
 from torch.utils.tensorboard import SummaryWriter
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from lightning import Network
 from task import TaskCreator
@@ -63,42 +64,64 @@ if __name__ == "__main__":
   exp = load_yaml(exp_cfg_path)
   env = load_yaml(env_cfg_path)
   
-  if exp.get('timestamp',True):
-    timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
-    
-    model_path = os.path.join(env['base'], exp['name'])
-    p = model_path.split('/')
-    model_path = os.path.join('/',*p[:-1] ,str(timestamp)+'_'+ p[-1] )
-  else:
-    model_path = os.path.join(env['base'], exp['name'])
-    try:
-      shutil.rmtree(model_path)
-    except:
-      pass
+  local_rank = int(os.environ.get('LOCAL_RANK', 0))
+  print( 'LLLLLLLLLLLLLOOOOOOOOOOCCCCCCCCCCAAAAAAAAAAAAALLLLLLLLL', local_rank)
+  if local_rank == 0:
+    # Set in name the correct model path
+    if exp.get('timestamp',True):
+      timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
       
-  if not os.path.exists(model_path):
-    try:
-      os.makedirs(model_path)
-      print("Generating network run folder")
-    except:
-      print("Failed generating network run folder")
-  else:
-    print("Network run folder already exits")
+      model_path = os.path.join(env['base'], exp['name'])
+      p = model_path.split('/')
+      model_path = os.path.join('/',*p[:-1] ,str(timestamp)+'_'+ p[-1] )
+    else:
+      model_path = os.path.join(env['base'], exp['name'])
+      try:
+        shutil.rmtree(model_path)
+      except:
+        pass
+    # Create the directory
+    if not os.path.exists(model_path):
+      try:
+        os.makedirs(model_path)
+        print("Generating network run folder")
+      except:
+        print("Failed generating network run folder")
+    else:
+      print("Network run folder already exits")
+    
 
-  # SETUP Logger
+    # Only copy config files for the main ddp-task  
+    exp_cfg_fn = os.path.split(exp_cfg_path)[-1]
+    env_cfg_fn = os.path.split(env_cfg_path)[-1]
+    print(f'Copy {env_cfg_path} to {model_path}/{exp_cfg_fn}')
+    shutil.copy(exp_cfg_path, f'{model_path}/{exp_cfg_fn}')
+    shutil.copy(env_cfg_path, f'{model_path}/{env_cfg_fn}')
+    exp['name'] = model_path
+    
+    # write back the exp file with the correct name set to the model_path!
+    # other ddp-task dont need to care about timestamps.
+    with open(exp_cfg_path, 'w+') as f:
+      yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
+  else:
+    # the correct model path has already been written to the yaml file.
+    
+    model_path = os.path.join( exp['name'], f'rank_{local_rank}')
+    # Create the directory
+    if not os.path.exists(model_path):
+      try:
+        os.makedirs(model_path)
+      except:
+        pass
+  # Setup logger for each ddp-task 
   logging.getLogger("lightning").setLevel(logging.DEBUG)
   logger = logging.getLogger("lightning")
-  fh = logging.FileHandler( os.path.join(model_path, 'info.log') )
+  fh = logging.FileHandler( os.path.join(model_path, f'info{local_rank}.log') )
   fh.setLevel(logging.DEBUG)
   logger.addHandler(fh)
   
 
-  exp_cfg_fn = os.path.split(exp_cfg_path)[-1]
-  env_cfg_fn = os.path.split(env_cfg_path)[-1]
-  logger.info(f'Copy {env_cfg_path} to {model_path}/{exp_cfg_fn}')
-  shutil.copy(exp_cfg_path, f'{model_path}/{exp_cfg_fn}')
-  shutil.copy(env_cfg_path, f'{model_path}/{env_cfg_fn}')
-  exp['name'] = model_path
+
   model = Network(exp=exp, env=env)
 
   early_stop_callback = EarlyStopping(
@@ -131,7 +154,7 @@ if __name__ == "__main__":
       checkpoint_callback=checkpoint_callback,
       default_root_dir = model_path,
       callbacks=cb_ls, 
-      resume_from_checkpoint = exp['checkpoint_load'])       
+      resume_from_checkpoint = exp['checkpoint_load'])
   else:
     if exp.get('tramac_restore', False): 
       p = env['tramac_weights']
@@ -146,7 +169,7 @@ if __name__ == "__main__":
       default_root_dir=model_path,
       callbacks=cb_ls)
 
-  from pytorch_lightning.loggers import TensorBoardLogger
+  
   
 
   #  log_dir=None, comment='', purge_step=None, max_queue=10,
@@ -156,7 +179,7 @@ if __name__ == "__main__":
       log_dir = os.path.join(  trainer.default_root_dir, "MainLogger"))
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             writer=main_tbl, epoch=0, store=True, num_classes=22 )
-  tc = TaskCreator(mode= 'All') #SingleScenesCountsDescending
+  tc = TaskCreator(mode= 'SingleScenesCountsDescending') #SingleScenesCountsDescending All
   results = []
   training_results = []
   for idx, out in enumerate(tc) :
