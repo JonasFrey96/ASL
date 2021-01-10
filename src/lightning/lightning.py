@@ -69,6 +69,8 @@ class Network(LightningModule):
     self.logged_images_train = 0
     self.logged_images_val = 0
     self.logged_images_test = 0
+    
+    self._task_name = 'NotDefined' # is used for model checkpoint nameing
 
   def forward(self, batch):
     outputs = self.model(batch)
@@ -97,11 +99,11 @@ class Network(LightningModule):
   def training_step_end(self, outputs):
     # Logging + Visu
     if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
-         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)):
+         self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):
       pred = torch.argmax(outputs['pred'], 1)
       self.logged_images_train += 1
-      self.visualizer.plot_segmentation(tag=f'pred_train_{self.logged_images_train}', seg=pred[0])
-      self.visualizer.plot_segmentation(tag=f'gt_train_{self.logged_images_train}', seg=outputs['target'][0])
+      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self.logged_images_train}', seg=outputs['target'][0], method='left')
 
     if False: 
       pred = torch.argmax(outputs['pred'], 1)
@@ -117,8 +119,6 @@ class Network(LightningModule):
                                 'Acc': train_acc} }
     
     return {'loss': outputs['loss']}
-    
-
   
   def validation_step(self, batch, batch_idx):
     images = batch[0]
@@ -136,10 +136,10 @@ class Network(LightningModule):
     # Logging + Visu
     pred, target = outputs['pred'],outputs['target']
     if ( self._exp['visu'].get('val_images',0) > self.logged_images_val and 
-         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)):
+         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)== 0) :
       self.logged_images_val += 1
-      self.visualizer.plot_segmentation(tag=f'pred_val_{self.logged_images_val}', seg=pred[0])
-      self.visualizer.plot_segmentation(tag=f'gt_val_{self.logged_images_val}', seg=target[0])
+      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right_{self.logged_images_val}', seg=target[0], method='left')
       
     self.val_mIoU(pred,target)
     # calculates acc only for valid labels
@@ -148,6 +148,7 @@ class Network(LightningModule):
     self.val_acc(pred[m], target[m])
     self.log('val_acc', self.val_acc, on_step=True, on_epoch=True)
     self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True)
+    # self.log('task_name', self._task_name, on_epoch=True)
     
   def validation_epoch_end(self, outputs):
     metrics = self.trainer.logger_connector.callback_metrics
@@ -190,11 +191,11 @@ class Network(LightningModule):
     self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
     self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True)
     
-    if ( self._exp['visu'].get('test_images',0) > self.logged_images_test  and 
-         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)):
+    if ( self._exp['visu'].get('test_images',0) > self.logged_images_test):
       self.logged_images_test += 1
-      self.visualizer.plot_segmentation(tag=f'pred_test_{self.logged_images_test}', seg=pred[0])
-      self.visualizer.plot_segmentation(tag=f'gt_test_{self.logged_images_val}', seg=target[0])
+      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self.logged_images_test}', seg=target[0], method='left') 
+      
 
   def test_epoch_end( self, outputs):
     metrics = self.trainer.logger_connector.callback_metrics
@@ -287,7 +288,46 @@ class Network(LightningModule):
       pin_memory = self._exp['loader']['pin_memory'],
       batch_size =  self._exp['loader']['batch_size_test'])
     return dataloader_test
-
+  
+  def set_train_dataset_cfg(self, dataset_train_cfg, dataset_val_cfg, task_name):
+    self._exp['d_train'] = dataset_train_cfg
+    self._exp['d_val'] = dataset_val_cfg
+    self._task_name = task_name
+    
+    # TODO this creation of the dataset to check its length should be avoided
+    output_transform = transforms.Compose([
+      transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+    ])
+    d2 = get_dataset(
+      **self._exp['d_val'],
+      env = self._env,
+      output_trafo = output_transform
+    )
+    d1 = get_dataset(
+      **self._exp['d_train'],
+      env = self._env,
+      output_trafo = output_transform
+    )
+        
+    return bool(len(d1) > self._exp['loader']['batch_size'] and 
+      len(d2) > self._exp['loader']['batch_size'])
+    
+  def set_test_dataset_cfg(self, dataset_test_cfg):
+    self._exp['d_test'] = dataset_test_cfg
+    
+    # TODO this creation of the dataset to check its length should be avoided
+    output_transform = transforms.Compose([
+      transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+    ])
+    d1 = get_dataset(
+      **self._exp['d_test'],
+      env = self._env,
+      output_trafo = output_transform
+    )
+    
+    return bool( len(d1) > self._exp['loader']['batch_size_test'])
+      
+    
 
 import pytest
 class TestLightning:

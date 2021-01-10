@@ -10,19 +10,23 @@ import argparse
 import signal
 import coloredlogs
 import yaml
+import logging
 coloredlogs.install()
 
 import torch
 from pytorch_lightning import seed_everything,Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
-
-from lightning import Network
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.profiler import AdvancedProfiler
-import logging
+from torch.utils.tensorboard import SummaryWriter
+from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
 
+from lightning import Network
+from task import TaskCreator
+from visu import MainVisualizer
+import numpy as np
 def file_path(string):
   if os.path.isfile(string):
     return string
@@ -100,9 +104,10 @@ if __name__ == "__main__":
   early_stop_callback = EarlyStopping(
     **exp['cb_early_stopping']['cfg']
     )
-  filepath = os.path.join(model_path, '{epoch}')
+  filepath = os.path.join(model_path, '{epoch}{task_name}')
 
   if len(exp['cb_checkpoint'].get('nameing',[])) > 0:
+    #filepath += '-{task_name:10s}'
     for m in exp['cb_checkpoint']['nameing']: 
       filepath += '-{'+ m + ':.2f}'
 
@@ -143,17 +148,88 @@ if __name__ == "__main__":
 
   from pytorch_lightning.loggers import TensorBoardLogger
   
-  tasks= ['task1', 'task2', 'task3']
-  for task in tasks:
-    # New Logger
-    tbl = TensorBoardLogger(
-      save_dir = model_path,
-      name = task)
-    trainer.logger_connector.configure_logger(tbl)
-    
-    trainer.fit(model)
-    trainer.test(model)
 
+  #  log_dir=None, comment='', purge_step=None, max_queue=10,
+  #                flush_secs=120, filename_suffix=''
+                 
+  main_tbl = SummaryWriter(
+      log_dir = os.path.join(  trainer.default_root_dir, "MainLogger"))
+  main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
+                            writer=main_tbl, epoch=0, store=True, num_classes=22 )
+  tc = TaskCreator(mode= 'All') #SingleScenesCountsDescending
+  results = []
+  training_results = []
+  for idx, out in enumerate(tc) :
+    task, eval_lists = out
+
+    main_visu.epoch = idx
+    # New Logger
+    rank_zero_info( 'Executing Training Task: '+task.name )
+    tbl = TensorBoardLogger(
+      save_dir = trainer.default_root_dir,
+      name = task.name,default_hp_metric=False)
+    # only way to avoid PytorchLightning SummaryWriter nameing!
+    tbl._experiment = SummaryWriter(
+      log_dir=os.path.join(trainer.default_root_dir, task.name), 
+      **tbl._kwargs)
+    trainer.logger = tbl
+    # when a new fit or test is called in the trainer all dataloaders are initalized from scratch.
+    # here check if the same goes for the optimizers and learning rate schedules in this case
+    # both configues would need to be restored for advanced settings.
+    trainer.current_epoch = 0
+    suc = model.set_train_dataset_cfg(
+      dataset_train_cfg=task.dataset_train_cfg,
+      dataset_val_cfg=task.dataset_val_cfg,
+      task_name=task.name
+    )
+    if not suc:
+      rank_zero_warn( "Training Task "+ task.name + 
+                      " not started. Not enough val/train data!")
+      continue
+    train_res = trainer.fit(model)
+    training_results.append( train_res )
+    test_results = []
+    for eval_task in eval_lists:
+      rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
+                      " of Training Task: " + task.name )
+      suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg)
+      if not suc:
+        rank_zero_warn( "Evaluation Task "+ eval_task.name + 
+                        " not started. Not enough test data!")
+        continue
+      
+      # TODO: one task might call mutiple tests!
+      test_res = trainer.test(model)
+      new_res= {}
+      for k in test_res[0].keys():
+        try:
+          new_res[k] = float( test_res[0][k])
+        except:
+          pass
+          
+      test_results.append(new_res)
+      
+    results.append({'Time': idx, 'Traning': train_res, 'Test': test_results})
+    mIoU = []
+    for i, task in enumerate( results):
+      test_vals = []
+      for j, test in enumerate(task['Test']):
+        test_vals.append( test['test_mIoU_epoch'])
+      mIoU.append(test_vals)
+    
+    max_tests = 0
+    for task in mIoU:
+      if len(task) > max_tests :
+        max_tests  = len(task)
+    
+    for i in range(len( mIoU)):
+      if len(mIoU[i]) < max_tests :
+        mIoU[i] = mIoU[i] + [0.0] * (max_tests -len(mIoU[i]))
+    data_matrix = np.array( mIoU) * 100
+    data_matrix = np.around(data_matrix , decimals=0)
+    main_visu.plot_matrix(
+      tag = 'mIoU',
+      data_matrix = data_matrix)
 #  elif exp.get('model_mode', 'fit') == 'lr_finder':
 #      lr_finder = trainer.tuner.lr_find(model, min_lr= 0.0000001, max_lr=0.01) # Run learning rate finder
 #      fig = lr_finder.plot(suggest=True) # Plot

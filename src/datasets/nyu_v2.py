@@ -7,9 +7,12 @@ from torchvision import transforms as tf
 from torchvision.transforms import functional as F
 import PIL
 import random
+import scipy
+import os
+
 
 class NYUv2(data.Dataset):
-    def __init__(self, root='/media/scratch1/jonfrey/datasets/NYU_v2/nyu_depth_v2_labeled.mat', 
+    def __init__(self, root='/media/scratch1/jonfrey/datasets/NYU_v2', 
                  mode='train', scenes=[], output_trafo = None, 
                  output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], overfit=-1, load_all=True):
         """
@@ -63,7 +66,12 @@ class NYUv2(data.Dataset):
         
         # full training dataset with all objects
         self._weights = pd.read_csv(f'cfg/dataset/nyu/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
-            
+    
+    @staticmethod
+    def get_classes(mode):
+        index = pd.read_csv(f'cfg/dataset/nyu/{mode}_indexes.csv').to_numpy()[:,0]-1 # from matlab to python
+        sceneTypes = pd.read_csv('cfg/dataset/nyu/sceneTypes.csv').to_numpy()[index,0]
+        return np.unique(sceneTypes, return_index=True)
             
     def __getitem__(self, index):
         if self._overfit != -1:
@@ -71,12 +79,11 @@ class NYUv2(data.Dataset):
             
         if self._load_all:
             img = torch.from_numpy(self.images[index]/255) # C H W 
-            label = torch.from_numpy(self.labels[index])[None,:,:] # C H W 
-            
+            label = torch.from_numpy(np.array( self.labels[index]) )[None,:,:] # C H W 
         else:
             idx = self.filtered_index[index]
             
-            label = np.asarray( self._file['instances'][idx], dtype=np.float32 )
+            label = torch.from_numpy(self.labels[index])[None,:,:]
             img =  np.asarray( self._file['images'][idx], dtype=np.float32)
             
             img = torch.from_numpy(img/255).permute(0,2,1)
@@ -88,7 +95,7 @@ class NYUv2(data.Dataset):
             img = self._output_trafo(img)
         
         # add standard data augmentation options
-        return img, label.type(torch.int64)[0,:,:]
+        return img, label.type(torch.int64)[0,:,:]-1
     
     def _augment(self, img, label):
         if self._mode == 'train':
@@ -119,12 +126,17 @@ class NYUv2(data.Dataset):
         return self.length
 
     def _load(self, root, mode):
+        
+        
         index = pd.read_csv(f'cfg/dataset/nyu/{mode}_indexes.csv').to_numpy()[:,0]-1 # from matlab to python
-        with h5py.File(root, 'r') as f:
-            self.labels = np.asarray( f['instances'], dtype=np.float32 )[index]
-            self.labels = np.moveaxis( self.labels,1,2) # NR,H,W
+        with h5py.File(os.path.join( root, 'nyu_depth_v2_labeled.mat'), 'r') as f:
+            #self.labels = np.asarray( f['labels'], dtype=np.float32 )[index]
+            #self.labels = np.moveaxis( self.labels,1,2) # NR,H,W
             self.images =  np.asarray( f['images'], dtype=np.float32)[index]
             self.images = np.moveaxis( self.images,2,3) # NR,C,H,W
+            self.labels = np.load( os.path.join( root, 'labels40.npy') )
+            self.labels = (np.moveaxis( self.labels,2,0)[index]).astype(np.float32)# NR,H,W
+        
         
         self.names = pd.read_csv('cfg/dataset/nyu/names.csv').to_numpy()[:,0]
         self.scenes = pd.read_csv('cfg/dataset/nyu/scenes.csv').to_numpy()[index,0]
@@ -133,7 +145,10 @@ class NYUv2(data.Dataset):
         
     def _load_sparse(self, root, mode):
         index = pd.read_csv(f'cfg/dataset/nyu/{mode}_indexes.csv').to_numpy()[:,0]-1 # from matlab to python
-        self._file = h5py.File(root, 'r')
+        self._file = h5py.File(os.path.join( root,'nyu_depth_v2_labeled.mat'), 'r')
+        
+        self.labels = np.load( os.path.join( root, 'labels40.npy') )
+        self.labels = (np.moveaxis( self.labels,2,0)[index]).astype(np.float32)
         
         self.names = pd.read_csv('cfg/dataset/nyu/names.csv').to_numpy()[:,0]
         self.scenes = pd.read_csv('cfg/dataset/nyu/scenes.csv').to_numpy()[index,0]

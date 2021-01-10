@@ -1,4 +1,4 @@
-name: 'NYU/train_all'
+name: 'NYU/train_all_1000'
 timestamp: True
 checkpoint_restore: False
 checkpoint_load: path_to_ckpts
@@ -26,9 +26,10 @@ trainer:
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
   max_epochs:  300
-  gpus: -1
-  #accelerator: ddp
+  gpus: 4
+  accelerator: ddp
   profiler: False
+  check_val_every_n_epoch: 50
 
 loader:
   pin_memory: True
@@ -38,7 +39,7 @@ loader:
   num_workers: 8
 
 visu:
-  every_n_epochs: 1
+  every_n_epochs: 10
   train_images: 1
   val_images: 1
   test_images: 1
