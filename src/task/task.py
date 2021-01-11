@@ -56,6 +56,8 @@ class TaskCreator():
       self._getTaskSingleScenesCountsDescending()  
     elif mode == 'All':
       self._getAll()
+    elif mode == 'FourCategories':
+      self._get4Categories()
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
@@ -92,6 +94,58 @@ class TaskCreator():
         dataset_test_cfg=test)
       eval_tasks.append( eval_task )
     self._eval_lists.append( eval_tasks )
+  
+  def _get4Categories(self):
+    tasks = { 'bath': ['bathroom', 'bedroom','laundry_room'],
+              'food': ['cafe', 'dining_room','office_kitchen','kitchen','dinette'],
+              'work': ['home_office','conference_room','computer_lab', 'office',
+                       'study', 'study_room','printer_room', 'bookstore','classroom'],
+              'others': ['basement', 'excercise_room', 'foyer', 'furniture_store',
+                         'home_storage', 'indoor_balcony', 'living_room','playroom',
+                         'reception_room', 'student_lounge'] }
+    
+    
+    idx = np.argsort( nyu_class_counts)
+    scene_names = nyu_scene_names[idx].tolist()
+    scene_names
+    counts = nyu_class_counts[idx].tolist()
+    counts.reverse()
+    min_counts = 50
+    
+    train = copy.deepcopy( nyu_template_dict )
+    val = copy.deepcopy( nyu_template_dict )
+    train['mode'] = 'train'
+    val['mode'] = 'val'      
+    train['scenes'] = []
+    val['scenes'] = []
+    
+    for j, name, scenes in zip(range(0,len(tasks)), tasks.keys(), tasks.values()):
+      train = copy.deepcopy( nyu_template_dict )
+      val = copy.deepcopy( nyu_template_dict )
+      train['mode'] = 'train'
+      val['mode'] = 'val'      
+      train['scenes'] = scenes
+      val['scenes'] = scenes
+      
+      task_idx = str(j).zfill(2)
+      t = Task(name = f'Task_{task_idx}_Scenes_{name}',
+               dataset_train_cfg= train,
+               dataset_val_cfg= val)
+      
+      self._task_list.append(t)
+      eval_tasks = []
+      for i, name_eval, scenes_eval in zip(range(0,len(tasks)), tasks.keys(), tasks.values()):
+        test = copy.deepcopy( nyu_template_dict )
+        test['mode'] = 'val'
+        test['scenes'] = scenes_eval
+        
+        eval_idx = str(i).zfill(2)
+        eval_task = EvalTask(
+          name = f'Task_{task_idx}_Eval_{eval_idx}_Scene_{name_eval}',
+          dataset_test_cfg=test)
+        eval_tasks.append( eval_task )
+        
+      self._eval_lists.append( eval_tasks ) 
       
   def _getTaskSingleScenesCountsDescending(self):
     # TODO: Refactor nameing and make getTask- Method more generic. 
@@ -160,6 +214,8 @@ if __name__ == "__main__":
   tc = TaskCreator(mode= 'SingleScenesCountsDescending')
   print(tc)
   tc = TaskCreator(mode= 'All')
+  print(tc)
+  tc = TaskCreator(mode= 'FourCategories')
   print(tc) 
   # for task, eval_lists in tc:
   #   print(task.name)
