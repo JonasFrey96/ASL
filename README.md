@@ -104,6 +104,12 @@ model.set_task( 1 )
 	 -> sets up  tensorboard logfile
 ```
 
+## Scaling performance:
+4 1080Ti GPUs 20 Cores BS 8 (effective BS 32)
+Rougly running at 1.8 it/s 
+-> 57.6 Images/s 
+
+
 # Acknowledgement
 Special thanks to:
 

@@ -65,7 +65,6 @@ if __name__ == "__main__":
   env = load_yaml(env_cfg_path)
   
   local_rank = int(os.environ.get('LOCAL_RANK', 0))
-  print( 'LLLLLLLLLLLLLOOOOOOOOOOCCCCCCCCCCAAAAAAAAAAAAALLLLLLLLL', local_rank)
   if local_rank == 0:
     # Set in name the correct model path
     if exp.get('timestamp',True):
@@ -101,8 +100,9 @@ if __name__ == "__main__":
     
     # write back the exp file with the correct name set to the model_path!
     # other ddp-task dont need to care about timestamps.
-    with open(exp_cfg_path, 'w+') as f:
-      yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
+    if not env['workstation']: 
+      with open(exp_cfg_path, 'w+') as f:
+        yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
   else:
     # the correct model path has already been written to the yaml file.
     
@@ -179,7 +179,7 @@ if __name__ == "__main__":
       log_dir = os.path.join(  trainer.default_root_dir, "MainLogger"))
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             writer=main_tbl, epoch=0, store=True, num_classes=22 )
-  tc = TaskCreator(mode= 'SingleScenesCountsDescending') #SingleScenesCountsDescending All
+  tc = TaskCreator(**exp['task_generator'])
   results = []
   training_results = []
   for idx, out in enumerate(tc) :

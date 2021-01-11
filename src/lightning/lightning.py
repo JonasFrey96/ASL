@@ -105,18 +105,17 @@ class Network(LightningModule):
       self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
       self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self.logged_images_train}', seg=outputs['target'][0], method='left')
 
-    if False: 
+    if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 
       pred = torch.argmax(outputs['pred'], 1)
-      train_mIoU = self.train_mIoU(pred,outputs['target'])
+      target = outputs['target']
+      train_mIoU = self.train_mIoU(pred,target)
       # calculates acc only for valid labels
       m  =  target > -1
-      train_acc = self.train_acc(pred[m], outputs['target'][m])
+      train_acc = self.train_acc(pred[m], target[m])
+      self.log('train_acc', self.train_acc, on_step=True, on_epoch=True, prog_bar = True)
+      self.log('train_mIoU', self.train_mIoU, on_step=True, on_epoch=True, prog_bar = True)
       
-      self.log('train_mIoU', self.train_iou, on_step=True, on_epoch=True)
-      self.log('train_acc', self.train_acc, on_step=True, on_epoch=True)
-      return {'loss': outputs['loss'],
-              'progress_bar': { 'mIoU': train_mIoU, 
-                                'Acc': train_acc} }
+      return {'loss': outputs['loss']}
     
     return {'loss': outputs['loss']}
   
@@ -146,8 +145,8 @@ class Network(LightningModule):
 
     m  =  target > -1
     self.val_acc(pred[m], target[m])
-    self.log('val_acc', self.val_acc, on_step=True, on_epoch=True)
-    self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True)
+    self.log('val_acc', self.val_acc, on_step=True, on_epoch=True, prog_bar=True)
+    self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True, prog_bar=True)
     # self.log('task_name', self._task_name, on_epoch=True)
     
   def validation_epoch_end(self, outputs):
@@ -188,8 +187,8 @@ class Network(LightningModule):
 
     m  =  target > -1
     self.test_acc(pred[m], target[m])
-    self.log('test_acc', self.test_acc, on_step=True, on_epoch=True)
-    self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True)
+    self.log('test_acc', self.test_acc, on_step=True, on_epoch=True, prog_bar=True)
+    self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True, prog_bar=True)
     
     if ( self._exp['visu'].get('test_images',0) > self.logged_images_test):
       self.logged_images_test += 1
@@ -309,8 +308,8 @@ class Network(LightningModule):
       output_trafo = output_transform
     )
         
-    return bool(len(d1) > self._exp['loader']['batch_size'] and 
-      len(d2) > self._exp['loader']['batch_size'])
+    return bool(len(d1) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']) and 
+      len(d2) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']))
     
   def set_test_dataset_cfg(self, dataset_test_cfg):
     self._exp['d_test'] = dataset_test_cfg
@@ -325,7 +324,7 @@ class Network(LightningModule):
       output_trafo = output_transform
     )
     
-    return bool( len(d1) > self._exp['loader']['batch_size_test'])
+    return bool( len(d1) > self._exp['loader']['batch_size_test']*self._exp['trainer']['gpus'])
       
     
 
