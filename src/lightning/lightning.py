@@ -223,13 +223,11 @@ class Network(LightningModule):
       pred_c[0] = pred_c[0]+1
       target_c[0] = target_c[0] +1
       self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self.logged_images_test}', seg=target_c[0], method='left') 
-
-
+      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self.logged_images_test}', seg=target_c[0], method='left')
 
   def test_epoch_end( self, outputs):
     metrics = self.trainer.logger_connector.callback_metrics
-    me =  copy.deepcopy ( metrics ) 
+    me = copy.deepcopy( metrics ) 
     new_dict = {}
     for k in me.keys():
       if k.find('test') != -1 and k.find('epoch') != -1:  

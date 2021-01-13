@@ -29,6 +29,8 @@ from lightning import Network
 from task import TaskCreator
 from visu import MainVisualizer
 import numpy as np
+
+
 def file_path(string):
   if os.path.isfile(string):
     return string
@@ -53,7 +55,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/exp.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/ml-hypersim/exp.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')

@@ -9,7 +9,10 @@ import PIL
 import random
 import scipy
 import os
-from .helper import Augmentation
+try:
+    from .helper import Augmentation
+except Exception: #ImportError
+    from helper import Augmentation
 __all__ = ['NYUv2']
 
 class NYUv2(data.Dataset):

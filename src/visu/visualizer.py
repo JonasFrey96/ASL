@@ -189,6 +189,11 @@ class MainVisualizer():
   
   @image_functionality
   def plot_image(self, img, *args,**kwargs):
+    """
+    ----------
+    img : CHW HWC accepts torch.tensor or numpy.array
+          Range 0-1 or 0-255
+    """
     try:
       img = img.clone().cpu().numpy()
     except:
@@ -200,7 +205,9 @@ class MainVisualizer():
       img = np.moveaxis(img, [0, 1, 2], [2, 0, 1])
     else:
       raise Exception('Invalid Shape')  
-      
+    if img.max() <= 1:
+      img = img*255
+    
     img = np.uint8(img)
     return img
 
@@ -252,14 +259,10 @@ class MainVisualizer():
                            ha="center", va="center", color="w",
                           fontdict = {'backgroundcolor':(0,0,0,0.2)})
 
-
-
     ax.set_title("Training Result")
     #fig.tight_layout()
     arr = get_img_from_fig(fig, dpi=600)
     return np.uint8(arr)
-  
-  
   
 class Visualizer():
   def __init__(self, p_visu, writer=None, epoch=0, store=True, num_classes=22):
@@ -327,13 +330,13 @@ class Visualizer():
       img = img.clone().cpu().numpy()
     except:
       pass
-    
     if img.shape[2] == 3:
       pass
     elif img.shape[0] == 3:
       img = np.moveaxis(img, [0, 1, 2], [2, 0, 1])
     else:
       raise Exception('Invalid Shape')  
-      
+    if img.max() <= 1:
+      img = img*255
     img = np.uint8(img)
     return img

@@ -1,0 +1,92 @@
+name: MLHypersim/overfit
+timestamp: false
+checkpoint_restore: false
+checkpoint_load: path_to_ckpts
+tramac_restore: false
+lr: 0.001
+lr_scheduler:
+  active: true
+  cfg:
+    power: 0.9
+    max_epochs: 1000
+    target_lr: 1.0e-05
+optimizer:
+  name: ADAM
+  sgd_cfg:
+    momentum: 0.9
+    weight_decay: 4.0e-05
+trainer:
+  precision: 16
+  accumulate_grad_batches: 1
+  fast_dev_run: false
+  limit_train_batches: 1000
+  limit_val_batches: 1000
+  limit_test_batches: 1000
+  progress_bar_refresh_rate: 1
+  max_epochs: 1000
+  gpus: 1
+  accelerator: ddp
+  profiler: true
+  overfit_batches: 20
+loader:
+  pin_memory: true
+  batch_size: 8
+  batch_size_test: 4
+  shuffle: true
+  num_workers: 1
+visu:
+  every_n_epochs: 1
+  log_training_metric_every_n_epoch: 50
+  train_images: 1
+  val_images: 1
+  test_images: 1
+model:
+  name: Fast-SCNN
+  cfg:
+    num_classes: 40
+    aux: false
+task_generator:
+  mode: mlhypersim_random10
+d_val:
+  name: nyuv2
+  mode: val
+  output_size: 384
+  load_all: false
+d_train:
+  name: nyuv2
+  mode: train
+  output_size: 384
+  load_all: false
+d_test:
+  name: nyuv2
+  mode: val
+  output_size: 384
+  load_all: false
+cb_early_stopping:
+  cfg:
+    monitor: val_loss_epoch
+    patience: 100
+    strict: true
+    verbose: true
+    mode: min
+    min_delta: -0.0001
+cb_checkpoint:
+  nameing:
+  - val_acc_epoch
+  - val_mIoU_epoch
+  cfg:
+    verbose: true
+    monitor: val_loss
+    mode: min
+    prefix: ''
+    save_last: true
+    save_top_k: 10
+lr_monitor:
+  cfg:
+    logging_interval: step
+
+move_datasets:
+  - env_var: coco
+  # - env_var: mlhypersim
+
+  
