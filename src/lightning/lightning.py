@@ -82,6 +82,8 @@ class Network(LightningModule):
       mode = 'LIFO', 
       bins = self._exp['model']['cfg']['num_classes'], 
       dtype = self._type)
+    
+    
 
   def forward(self, batch):
     outputs = self.model(batch)
@@ -106,18 +108,10 @@ class Network(LightningModule):
     self._latent_replay_buffer.add(outputs[1][0],0)
     
     self.log('train_loss', loss, on_step=True, on_epoch=True)
-    return {'loss': loss, 'pred': outputs[0], 'target': target}
+    return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': batch[2] }
   
   def training_step_end(self, outputs):
     # Logging + Visu
-    if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
-         self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):
-      pred = torch.argmax(outputs['pred'], 1)
-      self.logged_images_train += 1
-      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self.logged_images_train}', seg=outputs['target'][0], method='left')
-    
-    
     if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 
       pred = torch.argmax(outputs['pred'], 1)
       target = outputs['target']
@@ -128,7 +122,21 @@ class Network(LightningModule):
       self.log('train_acc', self.train_acc, on_step=True, on_epoch=True, prog_bar = True)
       self.log('train_mIoU', self.train_mIoU, on_step=True, on_epoch=True, prog_bar = True)
       
-      return {'loss': outputs['loss']}
+      
+    
+    if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
+         self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):
+      pred = torch.argmax(outputs['pred'], 1).clone().detach()
+      target = outputs['target'].clone().detach()
+      
+      pred[0][ target[0] == -1 ] = -1
+      pred[0] = pred[0]+1
+      target[0] = target[0] +1
+      self.logged_images_train += 1
+      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self.logged_images_train}', seg=target[0], method='left')  
+      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
+      self.visualizer.plot_image(tag=f'train_img_ori_left_pred_right_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
     
     return {'loss': outputs['loss']}
   
@@ -142,7 +150,7 @@ class Network(LightningModule):
 
     self.log('val_loss', loss, on_step=True, on_epoch=True)
 
-    return {'pred': pred, 'target': target}
+    return {'pred': pred, 'target': target, 'ori_img': batch[2]}
 
   def validation_step_end( self, outputs):
     # Logging + Visu
@@ -150,16 +158,21 @@ class Network(LightningModule):
     if ( self._exp['visu'].get('val_images',0) > self.logged_images_val and 
          self.current_epoch % self._exp['visu'].get('every_n_epochs',1)== 0) :
       self.logged_images_val += 1
-      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right_{self.logged_images_val}', seg=target[0], method='left')
+      pred_c = pred.clone().detach()
+      target_c = target.clone().detach()
+      pred_c[0][ target_c[0] == -1 ] = -1
+      pred_c[0] = pred_c[0]+1
+      target_c[0] = target_c[0] +1
+      self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right_{self.logged_images_val}', seg=target_c[0], method='left')
       
     self.val_mIoU(pred,target)
     # calculates acc only for valid labels
 
     m  =  target > -1
     self.val_acc(pred[m], target[m])
-    self.log('val_acc', self.val_acc, on_step=True, on_epoch=True, prog_bar=True)
-    self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True, prog_bar=True)
+    self.log('val_acc', self.val_acc, on_step=True, on_epoch=True, prog_bar=False)
+    self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True, prog_bar=False)
     # self.log('task_name', self._task_name, on_epoch=True)
     
   def validation_epoch_end(self, outputs):
@@ -189,7 +202,7 @@ class Network(LightningModule):
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
     outputs = self(images) 
     pred = torch.argmax(outputs[0], 1)
-    return {'pred': pred, 'target': target}
+    return {'pred': pred, 'target': target, 'ori_img': batch[2]}
 
   def test_step_end( self, outputs):
     # Logging + Visu
@@ -204,9 +217,15 @@ class Network(LightningModule):
     
     if ( self._exp['visu'].get('test_images',0) > self.logged_images_test):
       self.logged_images_test += 1
-      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self.logged_images_test}', seg=target[0], method='left') 
-      
+      pred_c = pred.clone().detach()
+      target_c = target.clone().detach()
+      pred_c[0][ target_c[0] == -1 ] = -1
+      pred_c[0] = pred_c[0]+1
+      target_c[0] = target_c[0] +1
+      self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self.logged_images_test}', seg=target_c[0], method='left') 
+
+
 
   def test_epoch_end( self, outputs):
     metrics = self.trainer.logger_connector.callback_metrics
@@ -353,8 +372,7 @@ class TestLightning:
       'base_size': 1024,
       'crop_size': 768,
       'split': 'val',
-      'mode': 'val',
-      'overfit': 5 }
+      'mode': 'val'}
     root = '/media/scratch1/jonfrey/datasets/Cityscapes'
     self.dataset_train = get_dataset(
       **di,

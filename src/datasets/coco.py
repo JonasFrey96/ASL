@@ -31,7 +31,7 @@ for i in range(91):
 class COCo(data.Dataset):
   def __init__(self, root='/media/scratch2/jonfrey/datasets/COCO/', 
               mode='train', scenes=[], output_trafo = None, 
-              output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], overfit=-1, squeeze_80_labels_to_40 = True):
+              output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], squeeze_80_labels_to_40 = True):
     """
     TODO Filtering is not implemented. Here additional to do when creating the mask take care!
     
@@ -42,7 +42,6 @@ class COCo(data.Dataset):
     """
     self._output_size = output_size
     self._mode = mode
-    self._overfit = overfit
     self._load(root, mode)
     self._augmenter = Augmentation(output_size,
                                     degrees,
@@ -55,9 +54,6 @@ class COCo(data.Dataset):
     self._resize_img = tf.Resize( size=self._output_size, interpolation=Image.BILINEAR )
     self._resize_label = tf.Resize( size=self._output_size, interpolation=Image.NEAREST)
     
-    if self._overfit != -1:
-        self._overfit_idx = np.random.randint(0,len(self), (self.overfit))
-    
    
   @staticmethod
   def get_classes(mode):
@@ -65,9 +61,6 @@ class COCo(data.Dataset):
     return {}
           
   def __getitem__(self, index):
-    if self._overfit != -1:
-        index = np.random.choice( self._overfit_idx )
-
     # Get image
     n = self._coco.loadImgs(self._img_ids[index])[0]['file_name']
     img_path = os.path.join(self._root_img, n)
@@ -107,11 +100,13 @@ class COCo(data.Dataset):
         img, label = self._augmenter.apply(img, label, only_crop=True)
     else:
         raise Exception('Invalid Dataset Mode')
-              
+           
+    img_ori = img.clone()   
+    img_ori.requires_grad = False
     if self._output_trafo is not None:
         img = self._output_trafo(img)
     
-    return img, label.type(torch.int64)[0,:,:] - 1
+    return img, label.type(torch.int64)[0,:,:] - 1, img_ori
 
   def _resize(self, img, label):
     if (img.shape[1] < self._output_size or 
@@ -157,7 +152,7 @@ def test():
   ds = COCo( root='/media/scratch2/jonfrey/datasets/COCO/', 
               mode='train', scenes=[], output_trafo = None, 
               output_size=400, degrees = 10, flip_p = 0.5, 
-              jitter_bcsh=[0.3, 0.3, 0.3, 0.05], overfit=-1, 
+              jitter_bcsh=[0.3, 0.3, 0.3, 0.05],
               squeeze_80_labels_to_40 = True)
   print(ds[0])
   emp = []

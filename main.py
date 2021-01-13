@@ -4,6 +4,7 @@ import sys
 sys.path.insert(0, os.getcwd())
 sys.path.append(os.path.join(os.getcwd() + '/src'))
 
+import time
 import shutil
 import datetime
 import argparse
@@ -120,6 +121,7 @@ if __name__ == "__main__":
   fh.setLevel(logging.DEBUG)
   logger.addHandler(fh)
   
+  # Copy Dataset from Scratch to Nodes SSD
   if env['workstation'] == False:
     for dataset in exp['move_datasets']:
       
@@ -130,13 +132,20 @@ if __name__ == "__main__":
       scratchdir = os.getenv('TMPDIR')
       try:  
         cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
-        print( cmd )
+        st =time.time()
+        rank_zero_info( f'Start moveing dataset-{env_var}: {cmd}')
         os.system(cmd)
-        env[env_var] = str(os.path.join(scratchdir, name))   
-        print(env[env_var] )
+        env[env_var] = str(os.path.join(scratchdir, name))
+        rank_zero_info( f'Finished moveing dataset-{env_var} in {time.time()-st}s')
       except:
-          env[env_var] = p_ycb_new
-          print('Copying data failed')
+          rank_zero_warn( 'ENV Var'+ env_var )
+          env[env_var] = str(os.path.join(scratchdir, name))
+          rank_zero_warn('Copying data failed')
+  
+  if ( exp['trainer'] ).get('gpus', -1):
+    nr = torch.cuda.device_count()
+    exp['trainer']['gpus'] = nr
+    rank_zero_info( 'Set GPU Count for Trainer to {nr}!' )
     
 
   model = Network(exp=exp, env=env)

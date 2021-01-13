@@ -16,9 +16,9 @@ from .helper import Augmentation
 __all__ = ['MLHypersim']
 
 class MLHypersim(data.Dataset):
-    def __init__(self, root='/media/scratch2/jonfrey/datasets/ML-Hypersim/', 
+    def __init__(self, root='/media/scratch2/jonfrey/datasets/mlhypersim/', 
                  mode='train', scenes=[], output_trafo = None, 
-                 output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], overfit=-1):
+                 output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05]):
         """
         Each dataloader loads the full .mat file into memory. 
         For the small dataset size this is perfect.
@@ -31,7 +31,6 @@ class MLHypersim(data.Dataset):
         """
         self._output_size = output_size
         self._mode = mode
-        self._overfit = overfit
         
         self._load(root, mode)
         
@@ -41,10 +40,6 @@ class MLHypersim(data.Dataset):
                                        jitter_bcsh)
         
         self._output_trafo = output_trafo
-        
-        if self._overfit != -1:
-            self._overfit_idx = np.random.randint(0,len(self), (self.overfit))
-        
         # full training dataset with all objects
         # TODO
         #self._weights = pd.read_csv(f'cfg/dataset/ml-hypersim/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
@@ -55,9 +50,7 @@ class MLHypersim(data.Dataset):
         return {}
             
     def __getitem__(self, index):
-        if self._overfit != -1:
-            index = np.random.choice( self._overfit_idx )
-            
+
         with h5py.File(self.image_pths[index], 'r') as f: img = np.array( f['dataset'] )  
         img[img>1] = 1
         img = torch.from_numpy( img ).type(torch.float32).permute(2,0,1) # C H W
@@ -70,11 +63,12 @@ class MLHypersim(data.Dataset):
             img, label = self._augmenter.apply(img, label, only_crop=True)
         else:
             raise Exception('Invalid Dataset Mode')
-                 
+        
+        img_ori = img.clone()
         if self._output_trafo is not None:
             img = self._output_trafo(img)
         
-        return img, label.type(torch.int64)[0,:,:]
+        return img, label.type(torch.int64)[0,:,:], img_ori
     
     def __len__(self):
         return self.length
@@ -82,12 +76,17 @@ class MLHypersim(data.Dataset):
     def _load(self, root, mode):
         self.image_pths = [str(p) for p in Path(root).rglob('*final_hdf5/*color.hdf5')]
         self.label_pths = [i.replace('final_hdf5','geometry_hdf5').replace('color.hdf5','semantic.hdf5') for i in self.image_pths]
+        
+        self.scenes = [str(p).split('/')[-2] for p in Path(root).rglob('*final_hdf5/*color.hdf5')]
+        print(self.scenes)
         self.length = len(self.image_pths)
         
     def _filter_scene(self, scenes):
         pass
 
-if __name__ == '__main__':
+def test():
+    # pytest -q -s src/datasets/ml_hypersim.py
+    
     # Testing
     import imageio
     output_transform = tf.Compose([

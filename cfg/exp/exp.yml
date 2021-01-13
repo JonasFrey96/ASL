@@ -1,4 +1,4 @@
-name: COCO/pretrain_test
+name: COCO/overfit_cocobatches
 timestamp: false
 checkpoint_restore: false
 checkpoint_load: path_to_ckpts
@@ -23,10 +23,11 @@ trainer:
   limit_val_batches: 1000
   limit_test_batches: 1000
   progress_bar_refresh_rate: 1
-  max_epochs: 1
-  gpus: -1
+  max_epochs: 1000
+  gpus: 1
   accelerator: ddp
   profiler: true
+  overfit_batches: 20
 loader:
   pin_memory: true
   batch_size: 8
@@ -50,19 +51,16 @@ d_val:
   name: nyuv2
   mode: val
   output_size: 384
-  overfit: -1
   load_all: false
 d_train:
   name: nyuv2
   mode: train
   output_size: 384
-  overfit: -1
   load_all: false
 d_test:
   name: nyuv2
   mode: val
   output_size: 384
-  overfit: -1
   load_all: false
 cb_early_stopping:
   cfg:
