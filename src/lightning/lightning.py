@@ -76,17 +76,25 @@ class Network(LightningModule):
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
      
     extraction_size = (128,12,12)
-    self._latent_replay_buffer = LatentReplayBuffer(
-      size = extraction_size, 
+    self._lrb = LatentReplayBuffer(
+      size = extraction_size,
+      size_label = (exp['model']['input_size'],exp['model']['input_size']),
       elements = 10, 
       mode = 'LIFO', 
-      bins = self._exp['model']['cfg']['num_classes'], 
-      dtype = self._type)
+      bins = 5,
+      injection_rate= 0.5, 
+      dtype = self._type,
+      device=self.device)
     
+  def forward(self, batch, **kwargs):
+    if kwargs.get('injection', None) is not None:
+      outputs = self.model.injection_forward(
+        x = batch, 
+        injection = kwargs['injection'], 
+        injection_mask = kwargs['injection_mask'])
+    else:
+      outputs = self.model(batch)
     
-
-  def forward(self, batch):
-    outputs = self.model(batch)
     return outputs
     
   def on_train_start(self):
@@ -102,10 +110,26 @@ class Network(LightningModule):
   def training_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]
-    outputs = self(images)
+    BS = images.shape[0]
+    injection, injection_labels, mask_injection = self._lrb(BS, device=images.device)
+    
+    outputs = self(batch = images, 
+      injection = injection, 
+      injection_mask = mask_injection)
+    
+    # set the labels to the stored labels
+    target[mask_injection] = injection[mask_injection]
+    # set the masked image to green
+    outputs['ori_img'][mask_injection][0,:,:] = 0
+    outputs['ori_img'][mask_injection][1,:,:] = 1
+    outputs['ori_img'][mask_injection][0,:,:] = 0
+    
     #_loss = self.criterion(outputs, target)
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1)
-    self._latent_replay_buffer.add(outputs[1][0],0)
+    
+    valid_elements = mask_injection.zero()
+    ele = torch.randint(0, valid_elements.shape[0], (1,))
+    self._lrb.add(x=outputs[1][ele],y=target[ele] ,bin= 0)
     
     self.log('train_loss', loss, on_step=True, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': batch[2] }
@@ -144,6 +168,7 @@ class Network(LightningModule):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
     outputs = self(images)
+    
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
 
     pred = torch.argmax(outputs[0], 1)

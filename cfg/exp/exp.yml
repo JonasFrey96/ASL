@@ -24,7 +24,7 @@ trainer:
   limit_test_batches: 1000
   progress_bar_refresh_rate: 1
   max_epochs: 1000
-  gpus: 1
+  gpus: -1
   accelerator: ddp
   profiler: true
   overfit_batches: 20
@@ -42,6 +42,7 @@ visu:
   test_images: 1
 model:
   name: Fast-SCNN
+  input_size: 384
   cfg:
     num_classes: 40
     aux: false

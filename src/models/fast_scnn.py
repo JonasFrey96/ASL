@@ -61,6 +61,27 @@ class FastSCNN(nn.Module):
       auxout = F.interpolate(auxout, size, mode='bilinear', align_corners=True)
       outputs.append(auxout)
     return tuple(outputs)
+  
+  def injection_forward(self, x, injection, injection_mask):
+    size = x.size()[2:] # 384,384,3 = 442368
+    higher_res_features = self._md['learn_to_down'](x) # BS,64,48,48 = 147456
+    x = self._md['extractor'](higher_res_features) # BS,128,12,12 = 18432 Compression factor of 24
+    x[injection_mask] = injection[injection_mask]
+    extraction = x.clone().detach()
+    
+    x = self._md['fusion'](higher_res_features, x) # BS,128,48,48 = 294912
+    x = self._md['classifier'](x) # BS,40,48,48
+    outputs = []
+    x = F.interpolate(x, size, mode='bilinear', align_corners=True)
+    outputs.append(x)
+    outputs.append(extraction) 
+    
+    if self.aux:
+      auxout = self.auxlayer(higher_res_features)
+      auxout = F.interpolate(auxout, size, mode='bilinear', align_corners=True)
+      outputs.append(auxout)
+    return tuple(outputs)
+  
 
   def freeze_module(self, mask=[False,False,False,False] ):
     for m, mod in zip (mask, self._md.values()):

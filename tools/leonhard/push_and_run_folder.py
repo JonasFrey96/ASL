@@ -12,6 +12,9 @@ python tools/leonhard/push_and_run_folder.py --exp=1 --time=4 --gpus=4 --workers
 
 # FOR COCO:
 python tools/leonhard/push_and_run_folder.py --exp=1 --time=00:30 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=100
+
+# MLhypersim
+python tools/leonhard/push_and_run_folder.py --exp=ml-hypersim --time=4 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=300
 """
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp', default='exp',  required=True,
