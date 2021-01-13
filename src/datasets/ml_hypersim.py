@@ -11,8 +11,12 @@ import os
 from pathlib import Path
 from  PIL import Image
 import h5py
-from .helper import Augmentation
-
+import time
+try:
+    from .helper import Augmentation
+except Exception: #ImportError
+    from helper import Augmentation
+    
 __all__ = ['MLHypersim']
 
 class MLHypersim(data.Dataset):
@@ -33,6 +37,7 @@ class MLHypersim(data.Dataset):
         self._mode = mode
         
         self._load(root, mode)
+        self._filter_scene(scenes)
         
         self._augmenter = Augmentation(output_size,
                                        degrees,
@@ -44,10 +49,6 @@ class MLHypersim(data.Dataset):
         # TODO
         #self._weights = pd.read_csv(f'cfg/dataset/ml-hypersim/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
     
-    @staticmethod
-    def get_classes(mode):
-        # TODO 
-        return {}
             
     def __getitem__(self, index):
 
@@ -73,17 +74,51 @@ class MLHypersim(data.Dataset):
     def __len__(self):
         return self.length
 
-    def _load(self, root, mode):
-        self.image_pths = [str(p) for p in Path(root).rglob('*final_hdf5/*color.hdf5')]
-        self.label_pths = [i.replace('final_hdf5','geometry_hdf5').replace('color.hdf5','semantic.hdf5') for i in self.image_pths]
+    def _load(self, root, mode, train_val_split=0.2):
+        self.image_pths = np.load( 'cfg/dataset/mlhypersim/image_pths.npy').tolist()
+        self.label_pths = np.load( 'cfg/dataset/mlhypersim/label_pths.npy').tolist()
+        self.scenes = np.load( 'cfg/dataset/mlhypersim/scenes.npy').tolist()
         
-        self.scenes = [str(p).split('/')[-2] for p in Path(root).rglob('*final_hdf5/*color.hdf5')]
-        print(self.scenes)
+        # self.image_pths = [str(p) for p in Path(root).rglob('*final_hdf5/*color.hdf5')] # len = 74619
+        # self.image_pths.sort()
+        # self.label_pths = [i.replace('final_hdf5','geometry_hdf5').replace('color.hdf5','semantic.hdf5') for i in self.image_pths]
+        # self.scenes = [p.split('/')[-4] for p in self.image_pths]
+        
+        self.sceneTypes = list(set(self.scenes))
+        self.sceneTypes.sort()
+              
+        # Scene filtering checked by inspection          
+        for sce in self.sceneTypes:
+            images_in_scene = [i for i in self.image_pths if i.find(sce) != -1]
+            k = int( (1-train_val_split)*len(images_in_scene) )
+            if mode == 'train':
+                remove_ls = images_in_scene[k:]
+            elif mode == 'val':
+                remove_ls = images_in_scene[:k]
+            
+            idx = self.image_pths.index( remove_ls[0] )
+            for i in range(len(remove_ls)):
+                del self.image_pths[idx]
+                del self.label_pths[idx]
+                del self.scenes[idx]
         self.length = len(self.image_pths)
-        
-    def _filter_scene(self, scenes):
-        pass
 
+    @staticmethod
+    def get_classes():
+        scenes = np.load( 'cfg/dataset/mlhypersim/scenes.npy').tolist()
+        sceneTypes =  list(set(scenes))
+        sceneTypes.sort()
+        return sceneTypes
+    
+    def _filter_scene(self, scenes):
+        images_idx = [] 
+        for sce in scenes:
+            images_idx += [i for i in range(len(self.image_pths)) if (self.image_pths[i]).find(sce) != -1] 
+        idx = np.array(images_idx)
+        self.image_pths = (np.array( self.image_pths )[ idx ]).tolist()
+        self.label_pths = (np.array( self.label_pths )[ idx ]).tolist()
+        self.scenes = (np.array( self.scenes )[ idx ]).tolist()
+        
 def test():
     # pytest -q -s src/datasets/ml_hypersim.py
     
@@ -94,7 +129,7 @@ def test():
     ])
     dataset = MLHypersim(
         mode='train',
-        scenes=[],
+        scenes=['ai_001_002', 'ai_001_003', 'ai_001_004', 'ai_001_005', 'ai_001_006'],
         output_trafo = None, 
         output_size=400, 
         degrees = 10, 
@@ -107,3 +142,6 @@ def test():
     img = np.uint8( img.permute(1,2,0).numpy()*255 ) # H W C
     imageio.imwrite('/home/jonfrey/tmp/img.png', img)
     imageio.imwrite('/home/jonfrey/tmp/label.png', label)
+    
+if __name__ == "__main__":
+    test()

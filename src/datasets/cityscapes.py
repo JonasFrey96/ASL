@@ -6,9 +6,12 @@ import torch
 import torch.utils.data as data
 from torchvision import transforms
 from PIL import Image, ImageOps, ImageFilter
-from .helper import Augmentation
 
-
+try:
+    from .helper import Augmentation
+except Exception: #ImportError
+    from helper import Augmentation
+    
 __all__ = ['Cityscapes']
 
 class Cityscapes(data.Dataset):
