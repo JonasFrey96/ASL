@@ -9,6 +9,9 @@ python tools/leonhard/push_and_run_folder.py --exp=1 --time=00:30 --gpus=1 --mem
 python tools/leonhard/push_and_run_folder.py --exp=1 --time=00:30 --gpus=1 --mem=10240 --workers=20 --ram=60 --fake=True
 
 python tools/leonhard/push_and_run_folder.py --exp=1 --time=4 --gpus=4 --workers=20 --ram=60
+
+# FOR COCO:
+python tools/leonhard/push_and_run_folder.py --exp=1 --time=00:30 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=100
 """
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp', default='exp',  required=True,
@@ -40,7 +43,7 @@ elif  isinstance( args.time, str):
   s1 = args.time
 else:
   raise Exception
-scratch = int( int(args.scratch) / w)
+scratch = int( int(args.scratch)*1000 / w)
 fake = args.fake
  
 # Get all model_paths

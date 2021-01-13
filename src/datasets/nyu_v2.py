@@ -15,7 +15,7 @@ __all__ = ['NYUv2']
 class NYUv2(data.Dataset):
     def __init__(self, root='/media/scratch1/jonfrey/datasets/NYU_v2', 
                  mode='train', scenes=[], output_trafo = None, 
-                 output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], overfit=-1, load_all=True):
+                 output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], load_all=True):
         """
         Each dataloader loads the full .mat file into memory. 
         For the small dataset size this is perfect.
@@ -37,7 +37,6 @@ class NYUv2(data.Dataset):
         """
         self._output_size = output_size
         self._mode = mode
-        self._overfit = overfit
         self._load_all = load_all
         
         if self._load_all:
@@ -53,10 +52,7 @@ class NYUv2(data.Dataset):
                                        jitter_bcsh)
         
         self._output_trafo = output_trafo
-        
-        if self._overfit != -1:
-            self._overfit_idx = np.random.randint(0,len(self), (self.overfit))
-        
+            
         # full training dataset with all objects
         self._weights = pd.read_csv(f'cfg/dataset/nyu/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
     
@@ -67,9 +63,6 @@ class NYUv2(data.Dataset):
         return np.unique(sceneTypes, return_index=True)
             
     def __getitem__(self, index):
-        if self._overfit != -1:
-            index = np.random.choice( self._overfit_idx )
-            
         if self._load_all:
             img = torch.from_numpy(self.images[index]/255) # C H W 
             label = torch.from_numpy(np.array( self.labels[index]) )[None,:,:] # C H W 
@@ -90,11 +83,12 @@ class NYUv2(data.Dataset):
         else:
             raise Exception('Invalid Dataset Mode')
         
+        img_ori = img.clone()
         if self._output_trafo is not None:
             img = self._output_trafo(img)
         
         # add standard data augmentation options
-        return img, label.type(torch.int64)[0,:,:]-1
+        return img, label.type(torch.int64)[0,:,:]-1, img_ori
         
     def __len__(self):
         return self.length
