@@ -36,6 +36,8 @@ from loss import  MixSoftmaxCrossEntropyLoss, MixSoftmaxCrossEntropyOHEMLoss
 #from .metrices import IoU, PixAcc
 from visu import Visualizer
 from lightning import meanIoUTorchCorrect
+from latent_replay import LatentReplayBuffer
+
 __all__ = ['Network']
 
 class Network(LightningModule):
@@ -71,6 +73,15 @@ class Network(LightningModule):
     self.logged_images_test = 0
     
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
+    self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
+     
+    extraction_size = (128,12,12)
+    self._latent_replay_buffer = LatentReplayBuffer(
+      size = extraction_size, 
+      elements = 10, 
+      mode = 'LIFO', 
+      bins = self._exp['model']['cfg']['num_classes'], 
+      dtype = self._type)
 
   def forward(self, batch):
     outputs = self.model(batch)
@@ -91,8 +102,9 @@ class Network(LightningModule):
     target = batch[1]
     outputs = self(images)
     #_loss = self.criterion(outputs, target)
-    loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
-
+    loss = F.cross_entropy(outputs[0], target, ignore_index=-1)
+    self._latent_replay_buffer.add(outputs[1][0],0)
+    
     self.log('train_loss', loss, on_step=True, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target}
   
@@ -104,7 +116,8 @@ class Network(LightningModule):
       self.logged_images_train += 1
       self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
       self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self.logged_images_train}', seg=outputs['target'][0], method='left')
-
+    
+    
     if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 
       pred = torch.argmax(outputs['pred'], 1)
       target = outputs['target']
@@ -176,7 +189,6 @@ class Network(LightningModule):
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
     outputs = self(images) 
     pred = torch.argmax(outputs[0], 1)
-   
     return {'pred': pred, 'target': target}
 
   def test_step_end( self, outputs):

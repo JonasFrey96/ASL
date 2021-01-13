@@ -6,6 +6,8 @@ import torch
 import torch.utils.data as data
 from torchvision import transforms
 from PIL import Image, ImageOps, ImageFilter
+from .helper import Augmentation
+
 
 __all__ = ['Cityscapes']
 

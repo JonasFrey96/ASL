@@ -34,14 +34,18 @@ class FastSCNN(nn.Module):
             )
 
     def forward(self, x):
-        size = x.size()[2:]
-        higher_res_features = self.learning_to_downsample(x)
-        x = self.global_feature_extractor(higher_res_features)
-        x = self.feature_fusion(higher_res_features, x)
-        x = self.classifier(x)
+        size = x.size()[2:] # 384,384,3 = 442368
+        higher_res_features = self.learning_to_downsample(x) # BS,64,48,48 = 147456
+        x = self.global_feature_extractor(higher_res_features) # BS,128,12,12 = 18432 Compression factor of 24
+        extraction = x.clone().detach()
+        
+        x = self.feature_fusion(higher_res_features, x) # BS,128,48,48 = 294912
+        x = self.classifier(x) # BS,40,48,48
         outputs = []
         x = F.interpolate(x, size, mode='bilinear', align_corners=True)
         outputs.append(x)
+        outputs.append(extraction) 
+        
         if self.aux:
             auxout = self.auxlayer(higher_res_features)
             auxout = F.interpolate(auxout, size, mode='bilinear', align_corners=True)
@@ -138,6 +142,7 @@ class PyramidPooling(nn.Module):
         return F.interpolate(x, size, mode='bilinear', align_corners=True)
 
     def forward(self, x):
+        # BS, 128, 12, 12
         size = x.size()[2:]
         feat1 = self.upsample(self.conv1(self.pool(x, 1)), size)
         feat2 = self.upsample(self.conv2(self.pool(x, 2)), size)
@@ -158,6 +163,7 @@ class LearningToDownsample(nn.Module):
         self.dsconv2 = _DSConv(dw_channels2, out_channels, 2)
 
     def forward(self, x):
+        # BS,3,384,384
         x = self.conv(x)
         x = self.dsconv1(x)
         x = self.dsconv2(x)
@@ -183,6 +189,7 @@ class GlobalFeatureExtractor(nn.Module):
         return nn.Sequential(*layers)
 
     def forward(self, x):
+        # BS, 64, 24, 24
         x = self.bottleneck1(x)
         x = self.bottleneck2(x)
         x = self.bottleneck3(x)
@@ -230,6 +237,7 @@ class Classifer(nn.Module):
         )
 
     def forward(self, x):
+        # BS, 40, 48, 48
         x = self.dsconv1(x)
         x = self.dsconv2(x)
         x = self.conv(x)

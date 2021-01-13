@@ -120,7 +120,24 @@ if __name__ == "__main__":
   fh.setLevel(logging.DEBUG)
   logger.addHandler(fh)
   
-
+  if env['workstation'] == False:
+    for dataset in exp['move_datasets']:
+      
+      env_var = dataset['env_var']
+      tar = os.path.join( env[env_var],f'{env_var}.tar')
+      
+      name = (tar.split('/')[-1]).split('.')[0]
+      scratchdir = os.getenv('TMPDIR')
+      try:  
+        cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
+        print( cmd )
+        os.system(cmd)
+        env[env_var] = str(os.path.join(scratchdir, name))   
+        print(env[env_var] )
+      except:
+          env[env_var] = p_ycb_new
+          print('Copying data failed')
+    
 
   model = Network(exp=exp, env=env)
 
@@ -170,8 +187,6 @@ if __name__ == "__main__":
       callbacks=cb_ls)
 
   
-  
-
   #  log_dir=None, comment='', purge_step=None, max_queue=10,
   #                flush_secs=120, filename_suffix=''
                  
