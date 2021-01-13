@@ -44,6 +44,7 @@ visu:
 
 model:
   name: Fast-SCNN
+  input_size: 384
   cfg:
     num_classes: 19 #Cityscapes19
     aux: false

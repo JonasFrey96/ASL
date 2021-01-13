@@ -47,6 +47,7 @@ visu:
 
 model:
   name: Fast-SCNN
+  input_size: 384
   cfg:
     num_classes: 40
     aux: false

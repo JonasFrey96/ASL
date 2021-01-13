@@ -55,7 +55,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/ml-hypersim/exp.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/ml-hypersim/ml-hypersim.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')

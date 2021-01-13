@@ -69,7 +69,7 @@ class MLHypersim(data.Dataset):
         if self._output_trafo is not None:
             img = self._output_trafo(img)
         
-        return img, label.type(torch.int64)[0,:,:], img_ori
+        return img, label.type(torch.int64)[0,:,:] , img_ori
     
     def __len__(self):
         return self.length
@@ -118,6 +118,7 @@ class MLHypersim(data.Dataset):
         self.image_pths = (np.array( self.image_pths )[ idx ]).tolist()
         self.label_pths = (np.array( self.label_pths )[ idx ]).tolist()
         self.scenes = (np.array( self.scenes )[ idx ]).tolist()
+        self.length = len(self.image_pths)
         
 def test():
     # pytest -q -s src/datasets/ml_hypersim.py
