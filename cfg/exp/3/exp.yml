@@ -50,19 +50,16 @@ d_val:
   name: nyuv2
   mode: val
   output_size: 384
-  overfit: -1
   load_all: false
 d_train:
   name: nyuv2
   mode: train
   output_size: 384
-  overfit: -1
   load_all: false
 d_test:
   name: nyuv2
   mode: val
   output_size: 384
-  overfit: -1
   load_all: false
 cb_early_stopping:
   cfg:

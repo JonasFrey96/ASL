@@ -54,7 +54,6 @@ d_val:
   crop_size: 768
   split: 'val'
   mode: 'val'
-  overfit: -1
 
 d_train:
   name: cityscapes
@@ -62,7 +61,6 @@ d_train:
   crop_size: 768
   split: 'train'
   mode: 'train'
-  overfit: -1
 
 d_test:
   name: cityscapes
@@ -70,7 +68,6 @@ d_test:
   crop_size: 768
   split: 'val'
   mode: 'testval'
-  overfit: -1
 
 
 cb_early_stopping:
