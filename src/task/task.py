@@ -38,6 +38,15 @@ nyu_template_dict = {
     'load_all': True,
     'scenes': []
 }
+
+coco_template_dict = { 
+    'name': 'coco',
+    'mode': 'train', 
+    'output_size': 384,
+    'scenes': [],
+    'squeeze_80_labels_to_40': True,
+}
+
 nyu_scene_names, nyu_class_counts = NYUv2.get_classes('train')
 
 class TaskCreator():
@@ -58,6 +67,8 @@ class TaskCreator():
       self._getAll()
     elif mode == 'FourCategories':
       self._get4Categories()
+    elif mode == 'pretrainCOCO':
+      self._pretrainCOCO()
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
@@ -146,7 +157,23 @@ class TaskCreator():
         eval_tasks.append( eval_task )
         
       self._eval_lists.append( eval_tasks ) 
-      
+  
+  def _pretrainCOCO(self):
+    train = copy.deepcopy( coco_template_dict )
+    train['mode'] = 'train'
+    val = copy.deepcopy( coco_template_dict )
+    train['mode'] = 'val'
+    
+    t = Task(name = f'Task_TrainCOCO',
+          dataset_train_cfg= train,
+          dataset_val_cfg= val)
+    self._task_list.append(t)
+    
+    eval_task = EvalTask(
+          name = f'Eval_COCO_with_val_set',
+          dataset_test_cfg=val)
+    self._eval_lists.append( [eval_task ] ) 
+  
   def _getTaskSingleScenesCountsDescending(self):
     # TODO: Refactor nameing and make getTask- Method more generic. 
     # dealing with different datasets
@@ -217,8 +244,7 @@ if __name__ == "__main__":
   print(tc)
   tc = TaskCreator(mode= 'FourCategories')
   print(tc) 
-  # for task, eval_lists in tc:
-  #   print(task.name)
-  
-  
+  tc = TaskCreator(mode= 'pretrainCOCO')
+  print(tc) 
+ 
   

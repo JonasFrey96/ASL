@@ -9,7 +9,8 @@ import PIL
 import random
 import scipy
 import os
-
+from .helper import Augmentation
+__all__ = ['NYUv2']
 
 class NYUv2(data.Dataset):
     def __init__(self, root='/media/scratch1/jonfrey/datasets/NYU_v2', 
@@ -35,11 +36,10 @@ class NYUv2(data.Dataset):
             'study', 'study_room'
         """
         self._output_size = output_size
-        self._degrees = degrees
-        self._flip_p = flip_p
         self._mode = mode
         self._overfit = overfit
         self._load_all = load_all
+        
         if self._load_all:
             self._load(root, mode)
             self._filter_scene(scenes)
@@ -47,17 +47,10 @@ class NYUv2(data.Dataset):
             self._load_sparse(root, mode)
             self._filter_scene_sparse(scenes)
         
-        # training transforms
-        self._crop = tf.RandomCrop( self._output_size  )
-        self._rot = tf.RandomRotation(degrees = 10, resample = PIL.Image.BILINEAR)
-        self._flip = tf.RandomHorizontalFlip( p=self._flip_p )
-        self._jitter = tf.ColorJitter(
-            brightness=jitter_bcsh[0],
-            contrast=jitter_bcsh[1],
-            saturation=jitter_bcsh[2],
-            hue=jitter_bcsh[3])
-        # val transforms 
-        self._crop_center = tf.CenterCrop(self._output_size)
+        self._augmenter = Augmentation(output_size,
+                                       degrees,
+                                       flip_p,
+                                       jitter_bcsh)
         
         self._output_trafo = output_trafo
         
@@ -83,45 +76,26 @@ class NYUv2(data.Dataset):
         else:
             idx = self.filtered_index[index]
             
-            label = torch.from_numpy(self.labels[index])[None,:,:]
+            label = (torch.from_numpy(self.labels[index])[None,:,:]).permute(0,2,1) # C H W 
             img =  np.asarray( self._file['images'][idx], dtype=np.float32)
             
             img = torch.from_numpy(img/255).permute(0,2,1)
-            label = torch.from_numpy(label)[None,:,:].permute(0,2,1) # C H W 
+            
+            # label = torch.from_numpy(label)[None,:,:]
         
-        img, label = self._augment(img, label)
+        if self._mode == 'train':
+            img, label = self._augmenter.apply(img, label)
+        elif self._mode == 'val' or self._mode == 'test':
+            img, label = self._augmenter.apply(img, label, only_crop=True)
+        else:
+            raise Exception('Invalid Dataset Mode')
         
         if self._output_trafo is not None:
             img = self._output_trafo(img)
         
         # add standard data augmentation options
         return img, label.type(torch.int64)[0,:,:]-1
-    
-    def _augment(self, img, label):
-        if self._mode == 'train':
-            # Color Jitter
-            img = self._jitter(img)
-            
-            # Crop
-            i, j, h, w = self._crop.get_params( img, (self._output_size, self._output_size) )
-            img = F.crop(img, i, j, h, w)
-            label = F.crop(label, i, j, h, w)
-            
-            # Rotate
-            angle = self._rot.get_params( degrees = (self._degrees,self._degrees) )
-            img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=None)
-            label = F.rotate(label, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
-            
-            # Flip
-            if torch.rand(1) < 0.5:
-                img = F.hflip(img)
-                label = F.hflip(label)
-        else:
-            # Performes center crop 
-            img = self._crop_center( img )
-            label = self._crop_center( label )
-        return img, label
-    
+        
     def __len__(self):
         return self.length
 

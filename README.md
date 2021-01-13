@@ -99,7 +99,7 @@ Also a logfile for tracking the joint results is created at the beginning.
 
 ```
 model.set_task( 1 )
-   -> sets up dataloader correctly
+	 -> sets up dataloader correctly
 	 -> maybe updates the optimizer
 	 -> sets up  tensorboard logfile
 ```
@@ -109,7 +109,33 @@ model.set_task( 1 )
 Rougly running at 1.8 it/s 
 -> 57.6 Images/s 
 
+## Datasets:
 
+
+|-----------------|---------------|----------------------------------------|
+| Dataset         | Parameters    | Values                                 |
+|-----------------|---------------|----------------------------------------|
+| **NYU_v2**      | Images Train: | 1449 (total)                           |
+|                 | Images Val:   |                                        |
+|                 | Annotations:  | NYU-40                                 |
+|                 | Optical Flow: | True                                   |
+|                 | Depth:        | True                                   |
+|                 | Total Size:   | 3.7GB                                  |
+| **ML-Hypersim** | Images Train: | 74619 (total)                          |
+|                 | Images Val:   |                                        |
+|                 | Annotations:  | NYU-40                                 |
+|                 | Optical Flow: | False                                  |
+|                 | Depth:        | True                                   |
+|                 | Total Size:   | 247GB                                  |
+| **COCO 2014**   | Images Train: | 330K >200K labeled                     |
+|                 | Images Val:   |                                        |
+|                 | Annotations:  | Object cat 90 Classes (80 used)        |
+|                 | Optical Flow: | False                                  |
+|                 | Depth:        | False                                  |
+|                 | Total Size:   | 20GB                                   |
+
+
+		
 # Acknowledgement
 Special thanks to:
 

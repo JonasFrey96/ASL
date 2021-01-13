@@ -52,7 +52,7 @@ model:
     aux: false
 
 task_generator:
-  mode: SingleScenesCountsDescending
+  mode: All
 
 d_val:
   name: nyuv2
