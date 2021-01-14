@@ -66,14 +66,14 @@ class FastSCNN(nn.Module):
     size = x.size()[2:] # 384,384,3 = 442368
     higher_res_features = self._md['learn_to_down'](x) # BS,64,48,48 = 147456
     x = self._md['extractor'](higher_res_features) # BS,128,12,12 = 18432 Compression factor of 24
-    x[injection_mask] = injection[injection_mask]
-    extraction = x.clone().detach()
+    x2 = x*(injection_mask==False)[:,None,None,None].repeat(1,128,12,12) + injection * injection_mask[:,None,None,None].repeat(1,128,12,12)
+    extraction = x2.clone().detach()
     
-    x = self._md['fusion'](higher_res_features, x) # BS,128,48,48 = 294912
-    x = self._md['classifier'](x) # BS,40,48,48
+    x2 = self._md['fusion'](higher_res_features, x2) # BS,128,48,48 = 294912
+    x2 = self._md['classifier'](x2) # BS,40,48,48
     outputs = []
-    x = F.interpolate(x, size, mode='bilinear', align_corners=True)
-    outputs.append(x)
+    x2 = F.interpolate(x2, size, mode='bilinear', align_corners=True)
+    outputs.append(x2)
     outputs.append(extraction) 
     
     if self.aux:
