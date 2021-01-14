@@ -6,8 +6,12 @@
 	- [1.2. Use case](#12-use-case)
 	- [1.3. First Step Dataset](#13-first-step-dataset)
 	- [1.4. Implementation](#14-implementation)
-		- [1.4.1. Project:](#141-project)
-	- [1.5. Getting started:](#15-getting-started)
+		- [1.4.1. Project Structure](#141-project-structure)
+	- [1.5. Getting started](#15-getting-started)
+		- [Clone repo to home](#clone-repo-to-home)
+		- [Setup conda env](#setup-conda-env)
+		- [Experiment defintion](#experiment-defintion)
+		- [Running the experiment](#running-the-experiment)
 		- [1.5.1. Tasks and Evaluation](#151-tasks-and-evaluation)
 	- [1.6. Supervision Options:](#16-supervision-options)
 	- [Continual Learning Options:](#continual-learning-options)
@@ -75,7 +79,7 @@ Learning rate scheduling:
 - Since we are currently looking at the performance difference between naive learning and a smarter continual learning approach and we want to study the forgetting in the network we don't use a learning rate scheduler.  
 
 
-### 1.4.1. Project:
+### 1.4.1. Project Structure
 The repository is organized in the following way:  
 
 
@@ -97,9 +101,58 @@ The repository is organized in the following way:
 	- **natrix/**
 - main.py
 
-## 1.5. Getting started:
-The conda env file is located at cfg/conda/track.yml.  
+## 1.5. Getting started
+
+### Clone repo to home
+```
+cd ~
+git clone https://github.com/JonasFrey96/ASL.git
+```
+
+### Setup conda env  
+The conda env file is located at `cfg/conda/track.yml`.  
 This file is currently not a sparse version but includes all the packages I use for debugging.  
+```
+conda env create -f cfg/conda/track.yml
+``` 
+```
+conda activate track3
+```
+
+### Experiment defintion
+Each experiment is defined by two files:  
+
+
+1. ```env```
+Contains all paths that are user depended for external datasets.
+
+| key            | function                                                |
+|----------------|---------------------------------------------------------|
+| workstation    | Set true if no data needs to be transfered for training |
+| base           | path to where to log the experiments                    |
+| cityscapes     | path to dataset                                         |
+| nyuv2          | path to dataset                                         |
+| coco           | path to dataset                                         |
+| mlhypersim     | path to dataset                                         |
+| tramac_weights | path to pretrained weights fast_scnn_citys.pth          |
+
+1. ```exp```
+Contains all settings for the experiment.
+
+
+### Running the experiment
+Simply pass the correct `exp` and `env` yaml files.  
+```
+python main.py --exp=cfg/exp/exp.yml --env=cfg/env/env.yml
+```
+
+If you develop on a workstation and want to easily push to leonhard i created a small script `tools/leonhard/push_and_run_folder.py`  
+The script will schedule all experiment files located in the folder.  
+```
+python tools/leonhard/push_and_run_folder.py --exp=ml-hypersim --time=4 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=300
+```
+It uses the `tools/leonhard/submit.sh` script to schedule the job.
+
 
 ### 1.5.1. Tasks and Evaluation
 A **Task** is split partioned as follow:  

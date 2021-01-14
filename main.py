@@ -128,28 +128,32 @@ if __name__ == "__main__":
   # Copy Dataset from Scratch to Nodes SSD
   if env['workstation'] == False:
     for dataset in exp['move_datasets']:
-      
-      env_var = dataset['env_var']
-      tar = os.path.join( env[env_var],f'{env_var}.tar')
-      
-      name = (tar.split('/')[-1]).split('.')[0]
       scratchdir = os.getenv('TMPDIR')
-      try:  
-        cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
-        st =time.time()
-        rank_zero_info( f'Start moveing dataset-{env_var}: {cmd}')
-        os.system(cmd)
-        env[env_var] = str(os.path.join(scratchdir, name))
-        rank_zero_info( f'Finished moveing dataset-{env_var} in {time.time()-st}s')
-      except:
-          rank_zero_warn( 'ENV Var'+ env_var )
+      print( 'scratchdir:', scratchdir, 'dataset:', dataset['env_var'])
+      if not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ):
+        
+        env_var = dataset['env_var']
+        tar = os.path.join( env[env_var],f'{env_var}.tar')
+        
+        name = (tar.split('/')[-1]).split('.')[0]
+        try:  
+          cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
+          st =time.time()
+          rank_zero_info( f'Start moveing dataset-{env_var}: {cmd}')
+          os.system(cmd)
           env[env_var] = str(os.path.join(scratchdir, name))
-          rank_zero_warn('Copying data failed')
+          rank_zero_info( f'Finished moveing dataset-{env_var} in {time.time()-st}s')
+        except:
+            rank_zero_warn( 'ENV Var'+ env_var )
+            env[env_var] = str(os.path.join(scratchdir, name))
+            rank_zero_warn('Copying data failed')
+      else:
+        print('Path already exists')
   
   if ( exp['trainer'] ).get('gpus', -1):
     nr = torch.cuda.device_count()
     exp['trainer']['gpus'] = nr
-    rank_zero_info( 'Set GPU Count for Trainer to {nr}!' )
+    rank_zero_info( f'Set GPU Count for Trainer to {nr}!' )
     
 
   model = Network(exp=exp, env=env)
