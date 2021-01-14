@@ -8,15 +8,15 @@
 	- [1.4. Implementation](#14-implementation)
 		- [1.4.1. Project Structure](#141-project-structure)
 	- [1.5. Getting started](#15-getting-started)
-		- [Clone repo to home](#clone-repo-to-home)
-		- [Setup conda env](#setup-conda-env)
-		- [Experiment defintion](#experiment-defintion)
-		- [Running the experiment](#running-the-experiment)
-		- [1.5.1. Tasks and Evaluation](#151-tasks-and-evaluation)
-	- [1.6. Supervision Options:](#16-supervision-options)
-	- [Continual Learning Options:](#continual-learning-options)
-	- [1.7. Scaling performance:](#17-scaling-performance)
-	- [1.8. Datasets:](#18-datasets)
+		- [1.5.1. Clone repo to home](#151-clone-repo-to-home)
+		- [1.5.2. Setup conda env](#152-setup-conda-env)
+		- [1.5.3. Experiment defintion](#153-experiment-defintion)
+		- [1.5.4. Running the experiment](#154-running-the-experiment)
+		- [1.5.5. Tasks and Evaluation](#155-tasks-and-evaluation)
+	- [1.6. Supervision Options](#16-supervision-options)
+	- [1.7. Continual Learning Options](#17-continual-learning-options)
+	- [1.8. Scaling performance](#18-scaling-performance)
+	- [1.9. Datasets](#19-datasets)
 - [2. Acknowledgement](#2-acknowledgement)
 
 ## 1.1. Challenge
@@ -103,13 +103,13 @@ The repository is organized in the following way:
 
 ## 1.5. Getting started
 
-### Clone repo to home
+### 1.5.1. Clone repo to home
 ```
 cd ~
 git clone https://github.com/JonasFrey96/ASL.git
 ```
 
-### Setup conda env  
+### 1.5.2. Setup conda env  
 The conda env file is located at `cfg/conda/track.yml`.  
 This file is currently not a sparse version but includes all the packages I use for debugging.  
 ```
@@ -119,7 +119,7 @@ conda env create -f cfg/conda/track.yml
 conda activate track3
 ```
 
-### Experiment defintion
+### 1.5.3. Experiment defintion
 Each experiment is defined by two files:  
 
 
@@ -140,7 +140,7 @@ Contains all paths that are user depended for external datasets.
 Contains all settings for the experiment.
 
 
-### Running the experiment
+### 1.5.4. Running the experiment
 Simply pass the correct `exp` and `env` yaml files.  
 ```
 python main.py --exp=cfg/exp/exp.yml --env=cfg/env/env.yml
@@ -154,7 +154,7 @@ python tools/leonhard/push_and_run_folder.py --exp=ml-hypersim --time=4 --gpus=4
 It uses the `tools/leonhard/submit.sh` script to schedule the job.
 
 
-### 1.5.1. Tasks and Evaluation
+### 1.5.5. Tasks and Evaluation
 A **Task** is split partioned as follow:  
 ```
 	1. Training Task  
@@ -167,12 +167,12 @@ A **Task** is split partioned as follow:
 A **Task** does not include any information about the training procedure itself.
 
 
-**Logging**:  
+**Logging**  
 For each task a seperate tensorboard logfile is created.  
 Also a logfile for tracking the joint results over the full training procedure is generated.  
 
 
-## 1.6. Supervision Options:
+## 1.6. Supervision Options  
 To utilize the unlabeled data we have a look into the following aspects:
 
 | Method                   | Description                                                         |
@@ -182,7 +182,7 @@ To utilize the unlabeled data we have a look into the following aspects:
 | **Optical Flow**         | Optical Flow directly relates semantic intra-frame segmentation     |
 | **Depth Data**           | Semantic segmentation aligns with frames                            |
 
-## Continual Learning Options: 
+## 1.7. Continual Learning Options  
 We will focus on latent memory replay to avoid catastrophic forgetting initially.
 
 Other options:
@@ -190,13 +190,13 @@ Other options:
 - Increasing model complexity
 - Generative replay
 
-## 1.7. Scaling performance:
+## 1.8. Scaling performance  
 4 1080Ti GPUs 20 Cores BS 8 (effective BS 32)  
 Rougly running at 1.8 it/s  
 -> 57.6 Images/s  
 
 
-## 1.8. Datasets:
+## 1.9. Datasets  
 
 | Dataset         | Parameters    | Values                                 |
 |-----------------|---------------|----------------------------------------|
