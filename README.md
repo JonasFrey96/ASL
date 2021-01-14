@@ -205,12 +205,14 @@ Rougly running at 1.8 it/s
 |                 | Annotations:  | NYU-40                                 |
 |                 | Optical Flow: | True                                   |
 |                 | Depth:        | True                                   |
+| | Resolution: | 640 × 480 |
 |                 | Total Size:   | 3.7GB                                  |
 | **ML-Hypersim** | Images Train: | 74619 (total)                          |
 |                 | Images Val:   |                                        |
 |                 | Annotations:  | NYU-40                                 |
 |                 | Optical Flow: | False                                  |
 |                 | Depth:        | True                                   |
+| | Resolution: | 1024×768 |
 |                 | Total Size:   | 247GB                                  |
 | **COCO 2014**   | Images Train: | 330K >200K labeled                     |
 |                 | Images Val:   |                                        |
