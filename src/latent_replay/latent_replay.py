@@ -68,7 +68,7 @@ class LatentReplayBuffer(nn.Module):
       self.bins[bin].y[idxs] = y
       self.bins[bin].valid[idxs] = True
     else:
-      ran = randint(0,self._max_elements)
+      ran = randint(0,self._max_elements-1)
       self.bins[bin].x[ran] = x
       self.bins[bin].y[ran] = y
       self.bins[bin].valid[ran] = True
@@ -98,9 +98,10 @@ class LatentReplayBuffer(nn.Module):
       return injection, injection_labels, injection_mask
     else:
       if self._injections_rate < 1:
-        injection_mask = torch.bernoulli( torch.ones(BS)*self._injections_rate , device=device)
+        injection_mask = torch.randint(0,10000,(BS,),device=device) > float(self._injections_rate*10000)
+        #injection_mask = torch.bernoulli( torch.ones(BS)*self._injections_rate)
       else:
-        idx = torch.tensor( np.random.choice(BS, self._injections_rate, replace=False))
+        idx = torch.range(BS,dtype=torch.int64, device=device).permute()[:self._injections_rate]
         injection_mask[idx] = True
         
     # fill the injection with random samples.
