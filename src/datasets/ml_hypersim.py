@@ -78,6 +78,8 @@ class MLHypersim(data.Dataset):
         self.image_pths = np.load( 'cfg/dataset/mlhypersim/image_pths.npy').tolist()
         self.label_pths = np.load( 'cfg/dataset/mlhypersim/label_pths.npy').tolist()
         self.scenes = np.load( 'cfg/dataset/mlhypersim/scenes.npy').tolist()
+        self.image_pths = [ os.path.join(root,i) for i in self.image_pths]
+        self.label_pths = [ os.path.join(root,i) for i in self.label_pths]
         
         # self.image_pths = [str(p) for p in Path(root).rglob('*final_hdf5/*color.hdf5')] # len = 74619
         # self.image_pths.sort()
