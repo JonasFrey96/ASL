@@ -158,8 +158,9 @@ class meanIoUTorchCorrect(Metric):
           union = torch.logical_or(p_c, t_c).sum()
           if union != 0:
               ious[c] = intersection / union
-      self.iou_sum += (ious[ious!=-1]).sum()/((ious!=-1).sum())
-      self.batches += 1
+      if (ious!=-1).sum() != 0:
+        self.iou_sum += (ious[ious!=-1]).sum()/((ious!=-1).sum())
+        self.batches += 1
 
   def compute(self):
     """Gets the current evaluation result.
@@ -169,6 +170,10 @@ class meanIoUTorchCorrect(Metric):
         pixAcc and mIoU
     """
     # synchronizes accross threads
+    if self.batches == 0:
+      self.iou_sum[0] = 0.0
+      return self.iou_sum
+    
     return self.iou_sum / (self.batches+ EPS)
 
 class PixAccTorch(Metric):

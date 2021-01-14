@@ -194,6 +194,9 @@ class Network(LightningModule):
       target_c[0] = target_c[0] +1
       self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
       self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right_{self.logged_images_val}', seg=target_c[0], method='left')
+      self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
+      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
+      
       
     self.val_mIoU(pred,target)
     # calculates acc only for valid labels
