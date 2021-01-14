@@ -19,15 +19,17 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 50
-  limit_val_batches: 50
-  limit_test_batches: 50
+  limit_train_batches: 100
+  limit_val_batches: 10
+  limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  # check_val_every_n_epoch: 1
-  max_epochs: 10
+  check_val_every_n_epoch: 10
+  max_epochs: 100
   gpus: -1
   accelerator: ddp
   profiler: true
+  track_grad_norm: 2
+
 loader:
   pin_memory: true
   batch_size: 8
@@ -35,7 +37,7 @@ loader:
   shuffle: true
   num_workers: 8
 visu:
-  every_n_epochs: 10
+  every_n_epochs: 1
   log_training_metric_every_n_epoch: 50
   train_images: 1
   val_images: 1
@@ -48,21 +50,30 @@ model:
     aux: false
 task_generator:
   mode: mlhypersim_random10
-d_val:
-  name: nyuv2
-  mode: val
-  output_size: 384
-  load_all: false
-d_train:
-  name: nyuv2
-  mode: train
-  output_size: 384
-  load_all: false
-d_test:
-  name: nyuv2
-  mode: val
-  output_size: 384
-  load_all: false
+latent_replay_buffer:
+  active: True
+  cfg:
+    elements: 20
+    bins: 5
+    injection_rate: 8
+    mode: 'LIFO'
+
+# d_val:
+#   name: nyuv2
+#   mode: val
+#   output_size: 384
+#   load_all: false
+# d_train:
+#   name: nyuv2
+#   mode: train
+#   output_size: 384
+#   load_all: false
+# d_test:
+#   name: nyuv2
+#   mode: val
+#   output_size: 384
+#   load_all: false
+
 cb_early_stopping:
   cfg:
     monitor: val_loss_epoch

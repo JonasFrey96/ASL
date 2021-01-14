@@ -66,7 +66,11 @@ class TaskCreator():
   This object might be passed to an Task executor with the model
   and the trainer or simply iterated over in a for loop!
   """
-  def __init__(self, mode= 'SingleScenesCountsDescending'):
+  def __init__(self, mode= 'SingleScenesCountsDescending', output_size=384):
+    nyu_template_dict['output_size'] = output_size
+    coco_template_dict['output_size'] = output_size 
+    mlhypersim_template_dict['output_size'] = output_size
+    
     self._task_list = []
     self._eval_lists = []
     

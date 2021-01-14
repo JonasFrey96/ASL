@@ -30,6 +30,8 @@ from task import TaskCreator
 from visu import MainVisualizer
 import numpy as np
 
+from pytorch_lightning.loggers.neptune import NeptuneLogger
+
 
 def file_path(string):
   if os.path.isfile(string):
@@ -183,6 +185,7 @@ if __name__ == "__main__":
       default_root_dir = model_path,
       callbacks=cb_ls, 
       resume_from_checkpoint = exp['checkpoint_load'])
+    
   else:
     if exp.get('tramac_restore', False): 
       p = env['tramac_weights']
@@ -205,7 +208,7 @@ if __name__ == "__main__":
       log_dir = os.path.join(  trainer.default_root_dir, "MainLogger"))
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             writer=main_tbl, epoch=0, store=True, num_classes=22 )
-  tc = TaskCreator(**exp['task_generator'])
+  tc = TaskCreator(**exp['task_generator'],output_size=exp['model']['input_size'])
   results = []
   training_results = []
   for idx, out in enumerate(tc) :

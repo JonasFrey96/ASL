@@ -101,7 +101,7 @@ class LatentReplayBuffer(nn.Module):
         injection_mask = torch.randint(0,10000,(BS,),device=device) > float(self._injections_rate*10000)
         #injection_mask = torch.bernoulli( torch.ones(BS)*self._injections_rate)
       else:
-        idx = torch.range(BS,dtype=torch.int64, device=device).permute()[:self._injections_rate]
+        idx = torch.randperm(BS,dtype=torch.int64, device=device)[:self._injections_rate]
         injection_mask[idx] = True
         
     # fill the injection with random samples.
