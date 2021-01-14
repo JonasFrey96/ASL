@@ -1,15 +1,15 @@
-name: COCO/pretrain
+name: COCO/pretrain_full_24
 timestamp: false
 checkpoint_restore: false
 checkpoint_load: path_to_ckpts
 tramac_restore: false
-lr: 0.001
+lr: 0.002
 lr_scheduler:
   active: true
   cfg:
     power: 0.9
-    max_epochs: 1000
-    target_lr: 1.0e-05
+    max_epochs: 100
+    target_lr: 1.0e-06
 optimizer:
   name: ADAM
   sgd_cfg:
@@ -23,12 +23,11 @@ trainer:
   limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  check_val_every_n_epoch: 10
   max_epochs: 50
   gpus: 4
   accelerator: ddp
-  profiler: true
-  track_grad_norm: 2
+  # profiler: true
+  # track_grad_norm: 2
 loader:
   pin_memory: true
   batch_size: 8
@@ -37,7 +36,7 @@ loader:
   num_workers: 20
 visu:
   every_n_epochs: 1
-  log_training_metric_every_n_epoch: 50
+  log_training_metric_every_n_epoch: 8
   train_images: 1
   val_images: 1
   test_images: 1

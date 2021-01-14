@@ -130,12 +130,12 @@ if __name__ == "__main__":
     for dataset in exp['move_datasets']:
       scratchdir = os.getenv('TMPDIR')
       print( 'scratchdir:', scratchdir, 'dataset:', dataset['env_var'])
+      env_var = dataset['env_var']
+      tar = os.path.join( env[env_var],f'{env_var}.tar')
+      name = (tar.split('/')[-1]).split('.')[0]
+        
       if not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ):
         
-        env_var = dataset['env_var']
-        tar = os.path.join( env[env_var],f'{env_var}.tar')
-        
-        name = (tar.split('/')[-1]).split('.')[0]
         try:  
           cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
           st =time.time()
@@ -143,12 +143,14 @@ if __name__ == "__main__":
           os.system(cmd)
           env[env_var] = str(os.path.join(scratchdir, name))
           rank_zero_info( f'Finished moveing dataset-{env_var} in {time.time()-st}s')
+          
         except:
             rank_zero_warn( 'ENV Var'+ env_var )
             env[env_var] = str(os.path.join(scratchdir, name))
             rank_zero_warn('Copying data failed')
       else:
-        print('Path already exists')
+        env[env_var] = str(os.path.join(scratchdir, name))
+        print('Path already exists. Updated ENV')
   
   if ( exp['trainer'] ).get('gpus', -1):
     nr = torch.cuda.device_count()
