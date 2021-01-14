@@ -75,16 +75,14 @@ class Network(LightningModule):
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
      
-    extraction_size = (128,12,12)
-    self._lrb = LatentReplayBuffer(
-      size = extraction_size,
-      size_label = (exp['model']['input_size'],exp['model']['input_size']),
-      elements = 10, 
-      mode = 'LIFO', 
-      bins = 5,
-      injection_rate= 0.5, 
-      dtype = self._type,
-      device=self.device)
+    if self._exp.get('latent_replay_buffer',{}).get('active',False):
+      extraction_size = (128,12,12)
+      self._lrb = LatentReplayBuffer(
+        size = extraction_size,
+        size_label = (exp['model']['input_size'],exp['model']['input_size']),
+        **self._exp['latent_replay_buffer']['cfg'],
+        dtype = self._type,
+        device=self.device)
     
   def forward(self, batch, **kwargs):
     if kwargs.get('injection', None) is not None:
@@ -110,32 +108,37 @@ class Network(LightningModule):
     images = batch[0]
     target = batch[1]
     BS = images.shape[0]
-    injection, injection_labels, mask_injection = self._lrb(BS, device=images.device)
     
-    outputs = self(batch = images, 
-      injection = injection, 
-      injection_mask = mask_injection)
-    
-    if mask_injection.sum() != 0:
-      # set the labels to the stored labels
-      target[mask_injection] = injection_labels[mask_injection]
-      # set the masked image to green
-      batch[2][mask_injection][:,0,:,:] = 0
-      batch[2][mask_injection][:,1,:,:] = 1
-      batch[2][mask_injection][:,2,:,:] = 0
-    
+    ori_img = batch[2]
+    if self._exp.get('latent_replay_buffer',{}).get('active',False):
+      injection, injection_labels, mask_injection = self._lrb(BS, device=images.device)
+      outputs = self(batch = images, 
+        injection = injection, 
+        injection_mask = mask_injection)
+      if mask_injection.sum() != 0:
+        print('Injected elements:', mask_injection.sum()  )
+        # set the labels to the stored labels
+        target[mask_injection] = injection_labels[mask_injection]
+        # set the masked image to green
+        img = torch.zeros(ori_img.shape, device= self.device)
+        img[:,1,:,:] = 1
+        ori_img[mask_injection] = img[mask_injection]
+    else:
+      outputs = self(batch = images)
+      
     #_loss = self.criterion(outputs, target)
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1)
     
     # write to latent replay buffer
-    valid_elements = (mask_injection==0).nonzero()
-    if valid_elements.shape[0] != 0:
-      # check for the case only latent replay performed
-      ele = torch.randint(0, valid_elements.shape[0], (1,))
-      self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= 0)
+    if self._exp.get('latent_replay_buffer',{}).get('active',False):
+      valid_elements = (mask_injection==0).nonzero()
+      if valid_elements.shape[0] != 0:
+        # check for the case only latent replay performed
+        ele = torch.randint(0, valid_elements.shape[0], (1,))
+        self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= 0)
     
     self.log('train_loss', loss, on_step=True, on_epoch=True)
-    return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': batch[2] }
+    return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
   
   def training_step_end(self, outputs):
     # Logging + Visu
