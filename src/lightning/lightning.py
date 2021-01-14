@@ -106,7 +106,6 @@ class Network(LightningModule):
     self.logged_images_val = 0
     self.logged_images_test = 0
 
-  
   def training_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]
@@ -117,19 +116,23 @@ class Network(LightningModule):
       injection = injection, 
       injection_mask = mask_injection)
     
-    # set the labels to the stored labels
-    target[mask_injection] = injection[mask_injection]
-    # set the masked image to green
-    outputs['ori_img'][mask_injection][0,:,:] = 0
-    outputs['ori_img'][mask_injection][1,:,:] = 1
-    outputs['ori_img'][mask_injection][0,:,:] = 0
+    if mask_injection.sum() != 0:
+      # set the labels to the stored labels
+      target[mask_injection] = injection_labels[mask_injection]
+      # set the masked image to green
+      batch[2][mask_injection][:,0,:,:] = 0
+      batch[2][mask_injection][:,1,:,:] = 1
+      batch[2][mask_injection][:,2,:,:] = 0
     
     #_loss = self.criterion(outputs, target)
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1)
     
-    valid_elements = mask_injection.zero()
-    ele = torch.randint(0, valid_elements.shape[0], (1,))
-    self._lrb.add(x=outputs[1][ele],y=target[ele] ,bin= 0)
+    # write to latent replay buffer
+    valid_elements = (mask_injection==0).nonzero()
+    if valid_elements.shape[0] != 0:
+      # check for the case only latent replay performed
+      ele = torch.randint(0, valid_elements.shape[0], (1,))
+      self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= 0)
     
     self.log('train_loss', loss, on_step=True, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': batch[2] }
@@ -145,8 +148,6 @@ class Network(LightningModule):
       train_acc = self.train_acc(pred[m], target[m])
       self.log('train_acc', self.train_acc, on_step=True, on_epoch=True, prog_bar = True)
       self.log('train_mIoU', self.train_mIoU, on_step=True, on_epoch=True, prog_bar = True)
-      
-      
     
     if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
          self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):

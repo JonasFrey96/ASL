@@ -47,7 +47,7 @@ class LatentReplayBuffer(nn.Module):
     self._max_elements = elements
     self._injections_rate = injection_rate
     
-    self.register_buffer('bin_counts', torch.zeros((bins)))
+    self.register_buffer('_bin_counts', torch.zeros((bins)))
     
     self._size_label = size_label
     self._size = size
@@ -90,7 +90,7 @@ class LatentReplayBuffer(nn.Module):
         [description]
     """
     injection = torch.zeros((BS, *self._size), dtype=self._dtype, device=device)
-    injection_labels = torch.zeros((BS, *self._size_label), dtype=self._dtype, device=device)
+    injection_labels = torch.zeros((BS, *self._size_label), dtype=torch.int64, device=device)
     injection_mask = torch.zeros( (BS), dtype=torch.bool, device=device)
     
     # create injection mask according to set injection_rate
@@ -121,7 +121,7 @@ class LatentReplayBuffer(nn.Module):
     
     non_zero_elements = (self.bins[sel_bin].valid != 0).nonzero()
     sel_elm = torch.randint(0, non_zero_elements.shape[0], (1,))
-    return self.bins[sel_bin].x[sel_elm] ,self.bins[sel_bin].y[sel_elm]  
+    return self.bins[sel_bin].x[sel_elm], self.bins[sel_bin].y[sel_elm]  
   
 
 def test():      
