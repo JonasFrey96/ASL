@@ -81,9 +81,9 @@ class Network(LightningModule):
     self.logged_images_test = 0
     
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
-    self._task_count = 0 # so this here mighe be a bad idea. Decide if we know the task or not
+    self._task_count = -1 # so this here might be a bad idea. Decide if we know the task or not
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
-     
+    
     if self._exp.get('latent_replay_buffer',{}).get('active',False):
       extraction_size = (128,12,12)
       self._lrb = LatentReplayBuffer(
@@ -92,7 +92,9 @@ class Network(LightningModule):
         **self._exp['latent_replay_buffer']['cfg'],
         dtype = self._type,
         device=self.device)
-    
+      self._replayed_samples = 0
+      self._real_samples = 0
+      
   def forward(self, batch, **kwargs):
     if kwargs.get('injection', None) is not None:
       outputs = self.model.injection_forward(
@@ -126,6 +128,9 @@ class Network(LightningModule):
       outputs = self(batch = images, 
         injection = injection, 
         injection_mask = mask_injection)
+      
+      self._replayed_samples += int( mask_injection.sum() )
+      self._real_samples += int( BS - mask_injection.sum() )
       if mask_injection.sum() != 0:
         # set the labels to the stored labels
         target[mask_injection] = injection_labels[mask_injection]
@@ -140,12 +145,12 @@ class Network(LightningModule):
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1)
     
     # write to latent replay buffer
-    if self._exp.get('latent_replay_buffer',{}).get('active',False):
+    if self._exp.get('latent_replay_buffer',{}).get('active',False) and not self.trainer.running_sanity_check:
       valid_elements = (mask_injection==0).nonzero()
       if valid_elements.shape[0] != 0:
         # check for the case only latent replay performed
         number = int( torch.randint(0,100,(1,))[0])
-        if  number < 2: 
+        if  number < 50: 
           ele = torch.randint(0, valid_elements.shape[0], (1,))
           self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= self._task_count )
     
@@ -153,6 +158,21 @@ class Network(LightningModule):
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
   
   def training_step_end(self, outputs):
+    # Log replay buffer stats
+    if self._exp.get('latent_replay_buffer',{}).get('active',False):
+      if self.global_step % (self._exp['visu']).get('log_every_y_global_steps',10) == 0:
+        dic = {}
+        for i in range( len( self._lrb.bins) ):
+          filled =  self._lrb._bin_counts[i]
+          dic[f'lrb_bin_{i}'] = filled.clone().detach()    
+        self.logger.experiment.add_scalars('lr_bins', 
+          dic, 
+          global_step=self.global_step)
+        self.logger.experiment.add_scalars('samples', 
+          {'real': torch.tensor(self._real_samples),
+          'replayed': torch.tensor(self._replayed_samples)}, 
+          global_step=self.global_step)
+      
     # Logging + Visu
     if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 
       pred = torch.argmax(outputs['pred'], 1)
