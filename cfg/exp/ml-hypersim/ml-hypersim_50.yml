@@ -1,4 +1,4 @@
-name: MLHypersim/train_24h
+name: MLHypersim/train_24h_50_epochs
 timestamp: true
 checkpoint_restore: false
 checkpoint_load: path_to_ckpts
@@ -37,8 +37,8 @@ visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 10
   train_images: 3
-  val_images: 3
-  test_images: 3
+  val_images: 1
+  test_images: 1
 model:
   name: Fast-SCNN
   input_size: 384
@@ -46,7 +46,7 @@ model:
     num_classes: 41
     aux: false
 task_generator:
-  mode: mlhypersim_random10
+  mode: mlhypersim_random10_test_all
 latent_replay_buffer:
   active: False
   cfg:

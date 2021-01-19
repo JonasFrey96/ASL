@@ -65,6 +65,12 @@ class MLHypersim(data.Dataset):
         else:
             raise Exception('Invalid Dataset Mode')
         
+        # check if reject
+        if (label != -1).sum() < 10: 
+            # reject this example
+            idx = random.randint( 0, len(self) )
+            return self[idx]
+        
         img_ori = img.clone()
         if self._output_trafo is not None:
             img = self._output_trafo(img)

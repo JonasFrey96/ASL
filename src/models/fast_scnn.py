@@ -304,7 +304,21 @@ def get_fast_scnn(dataset='citys', pretrained=False, root='./weights', map_cpu=F
   return model
 
 
+def test_input_size():
+  # pytest -q -s src/models/fast_scnn.py
+  
+  model = FastSCNN( 41, aux=False)
+  input_sizes = [(382,382),(480,640),(764,764)]
+  C = 3
+  BS = 8
+  for s1,s2 in input_sizes:
+    data = torch.rand( (BS,C,s1,s2), dtype=torch.float32)
+    print( 'Input', data.shape)
+    res = model(data)
+    print( 'Output', res[0].shape )
+    
 if __name__ == '__main__':
-  img = torch.randn(2, 3, 256, 512)
-  model = get_fast_scnn('citys')
-  outputs = model(img)
+  test_input_size()
+  # img = torch.randn(2, 3, 256, 512)
+  # model = get_fast_scnn('citys')
+  # outputs = model(img)

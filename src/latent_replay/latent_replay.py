@@ -118,10 +118,12 @@ class LatentReplayBuffer(nn.Module):
     # randomly select bin
     non_empty_bins_index = ( self._bin_counts != 0).nonzero()
     sel_bin = torch.randint(0, non_empty_bins_index.shape[0], (1,))
+    sel_bin = int( non_empty_bins_index [sel_bin] ) 
     # randomly select element in bin
     
     non_zero_elements = (self.bins[sel_bin].valid != 0).nonzero()
     sel_elm = torch.randint(0, non_zero_elements.shape[0], (1,))
+    sel_elm = non_zero_elements[sel_elm]
     return self.bins[sel_bin].x[sel_elm], self.bins[sel_bin].y[sel_elm]  
   
 

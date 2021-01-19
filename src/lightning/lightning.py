@@ -37,12 +37,20 @@ from loss import  MixSoftmaxCrossEntropyLoss, MixSoftmaxCrossEntropyOHEMLoss
 from visu import Visualizer
 from lightning import meanIoUTorchCorrect
 from latent_replay import LatentReplayBuffer
+import datetime
 
 __all__ = ['Network']
+def wrap(s,length, hard=False):
+  if len(s) < length:
+    return s + ' '*(length - len(s))
+  if len(s) > length and hard:
+    return s[:length]
+  return s
 
 class Network(LightningModule):
   def __init__(self, exp, env):
     super().__init__()
+    self._epoch_start_time = time.time()
     self._exp = exp
     self._env = env
     self.hparams['lr'] = self._exp['lr']
@@ -73,6 +81,7 @@ class Network(LightningModule):
     self.logged_images_test = 0
     
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
+    self._task_count = 0 # so this here mighe be a bad idea. Decide if we know the task or not
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
      
     if self._exp.get('latent_replay_buffer',{}).get('active',False):
@@ -100,6 +109,8 @@ class Network(LightningModule):
 
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch
+    
+
     self.logged_images_train = 0
     self.logged_images_val = 0
     self.logged_images_test = 0
@@ -116,7 +127,6 @@ class Network(LightningModule):
         injection = injection, 
         injection_mask = mask_injection)
       if mask_injection.sum() != 0:
-        print('Injected elements:', mask_injection.sum()  )
         # set the labels to the stored labels
         target[mask_injection] = injection_labels[mask_injection]
         # set the masked image to green
@@ -134,10 +144,12 @@ class Network(LightningModule):
       valid_elements = (mask_injection==0).nonzero()
       if valid_elements.shape[0] != 0:
         # check for the case only latent replay performed
-        ele = torch.randint(0, valid_elements.shape[0], (1,))
-        self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= 0)
+        number = int( torch.randint(0,100,(1,))[0])
+        if  number < 2: 
+          ele = torch.randint(0, valid_elements.shape[0], (1,))
+          self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= self._task_count )
     
-    self.log('train_loss', loss, on_step=True, on_epoch=True)
+    self.log('train_loss', loss, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
   
   def training_step_end(self, outputs):
@@ -149,8 +161,8 @@ class Network(LightningModule):
       # calculates acc only for valid labels
       m  =  target > -1
       train_acc = self.train_acc(pred[m], target[m])
-      self.log('train_acc', self.train_acc, on_step=True, on_epoch=True, prog_bar = True)
-      self.log('train_mIoU', self.train_mIoU, on_step=True, on_epoch=True, prog_bar = True)
+      self.log('train_acc', self.train_acc, on_epoch=True, prog_bar = True)
+      self.log('train_mIoU', self.train_mIoU, on_epoch=True, prog_bar = True)
     
     if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
          self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):
@@ -162,9 +174,9 @@ class Network(LightningModule):
       target[0] = target[0] +1
       self.logged_images_train += 1
       self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self.logged_images_train}', seg=target[0], method='left')  
+      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=target[0], method='left')  
       self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
-      self.visualizer.plot_image(tag=f'train_img_ori_left_pred_right_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
+      self.visualizer.plot_image(tag=f'train_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
     
     return {'loss': outputs['loss']}
   
@@ -177,7 +189,7 @@ class Network(LightningModule):
 
     pred = torch.argmax(outputs[0], 1)
 
-    self.log('val_loss', loss, on_step=True, on_epoch=True)
+    self.log('val_loss', loss, on_epoch=True)
 
     return {'pred': pred, 'target': target, 'ori_img': batch[2]}
 
@@ -193,9 +205,9 @@ class Network(LightningModule):
       pred_c[0] = pred_c[0]+1
       target_c[0] = target_c[0] +1
       self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right_{self.logged_images_val}', seg=target_c[0], method='left')
+      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right_{self._task_name}_{self.logged_images_val}', seg=target_c[0], method='left')
       self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
+      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
       
       
     self.val_mIoU(pred,target)
@@ -203,8 +215,9 @@ class Network(LightningModule):
 
     m  =  target > -1
     self.val_acc(pred[m], target[m])
-    self.log('val_acc', self.val_acc, on_step=True, on_epoch=True, prog_bar=False)
-    self.log('val_mIoU', self.val_mIoU, on_step=True, on_epoch=True, prog_bar=False)
+    self.log('val_acc', self.val_acc, on_epoch=True, prog_bar=False)
+    self.log('val_mIoU', self.val_mIoU, on_epoch=True, prog_bar=False)
+    self.log('task_count', self._task_count, on_epoch=True, prog_bar=False)
     # self.log('task_name', self._task_name, on_epoch=True)
     
   def validation_epoch_end(self, outputs):
@@ -216,17 +229,34 @@ class Network(LightningModule):
       except:
         pass
     
-    if 'train_loss_epoch' in me.keys():
-      t_l = me[ 'train_loss_epoch']  
-    else:
-      t_l = me.get('train_loss', 'Not Defined')
+    # if 'train_loss_epoch' in me.keys():
+    #   t_l = me[ 'train_loss_epoch']  
+    # else:
     
-    v_acc = me.get('val_acc_epoch', 'Not Defined')
-    v_mIoU = me.get('val_mIoU_epoch', 'Not Defined')  
-    epoch = self.current_epoch
-    rank_zero_info(
-      f"Epoch: {epoch} >> Train-Loss: {t_l } <<    >> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<"
-    )
+    t_l = me.get('train_loss', 'NotDef')
+    v_acc = me.get('val_acc', 'NotDef')
+    v_mIoU = me.get('val_mIoU', 'NotDef')  
+    epoch = str(self.current_epoch)
+    
+    t = time.time()- self._epoch_start_time
+    t = str(datetime.timedelta(seconds=round(t)))
+    
+    if not self.trainer.running_sanity_check:
+      rank_zero_info('Time for a complete epoch: '+ t)
+      n = self._task_name
+      n = wrap(n,20)
+      t = wrap(t,10,True)
+      epoch =  wrap(epoch,3)
+      t_l = wrap(t_l,6)
+      v_acc = wrap(v_acc,6)
+      v_mIoU = wrap(v_mIoU,6)
+      
+      rank_zero_info(
+        f"Exp: {n} | Epoch: {epoch} | Time: {t} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
+      )
+    self._epoch_start_time = time.time()
+    
+    
 
 
   def test_step(self, batch, batch_idx):
@@ -244,8 +274,8 @@ class Network(LightningModule):
 
     m  =  target > -1
     self.test_acc(pred[m], target[m])
-    self.log('test_acc', self.test_acc, on_step=True, on_epoch=True, prog_bar=True)
-    self.log('test_mIoU', self.test_mIoU, on_step=True, on_epoch=True, prog_bar=True)
+    self.log('test_acc', self.test_acc, on_epoch=True, prog_bar=True)
+    self.log('test_mIoU', self.test_mIoU, on_epoch=True, prog_bar=True)
     
     if ( self._exp['visu'].get('test_images',0) > self.logged_images_test):
       self.logged_images_test += 1
@@ -255,7 +285,7 @@ class Network(LightningModule):
       pred_c[0] = pred_c[0]+1
       target_c[0] = target_c[0] +1
       self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self.logged_images_test}', seg=target_c[0], method='left')
+      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self._task_name}_{self.logged_images_test}', seg=target_c[0], method='left')
 
   def test_epoch_end( self, outputs):
     metrics = self.trainer.logger_connector.callback_metrics
@@ -270,6 +300,7 @@ class Network(LightningModule):
     rank_zero_info(
       f"Test Epoch Results: "+ str(new_dict)
     )
+    self.logged_images_test = 0
 
   def configure_optimizers(self):
     if self._exp['optimizer']['name'] == 'ADAM':
@@ -353,7 +384,7 @@ class Network(LightningModule):
     self._exp['d_train'] = dataset_train_cfg
     self._exp['d_val'] = dataset_val_cfg
     self._task_name = task_name
-    
+    self._task_count += 1
     # TODO this creation of the dataset to check its length should be avoided
     output_transform = transforms.Compose([
       transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
@@ -372,9 +403,9 @@ class Network(LightningModule):
     return bool(len(d1) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']) and 
       len(d2) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']))
     
-  def set_test_dataset_cfg(self, dataset_test_cfg):
+  def set_test_dataset_cfg(self, dataset_test_cfg, task_name):
     self._exp['d_test'] = dataset_test_cfg
-    
+    self._task_name = task_name
     # TODO this creation of the dataset to check its length should be avoided
     output_transform = transforms.Compose([
       transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
