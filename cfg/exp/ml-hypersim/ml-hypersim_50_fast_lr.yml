@@ -1,9 +1,9 @@
-name: mlhypersim/small_run
-timestamp: false
+name: MLHypersim/train_24h_100_epochs_fast_lr
+timestamp: true
 checkpoint_restore: false
 checkpoint_load: path_to_ckpts
 tramac_restore: false
-lr: 0.001
+lr: 0.003
 lr_scheduler:
   active: true
   cfg:
@@ -19,23 +19,23 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 10
-  limit_val_batches: 10
-  limit_test_batches: 10
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs: 10
+  check_val_every_n_epoch: 1
+  max_epochs: 100
   gpus: -1
   accelerator: ddp
-  num_sanity_val_steps: 0
 loader:
   pin_memory: true
   batch_size: 8
   batch_size_test: 4
   shuffle: true
-  num_workers: 8
+  num_workers: 20
 visu:
   every_n_epochs: 1
-  log_training_metric_every_n_epoch: 1
+  log_training_metric_every_n_epoch: 10
   train_images: 3
   val_images: 3
   test_images: 3
@@ -46,26 +46,33 @@ model:
     num_classes: 41
     aux: false
 task_generator:
-  mode: mlhypersim_all
-d_val:
-  name: nyuv2
-  mode: val
-  output_size: 384
-  load_all: false
-d_train:
-  name: nyuv2
-  mode: train
-  output_size: 384
-  load_all: false
-d_test:
-  name: nyuv2
-  mode: val
-  output_size: 384
-  load_all: false
+  mode: mlhypersim_random10_test_all
+latent_replay_buffer:
+  active: False
+  cfg:
+    elements: 20
+    bins: 5
+    injection_rate: 8
+    mode: 'LIFO'
+# d_val:
+#   name: nyuv2
+#   mode: val
+#   output_size: 384
+#   load_all: false
+# d_train:
+#   name: nyuv2
+#   mode: train
+#   output_size: 384
+#   load_all: false
+# d_test:
+#   name: nyuv2
+#   mode: val
+#   output_size: 384
+#   load_all: false
 cb_early_stopping:
   cfg:
     monitor: val_loss_epoch
-    patience: 10000
+    patience: 100
     strict: true
     verbose: true
     mode: min
@@ -86,7 +93,7 @@ lr_monitor:
     logging_interval: step
 
 move_datasets:
-  # - env_var: coco
-  # - env_var: mlhypersim
+  #- env_var: coco
+  - env_var: mlhypersim
 
   

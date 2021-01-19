@@ -122,9 +122,12 @@ def image_functionality(func):
         imageio.imwrite(p, img)
       
       if log_tensorboard:
+        H,W,C = img.shape
+        ds = cv2.resize( img , dsize=(int(W/4), int(H/4)), interpolation=cv2.INTER_CUBIC)
+        
         args[0].writer.add_image(
           tag, 
-          img, 
+          ds, 
           global_step=epoch, 
           dataformats='HWC')
 

@@ -31,7 +31,8 @@ from visu import MainVisualizer
 import numpy as np
 
 from pytorch_lightning.loggers.neptune import NeptuneLogger
-
+import datetime
+import time
 
 def file_path(string):
   if os.path.isfile(string):
@@ -57,7 +58,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/ml-hypersim/ml-hypersim.yml',
+  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/template/template.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -121,10 +122,9 @@ if __name__ == "__main__":
   # Setup logger for each ddp-task 
   logging.getLogger("lightning").setLevel(logging.DEBUG)
   logger = logging.getLogger("lightning")
-  fh = logging.FileHandler( os.path.join(model_path, f'info{local_rank}.log') )
-  fh.setLevel(logging.DEBUG)
+  fh = logging.FileHandler( os.path.join(model_path, f'info{local_rank}.log'), 'a')
   logger.addHandler(fh)
-  
+      
   # Copy Dataset from Scratch to Nodes SSD
   if env['workstation'] == False:
     for dataset in exp['move_datasets']:
@@ -160,10 +160,8 @@ if __name__ == "__main__":
 
   model = Network(exp=exp, env=env)
 
-  early_stop_callback = EarlyStopping(
-    **exp['cb_early_stopping']['cfg']
-    )
-  filepath = os.path.join(model_path, '{epoch}{task_name}')
+
+  filepath = os.path.join(model_path, '{task_count}-{epoch}-')
 
   if len(exp['cb_checkpoint'].get('nameing',[])) > 0:
     #filepath += '-{task_name:10s}'
@@ -177,8 +175,16 @@ if __name__ == "__main__":
   lr_monitor = LearningRateMonitor(
     **exp['lr_monitor']['cfg'])
 
-  cb_ls = [early_stop_callback, lr_monitor]
+  if exp['cb_early_stopping']['active']:
+    early_stop_callback = EarlyStopping(
+    **exp['cb_early_stopping']['cfg']
+    )
+    cb_ls = [early_stop_callback, lr_monitor]
+  else:
+    cb_ls = [lr_monitor]
+  cb_ls.append( checkpoint_callback )
   
+    
   # Always use advanced profiler
   if exp['trainer'].get('profiler', False):
     exp['trainer']['profiler'] = AdvancedProfiler(output_filename=os.path.join(model_path, 'profile.out'))
@@ -187,7 +193,6 @@ if __name__ == "__main__":
       
   if exp.get('checkpoint_restore', False): 
     trainer = Trainer( **exp['trainer'],
-      checkpoint_callback=checkpoint_callback,
       default_root_dir = model_path,
       callbacks=cb_ls, 
       resume_from_checkpoint = exp['checkpoint_load'])
@@ -202,14 +207,13 @@ if __name__ == "__main__":
         model.model.load_state_dict(torch.load(p, map_location=lambda storage, loc: storage))
 
     trainer = Trainer(**exp['trainer'],
-      checkpoint_callback=checkpoint_callback,
       default_root_dir=model_path,
       callbacks=cb_ls)
 
   
   #  log_dir=None, comment='', purge_step=None, max_queue=10,
   #                flush_secs=120, filename_suffix=''
-                 
+                
   main_tbl = SummaryWriter(
       log_dir = os.path.join(  trainer.default_root_dir, "MainLogger"))
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
@@ -217,9 +221,34 @@ if __name__ == "__main__":
   tc = TaskCreator(**exp['task_generator'],output_size=exp['model']['input_size'])
   results = []
   training_results = []
+  print(tc)
+  _task_start_training = time.time()
+  _task_start_time = time.time()
   for idx, out in enumerate(tc) :
-    task, eval_lists = out
+    
+    if idx != 0:
+      # reset model checkpoint storeing for each training task!
+      checkpoint_callback = ModelCheckpoint(
+        filepath=filepath,
+        **exp['cb_checkpoint']['cfg']
+      )
+      # create a new Trainer. 
+      trainer = Trainer(**exp['trainer'],
+        default_root_dir=model_path,
+        callbacks=cb_ls)
+          
 
+      
+    if idx != 0:
+      t = time.time() - _task_start_time
+      t = str(datetime.timedelta(seconds=t))
+      t2 = time.time() - _task_start_training
+      t2 = str(datetime.timedelta(seconds=t2))
+      rank_zero_info(f'Time for task {idx}: '+ t)
+      rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
+      _task_start_time = time.time()
+  
+    task, eval_lists = out
     main_visu.epoch = idx
     # New Logger
     rank_zero_info( 'Executing Training Task: '+task.name )
@@ -250,7 +279,7 @@ if __name__ == "__main__":
     for eval_task in eval_lists:
       rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
                       " of Training Task: " + task.name )
-      suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg)
+      suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg, task_name=eval_task.name)
       if not suc:
         rank_zero_warn( "Evaluation Task "+ eval_task.name + 
                         " not started. Not enough test data!")
@@ -272,7 +301,7 @@ if __name__ == "__main__":
     for i, task in enumerate( results):
       test_vals = []
       for j, test in enumerate(task['Test']):
-        test_vals.append( test['test_mIoU_epoch'])
+        test_vals.append( test['test_mIoU'])
       mIoU.append(test_vals)
     
     max_tests = 0

@@ -84,6 +84,12 @@ class TaskCreator():
       self._pretrainCOCO()
     elif mode == 'mlhypersim_random10':
       self._mlhypersim_random10()
+    elif mode == 'mlhypersim_random10_test_all':
+      self._mlhypersim_random10_test_all()
+    elif mode == 'mlhypersim_all':
+      self._mlhypersim_all()
+    elif mode == 'mlhypersim_random4_tests':
+      self._mlhypersim_random4_tests()
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
@@ -114,11 +120,102 @@ class TaskCreator():
         eval_idx = str(j).zfill(2)
         sc = f'{j*spt}-{(j+1)*spt}'
         eval_task = EvalTask(
-          name = f'Task_{task_idx}_Eval_{eval_idx}_Scene_{sc}',
+          name = f'Eval_{eval_idx}_Scene_{sc}',
+          dataset_test_cfg=test)
+        eval_tasks.append( eval_task )
+      self._eval_lists.append( eval_tasks )
+      
+  def _mlhypersim_random10_test_all(self):
+    spt = int( len(mlhypersim_scene_names)/10 ) # scenes_per_task spt
+
+    for i in range(0,10):
+      train = copy.deepcopy( mlhypersim_template_dict )
+      val = copy.deepcopy( mlhypersim_template_dict )
+      train['mode'] = 'train'
+      val['mode'] = 'val'
+      train['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
+      val['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
+      
+      task_idx = str(i).zfill(2)
+      t = Task(name = f'Task_{task_idx}_mlhyper_random10_test_all',
+                dataset_train_cfg= train,
+                dataset_val_cfg= val)
+      self._task_list.append(t)
+      
+      # Get eval tasks
+      eval_tasks = []
+      for j in range(0,10):
+        test = copy.deepcopy( mlhypersim_template_dict )
+        test['mode'] = 'val'
+        test['scenes'] = mlhypersim_scene_names[j*spt:(j+1)*spt]
+        eval_idx = str(j).zfill(2)
+        sc = f'{j*spt}-{(j+1)*spt}'
+        eval_task = EvalTask(
+          name = f'Eval_{eval_idx}_Scene_{sc}',
+          dataset_test_cfg=test)
+        eval_tasks.append( eval_task )
+      self._eval_lists.append( eval_tasks )
+      
+  def _mlhypersim_random4_tests(self):
+    spt = int( len(mlhypersim_scene_names)/10 ) # scenes_per_task spt
+
+    for i in range(0,4):
+      train = copy.deepcopy( mlhypersim_template_dict )
+      val = copy.deepcopy( mlhypersim_template_dict )
+      train['mode'] = 'train'
+      val['mode'] = 'val'
+      train['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
+      val['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
+      
+      task_idx = str(i).zfill(2)
+      t = Task(name = f'Task_{task_idx}_mlhyper_random4_test_all',
+                dataset_train_cfg= train,
+                dataset_val_cfg= val)
+      self._task_list.append(t)
+      # Get eval tasks
+      eval_tasks = []
+      for j in range(0,4):
+        test = copy.deepcopy( mlhypersim_template_dict )
+        test['mode'] = 'val'
+        test['scenes'] = mlhypersim_scene_names[j*spt:(j+1)*spt]
+        eval_idx = str(j).zfill(2)
+        sc = f'{j*spt}-{(j+1)*spt}'
+        eval_task = EvalTask(
+          name = f'Eval_{eval_idx}_Scene_{sc}',
           dataset_test_cfg=test)
         eval_tasks.append( eval_task )
       self._eval_lists.append( eval_tasks )
   
+  def _mlhypersim_all(self):
+    spt = int( len(mlhypersim_scene_names)/10 ) # scenes_per_task spt
+    for i in range(0,1):
+      train = copy.deepcopy( mlhypersim_template_dict )
+      val = copy.deepcopy( mlhypersim_template_dict )
+      train['mode'] = 'train'
+      val['mode'] = 'val'
+      train['scenes'] = mlhypersim_scene_names
+      val['scenes'] = mlhypersim_scene_names
+      
+      task_idx = str(i).zfill(2)
+      t = Task(name = f'Task_{task_idx}_mlhyper_all',
+                dataset_train_cfg= train,
+                dataset_val_cfg= val)
+      self._task_list.append(t)
+      
+      # Get eval tasks
+      eval_tasks = []
+      for j in range(0,10):
+        test = copy.deepcopy( mlhypersim_template_dict )
+        test['mode'] = 'val'
+        test['scenes'] = mlhypersim_scene_names[j*spt:(j+1)*spt]
+        eval_idx = str(j).zfill(2)
+        sc = f'{j*spt}-{(j+1)*spt}'
+        eval_task = EvalTask(
+          name = f'Eval_{eval_idx}_Scene_{sc}',
+          dataset_test_cfg=test)
+        eval_tasks.append( eval_task )
+      self._eval_lists.append( eval_tasks )
+      
   def _getAll(self):
     idx = np.argsort( nyu_class_counts)
     scene_names = nyu_scene_names[idx].tolist()
@@ -147,7 +244,7 @@ class TaskCreator():
       eval_idx = str(i).zfill(2)
       sc = test['scenes']
       eval_task = EvalTask(
-        name = f'Task_{task_idx}_Eval_{eval_idx}_Scene_{sc}',
+        name = f'Eval_{eval_idx}_Scene_{sc}',
         dataset_test_cfg=test)
       eval_tasks.append( eval_task )
     self._eval_lists.append( eval_tasks )
@@ -198,7 +295,7 @@ class TaskCreator():
         
         eval_idx = str(i).zfill(2)
         eval_task = EvalTask(
-          name = f'Task_{task_idx}_Eval_{eval_idx}_Scene_{name_eval}',
+          name = f'Eval_{eval_idx}_Scene_{name_eval}',
           dataset_test_cfg=test)
         eval_tasks.append( eval_task )
         
@@ -253,7 +350,7 @@ class TaskCreator():
         test['scenes'] = [scene_names[i]]
         eval_idx = str(i).zfill(2)
         eval_task = EvalTask(
-          name = f'Task_{task_idx}_Eval_{eval_idx}_Scene_{scene_name}',
+          name = f'Eval_{eval_idx}_Scene_{scene_name}',
           dataset_test_cfg=test)
         eval_tasks.append( eval_task )
         

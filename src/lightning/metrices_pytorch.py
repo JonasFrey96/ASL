@@ -171,7 +171,7 @@ class meanIoUTorchCorrect(Metric):
     """
     # synchronizes accross threads
     if self.batches == 0:
-      self.iou_sum[0] = 0.0
+      self.iou_sum = torch.zeros( (1), device=self.iou_sum.device, dtype= self.iou_sum.dtype)
       return self.iou_sum
     
     return self.iou_sum / (self.batches+ EPS)
