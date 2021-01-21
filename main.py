@@ -58,7 +58,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/template/template.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/2/start_coco_finetune_no_mem.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -191,11 +191,12 @@ if __name__ == "__main__":
   else:
     exp['trainer']['profiler']  = False
       
-  if exp.get('checkpoint_restore', False): 
+  if exp.get('checkpoint_restore', False):
+    p = os.path.join( env['base'], exp['checkpoint_load'])
     trainer = Trainer( **exp['trainer'],
       default_root_dir = model_path,
       callbacks=cb_ls, 
-      resume_from_checkpoint = exp['checkpoint_load'])
+      resume_from_checkpoint = p)
     
   else:
     if exp.get('tramac_restore', False): 
@@ -210,6 +211,18 @@ if __name__ == "__main__":
       default_root_dir=model_path,
       callbacks=cb_ls)
 
+  if exp.get('weights_restore', False):
+    # it is not strict since the latent replay buffer is not always available
+    p = os.path.join( env['base'], exp['checkpoint_load'])
+    if os.path.isfile( p ):
+      res = model.load_state_dict( torch.load(p, 
+        map_location=lambda storage, loc: storage)['state_dict'], 
+        strict=False)
+      rank_zero_info('Restoring weights: ' + str(res))
+    else:
+      raise Exception('Checkpoint not a file')
+    
+    
   
   #  log_dir=None, comment='', purge_step=None, max_queue=10,
   #                flush_secs=120, filename_suffix=''
@@ -224,9 +237,114 @@ if __name__ == "__main__":
   print(tc)
   _task_start_training = time.time()
   _task_start_time = time.time()
-  for idx, out in enumerate(tc) :
+  
+  mode = exp.get('paper_analysis', {}).get('mode','normal')
+  
+  if mode == 'normal':
+    for idx, out in enumerate(tc) :  
+      if idx != 0:
+        # reset model checkpoint storeing for each training task!
+        checkpoint_callback = ModelCheckpoint(
+          filepath=filepath,
+          **exp['cb_checkpoint']['cfg']
+        )
+        # create a new Trainer. 
+        trainer = Trainer(**exp['trainer'],
+          default_root_dir=model_path,
+          callbacks=cb_ls)
+              
+      if idx != 0:
+        t = time.time() - _task_start_time
+        t = str(datetime.timedelta(seconds=t))
+        t2 = time.time() - _task_start_training
+        t2 = str(datetime.timedelta(seconds=t2))
+        rank_zero_info(f'Time for task {idx}: '+ t)
+        rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
+        _task_start_time = time.time()
     
-    if idx != 0:
+      task, eval_lists = out
+      main_visu.epoch = idx
+      # New Logger
+      rank_zero_info( 'Executing Training Task: '+task.name )
+      tbl = TensorBoardLogger(
+        save_dir = trainer.default_root_dir,
+        name = task.name,default_hp_metric=False)
+      # only way to avoid PytorchLightning SummaryWriter nameing!
+      tbl._experiment = SummaryWriter(
+        log_dir=os.path.join(trainer.default_root_dir, task.name), 
+        **tbl._kwargs)
+      trainer.logger = tbl
+      # when a new fit or test is called in the trainer all dataloaders are initalized from scratch.
+      # here check if the same goes for the optimizers and learning rate schedules in this case
+      # both configues would need to be restored for advanced settings.
+      trainer.current_epoch = 0
+      suc = model.set_train_dataset_cfg(
+        dataset_train_cfg=task.dataset_train_cfg,
+        dataset_val_cfg=task.dataset_val_cfg,
+        task_name=task.name
+      )
+      if not suc:
+        rank_zero_warn( "Training Task "+ task.name + 
+                        " not started. Not enough val/train data!")
+        continue
+      train_res = trainer.fit(model)
+      training_results.append( train_res )
+      test_results = []
+      for eval_task in eval_lists:
+        rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
+                        " of Training Task: " + task.name )
+        suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg, task_name=eval_task.name)
+        if not suc:
+          rank_zero_warn( "Evaluation Task "+ eval_task.name + 
+                          " not started. Not enough test data!")
+          continue
+        
+        # TODO: one task might call mutiple tests!
+        test_res = trainer.test(model)
+        new_res= {}
+        for k in test_res[0].keys():
+          try:
+            new_res[k] = float( test_res[0][k])
+          except:
+            pass
+            
+        test_results.append(new_res)
+        
+      results.append({'Time': idx, 'Traning': train_res, 'Test': test_results})
+      mIoU = []
+      for i, task in enumerate( results):
+        test_vals = []
+        for j, test in enumerate(task['Test']):
+          test_vals.append( test['test_mIoU'])
+        mIoU.append(test_vals)
+      
+      max_tests = 0
+      for task in mIoU:
+        if len(task) > max_tests :
+          max_tests  = len(task)
+      
+      for i in range(len( mIoU)):
+        if len(mIoU[i]) < max_tests :
+          mIoU[i] = mIoU[i] + [0.0] * (max_tests -len(mIoU[i]))
+      data_matrix = np.array( mIoU) * 100
+      data_matrix = np.around(data_matrix , decimals=0)
+      main_visu.plot_matrix(
+        tag = 'mIoU',
+        data_matrix = data_matrix)
+      
+  elif  mode == 'paper_analysis':
+    # This mode should not be used for training. 
+    # Here we train for a fixed amount of steps and perform a full eval of all tasks.
+    # This is really time consuming but gives a nice graph.
+    
+    samples_per_training = exp.get('paper_analysis', {}).get('samples_per_training',25)
+    steps_per_sample = exp.get('paper_analysis', {}).get('steps_per_sample',200)
+    exp['trainer']['limit_train_batches'] = steps_per_sample
+    exp['trainer']['limit_val_batches'] = 1
+    exp['trainer']['limit_test_batches'] = 1.0
+    
+    task_data = []
+    for idx, out in enumerate(tc) :  
       # reset model checkpoint storeing for each training task!
       checkpoint_callback = ModelCheckpoint(
         filepath=filepath,
@@ -235,98 +353,121 @@ if __name__ == "__main__":
       # create a new Trainer. 
       trainer = Trainer(**exp['trainer'],
         default_root_dir=model_path,
-        callbacks=cb_ls)
-          
+        callbacks=cb_ls,
+        max_steps=steps_per_sample
+      )
+      
+      if idx != 0:
+        print(f'Start training samples {j}')
 
+
+
+        t = time.time() - _task_start_time
+        t = str(datetime.timedelta(seconds=t))
+        t2 = time.time() - _task_start_training
+        t2 = str(datetime.timedelta(seconds=t2))
+        rank_zero_info(f'Time for task {idx}: '+ t)
+        rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
+        _task_start_time = time.time()
       
-    if idx != 0:
-      t = time.time() - _task_start_time
-      t = str(datetime.timedelta(seconds=t))
-      t2 = time.time() - _task_start_training
-      t2 = str(datetime.timedelta(seconds=t2))
-      rank_zero_info(f'Time for task {idx}: '+ t)
-      rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
-      _task_start_time = time.time()
-  
-    task, eval_lists = out
-    main_visu.epoch = idx
-    # New Logger
-    rank_zero_info( 'Executing Training Task: '+task.name )
-    tbl = TensorBoardLogger(
-      save_dir = trainer.default_root_dir,
-      name = task.name,default_hp_metric=False)
-    # only way to avoid PytorchLightning SummaryWriter nameing!
-    tbl._experiment = SummaryWriter(
-      log_dir=os.path.join(trainer.default_root_dir, task.name), 
-      **tbl._kwargs)
-    trainer.logger = tbl
-    # when a new fit or test is called in the trainer all dataloaders are initalized from scratch.
-    # here check if the same goes for the optimizers and learning rate schedules in this case
-    # both configues would need to be restored for advanced settings.
-    trainer.current_epoch = 0
-    suc = model.set_train_dataset_cfg(
-      dataset_train_cfg=task.dataset_train_cfg,
-      dataset_val_cfg=task.dataset_val_cfg,
-      task_name=task.name
-    )
-    if not suc:
-      rank_zero_warn( "Training Task "+ task.name + 
-                      " not started. Not enough val/train data!")
-      continue
-    train_res = trainer.fit(model)
-    training_results.append( train_res )
-    test_results = []
-    for eval_task in eval_lists:
-      rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
-                      " of Training Task: " + task.name )
-      suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg, task_name=eval_task.name)
+      task, eval_lists = out
+      main_visu.epoch = idx
+      # New Logger
+      rank_zero_info( 'Executing Training Task: '+task.name )
+      tbl = TensorBoardLogger(
+        save_dir = trainer.default_root_dir,
+        name = task.name,default_hp_metric=False)
+      # only way to avoid PytorchLightning SummaryWriter nameing!
+      tbl._experiment = SummaryWriter(
+        log_dir=os.path.join(trainer.default_root_dir, task.name), 
+        **tbl._kwargs)
+      trainer.logger = tbl
+      # when a new fit or test is called in the trainer all dataloaders are initalized from scratch.
+      # here check if the same goes for the optimizers and learning rate schedules in this case
+      # both configues would need to be restored for advanced settings.
+      trainer.current_epoch = 0
+      suc = model.set_train_dataset_cfg(
+        dataset_train_cfg=task.dataset_train_cfg,
+        dataset_val_cfg=task.dataset_val_cfg,
+        task_name=task.name
+      )
       if not suc:
-        rank_zero_warn( "Evaluation Task "+ eval_task.name + 
-                        " not started. Not enough test data!")
+        rank_zero_warn( "Training Task "+ task.name + 
+                        " not started. Not enough val/train data!")
         continue
-      
-      # TODO: one task might call mutiple tests!
-      test_res = trainer.test(model)
-      new_res= {}
-      for k in test_res[0].keys():
-        try:
-          new_res[k] = float( test_res[0][k])
-        except:
-          pass
+
+      val_steps = []
+      for _j, eval_task in enumerate( eval_lists):
+        val_steps.append([])  
+        
+      for j in range(samples_per_training):
+        trainer.current_steps = 0
+        s =  f'<<<<<<<<<<<<<<<<<<<<<<<<<<<<< Task name {task.name}, {j}/{samples_per_training}, Task IDX {idx} >>>>>>>>>>>>>>>>>>>>>>>>>>'
+        rank_zero_info(s)
+        
+        train_res = trainer.fit(model)
+        training_results.append( train_res )
+        test_results = []
+        for _j, eval_task in enumerate( eval_lists):
+          rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
+                          " of Training Task: " + task.name )
+          suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg, task_name=eval_task.name)
+          if not suc:
+            rank_zero_warn( "Evaluation Task "+ eval_task.name + 
+                            " not started. Not enough test data!")
+            continue
+            
+          # TODO: one task might call mutiple tests!
+          test_res = trainer.test(model)
+          test_results.append(test_res)
           
-      test_results.append(new_res)
+          val_steps[_j].append( [ steps_per_sample*j+ idx*(steps_per_sample*(samples_per_training-1)),test_res[0]['test_mIoU']] )
       
-    results.append({'Time': idx, 'Traning': train_res, 'Test': test_results})
-    mIoU = []
-    for i, task in enumerate( results):
-      test_vals = []
-      for j, test in enumerate(task['Test']):
-        test_vals.append( test['test_mIoU'])
-      mIoU.append(test_vals)
-    
-    max_tests = 0
-    for task in mIoU:
-      if len(task) > max_tests :
-        max_tests  = len(task)
-    
-    for i in range(len( mIoU)):
-      if len(mIoU[i]) < max_tests :
-        mIoU[i] = mIoU[i] + [0.0] * (max_tests -len(mIoU[i]))
-    data_matrix = np.array( mIoU) * 100
-    data_matrix = np.around(data_matrix , decimals=0)
-    main_visu.plot_matrix(
-      tag = 'mIoU',
-      data_matrix = data_matrix)
-#  elif exp.get('model_mode', 'fit') == 'lr_finder':
-#      lr_finder = trainer.tuner.lr_find(model, min_lr= 0.0000001, max_lr=0.01) # Run learning rate finder
-#      fig = lr_finder.plot(suggest=True) # Plot
-#      from matplotlib.pyplot import savefig
-#       a = exp['flow_pose_cfg']['backbone']
-#       b = exp['flow_pose_cfg']['mode']
-#       sug = str(  lr_finder.suggestion() )
-#       p = exp['model_path']+f'/visu/lr_{a}_{b}_{sug}.png'
-#       savefig(p)
-#       logger.info( 'SUGGESTION', lr_finder.suggestion())
-#   else:
-#       logger.info("Wrong model_mode defined in exp config")
-#       raise Exception
+      arr = np.array(val_steps)
+      ls_res = []
+      ls_eval_names = []
+      for _j, eval_task in enumerate( eval_lists):
+        ls_eval_names.append( eval_task.name )
+      for __i  in range(arr.shape[0]):
+        ls_res.append( (arr[__i,:,0],arr[__i,:,1]) )
+      T1 = {'name': task.name, 'val_task_results': ls_res, 'eval_names': ls_eval_names}
+      task_data.append(T1)
+      main_visu.plot_cont_validation_eval(task_data = task_data, tag='TaskData')
+        # res1 =  np.linspace(0., 0.5, 6)
+        # res2 =  np.linspace(0., 0.5, 6)*0.5
+        # res3 =  np.linspace(0., 0.5, 6)**2
+        # T1 = {'name': 'TrainTask1' ,'val_task_results': [(np.arange(0,6), res1), (np.arange(0,6), res2), (np.arange(0,6), res3) ] }
+        # T2 = {'name': 'TrainTask2' ,'val_task_results': [(np.arange(5,11), res1), (np.arange(5,11),res2), (np.arange(5,11),res3) ] }
+        # T3 = {'name': 'TrainTask3' ,'val_task_results': [(np.arange(10,16),res1), (np.arange(10,16),res2), (np.arange(10,16),res3) ] }
+        # task_data = [T1, T2]
+        
+      #   new_res= {}
+      #   for k in test_res[0].keys():
+      #     try:
+      #       new_res[k] = float( test_res[0][k])
+      #     except:
+      #       pass
+            
+      #   test_results.append(new_res)
+        
+      # results.append({'Time': idx, 'Traning': train_res, 'Test': test_results})
+      # mIoU = []
+      # for i, task in enumerate( results):
+      #   test_vals = []
+      #   for j, test in enumerate(task['Test']):
+      #     test_vals.append( test['test_mIoU'])
+      #   mIoU.append(test_vals)
+      
+      # max_tests = 0
+      # for task in mIoU:
+      #   if len(task) > max_tests :
+      #     max_tests  = len(task)
+      
+      # for i in range(len( mIoU)):
+      #   if len(mIoU[i]) < max_tests :
+      #     mIoU[i] = mIoU[i] + [0.0] * (max_tests -len(mIoU[i]))
+      # data_matrix = np.array( mIoU) * 100
+      # data_matrix = np.around(data_matrix , decimals=0)
+      # main_visu.plot_matrix(
+      #   tag = 'mIoU',
+      #   data_matrix = data_matrix)

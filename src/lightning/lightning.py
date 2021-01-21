@@ -83,6 +83,7 @@ class Network(LightningModule):
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
     self._task_count = -1 # so this here might be a bad idea. Decide if we know the task or not
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
+    self._train_start_time = time.time()
     
     if self._exp.get('latent_replay_buffer',{}).get('active',False):
       extraction_size = (128,12,12)
@@ -112,6 +113,11 @@ class Network(LightningModule):
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch
     
+    if self._exp['model'].get('freeze',{}).get('active', False):
+      mask = self._exp['model']['freeze']['mask']
+      self.model.freeze_module(mask)
+      rank_zero_info(f'Model Freeze Following Layers {mask}') 
+       
 
     self.logged_images_train = 0
     self.logged_images_val = 0
@@ -146,7 +152,7 @@ class Network(LightningModule):
     
     # write to latent replay buffer
     if self._exp.get('latent_replay_buffer',{}).get('active',False) and not self.trainer.running_sanity_check:
-      valid_elements = (mask_injection==0).nonzero()
+      valid_elements = torch.nonzero(mask_injection==0, as_tuple=False)
       if valid_elements.shape[0] != 0:
         # check for the case only latent replay performed
         number = int( torch.randint(0,100,(1,))[0])
@@ -154,7 +160,7 @@ class Network(LightningModule):
           ele = torch.randint(0, valid_elements.shape[0], (1,))
           self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= self._task_count )
     
-    self.log('train_loss', loss, on_epoch=True)
+    self.log('train_loss', loss, on_step=False, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
   
   def training_step_end(self, outputs):
@@ -181,8 +187,8 @@ class Network(LightningModule):
       # calculates acc only for valid labels
       m  =  target > -1
       train_acc = self.train_acc(pred[m], target[m])
-      self.log('train_acc', self.train_acc, on_epoch=True, prog_bar = True)
-      self.log('train_mIoU', self.train_mIoU, on_epoch=True, prog_bar = True)
+      self.log('train_acc_epoch', self.train_acc, on_step=False, on_epoch=True, prog_bar = True)
+      self.log('train_mIoU_epoch', self.train_mIoU, on_step=False, on_epoch=True, prog_bar = True)
     
     if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
          self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):
@@ -200,6 +206,15 @@ class Network(LightningModule):
     
     return {'loss': outputs['loss']}
   
+  def on_train_epoch_end(self, outputs):
+    if self.current_epoch % self.trainer.check_val_every_n_epoch != 0:
+      val_acc_epoch = torch.tensor( 999, device=self.device)
+      val_mIoU_epoch = torch.tensor( 999, device=self.device)
+      val_loss = torch.tensor( 999, device=self.device)
+      self.log('val_acc_epoch',val_acc_epoch)
+      self.log('val_mIoU_epoch',val_mIoU_epoch,)
+      self.log('val_loss',val_loss)
+      
   def validation_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
@@ -260,7 +275,8 @@ class Network(LightningModule):
     
     t = time.time()- self._epoch_start_time
     t = str(datetime.timedelta(seconds=round(t)))
-    
+    t2 = time.time()- self._train_start_time
+    t2 = str(datetime.timedelta(seconds=round(2))) 
     if not self.trainer.running_sanity_check:
       rank_zero_info('Time for a complete epoch: '+ t)
       n = self._task_name
@@ -272,7 +288,7 @@ class Network(LightningModule):
       v_mIoU = wrap(v_mIoU,6)
       
       rank_zero_info(
-        f"Exp: {n} | Epoch: {epoch} | Time: {t} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
+        f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
       )
     self._epoch_start_time = time.time()
     

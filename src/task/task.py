@@ -157,7 +157,7 @@ class TaskCreator():
       self._eval_lists.append( eval_tasks )
       
   def _mlhypersim_random4_tests(self):
-    spt = int( len(mlhypersim_scene_names)/10 ) # scenes_per_task spt
+    spt = int( len(mlhypersim_scene_names)/30 ) # scenes_per_task spt
 
     for i in range(0,4):
       train = copy.deepcopy( mlhypersim_template_dict )
@@ -187,7 +187,7 @@ class TaskCreator():
       self._eval_lists.append( eval_tasks )
   
   def _mlhypersim_all(self):
-    spt = int( len(mlhypersim_scene_names)/10 ) # scenes_per_task spt
+    spt = int( len(mlhypersim_scene_names)/30 ) # scenes_per_task spt
     for i in range(0,1):
       train = copy.deepcopy( mlhypersim_template_dict )
       val = copy.deepcopy( mlhypersim_template_dict )
@@ -204,7 +204,7 @@ class TaskCreator():
       
       # Get eval tasks
       eval_tasks = []
-      for j in range(0,10):
+      for j in range(0,4):
         test = copy.deepcopy( mlhypersim_template_dict )
         test['mode'] = 'val'
         test['scenes'] = mlhypersim_scene_names[j*spt:(j+1)*spt]

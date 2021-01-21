@@ -267,6 +267,55 @@ class MainVisualizer():
     arr = get_img_from_fig(fig, dpi=600)
     return np.uint8(arr)
   
+  
+  @image_functionality  
+  def plot_cont_validation_eval(self, task_data, *args,**kwargs):
+    """
+    res1 =  np.linspace(0., 0.5, 6)
+    res2 =  np.linspace(0., 0.5, 6)*0.5
+    res3 =  np.linspace(0., 0.5, 6)**2
+    T1 = {'name': 'TrainTask1' ,'val_task_results': [(np.arange(0,6), res1), (np.arange(0,6), res2), (np.arange(0,6), res3) ] }
+    T2 = {'name': 'TrainTask2' ,'val_task_results': [(np.arange(5,11), res1), (np.arange(5,11),res2), (np.arange(5,11),res3) ] }
+    T3 = {'name': 'TrainTask3' ,'val_task_results': [(np.arange(10,16),res1), (np.arange(10,16),res2), (np.arange(10,16),res3) ] }
+    task_data = [T1, T2]
+    """
+    
+    line_styles = ['-','--','-.',':'] 
+    steps_min = 999
+    steps_max = 0
+    for t in task_data:
+        for v in t['val_task_results']:
+            if np.min( v[0]) <  steps_min:
+                steps_min = np.min( v[0])
+            if np.max( v[0]) > steps_max:
+                steps_max = np.max( v[0])  
+    span = steps_max - steps_min
+
+    fig, axs = plt.subplots( len(task_data),sharex=True, sharey=True, figsize=(10,len(task_data)*2))
+    if len(task_data) == 1:
+      axs = [axs]
+    plt.subplots_adjust(left = 0.125,
+        right = 0.9, 
+        bottom = 0.1,  
+        top = 1,
+        wspace = 0.2,  
+        hspace = 0.8 )
+    for nr, task in enumerate(task_data):
+        name = task['name']
+        axs[nr].set_title(name)
+        axs[nr].set_xlabel('Step')
+        axs[nr].set_ylabel('Acc')
+        axs[nr].set_yticks( [0,0.2,0.4,0.6,0.8,1])
+        axs[nr].grid(True, linestyle='-', linewidth=1)
+        for j, i in enumerate( task['val_task_results']):
+            k = list( col.keys())
+            val = col[k[j]]
+            val = [v/255 for v in val]
+            axs[nr].plot(i[0], i[1], color=val, linestyle = line_styles[j], label=task['eval_names'][j])
+        plt.legend(loc='upper left')
+    arr = get_img_from_fig(fig, dpi=600)
+    return np.uint8(arr)
+  
 class Visualizer():
   def __init__(self, p_visu, writer=None, epoch=0, store=True, num_classes=22):
     self.p_visu = p_visu
