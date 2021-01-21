@@ -68,7 +68,7 @@ class MLHypersim(data.Dataset):
         # check if reject
         if (label != -1).sum() < 10: 
             # reject this example
-            idx = random.randint( 0, len(self) )
+            idx = random.randint( 0, len(self)-1 )
             return self[idx]
         
         img_ori = img.clone()
