@@ -86,7 +86,17 @@ class Network(LightningModule):
     self._train_start_time = time.time()
     
     if self._exp.get('latent_replay_buffer',{}).get('active',False):
-      extraction_size = (128,12,12)
+      
+      if self._exp['latent_replay_buffer']['extraction_level'] == 'compressed':
+        extraction_size = (128,12,12)
+      elif self._exp['latent_replay_buffer']['extraction_level'] == 'input':
+        s = self._exp['model']['input_size']
+        extraction_size = (3,s,s)
+      else: 
+        raise Exception()
+        
+      
+      
       self._lrb = LatentReplayBuffer(
         size = extraction_size,
         size_label = (exp['model']['input_size'],exp['model']['input_size']),
@@ -140,6 +150,7 @@ class Network(LightningModule):
       if mask_injection.sum() != 0:
         # set the labels to the stored labels
         target[mask_injection] = injection_labels[mask_injection]
+        
         # set the masked image to green
         img = torch.zeros(ori_img.shape, device= self.device)
         img[:,1,:,:] = 1
@@ -155,11 +166,14 @@ class Network(LightningModule):
       valid_elements = torch.nonzero(mask_injection==0, as_tuple=False)
       if valid_elements.shape[0] != 0:
         # check for the case only latent replay performed
-        number = int( torch.randint(0,100,(1,))[0])
-        if  number < 50: 
+        if random.random() < self._exp['latent_replay_buffer']['fill_sample_from_batch_ratio']: 
           ele = torch.randint(0, valid_elements.shape[0], (1,))
-          self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= self._task_count )
-    
+          
+          if self._exp['latent_replay_buffer']['extraction_level'] == 'compressed':
+            self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= self._task_count )
+          elif self._exp['latent_replay_buffer']['extraction_level'] == 'input':
+            self._lrb.add(x=images[ele].detach(),y=target[ele].detach() ,bin= self._task_count )
+        
     self.log('train_loss', loss, on_step=False, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
   
@@ -292,9 +306,6 @@ class Network(LightningModule):
       )
     self._epoch_start_time = time.time()
     
-    
-
-
   def test_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss

@@ -75,6 +75,7 @@ class MLHypersim(data.Dataset):
         if self._output_trafo is not None:
             img = self._output_trafo(img)
         
+        label[ label>0 ] = label[ label>0 ]-1
         return img, label.type(torch.int64)[0,:,:] , img_ori
     
     def __len__(self):
