@@ -193,8 +193,8 @@ class TaskCreator():
       val = copy.deepcopy( mlhypersim_template_dict )
       train['mode'] = 'train'
       val['mode'] = 'val'
-      train['scenes'] = mlhypersim_scene_names
-      val['scenes'] = mlhypersim_scene_names
+      train['scenes'] = mlhypersim_scene_names[:int(4*spt)]
+      val['scenes'] = mlhypersim_scene_names[:int(4*spt)]
       
       task_idx = str(i).zfill(2)
       t = Task(name = f'Task_{task_idx}_mlhyper_all',

@@ -58,7 +58,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/2/start_coco_finetune_no_mem.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/exp.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -288,7 +288,7 @@ if __name__ == "__main__":
                         " not started. Not enough val/train data!")
         continue
       train_res = trainer.fit(model)
-      training_results.append( train_res )
+      training_results.append( trainer.logged_metrics )
       test_results = []
       for eval_task in eval_lists:
         rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
@@ -309,7 +309,24 @@ if __name__ == "__main__":
             pass
             
         test_results.append(new_res)
-        
+      
+      ## create diagonal metric for all test resutls
+      for met in training_results[0].keys():
+        dia = np.zeros( (len(training_results),len(training_results)))
+        suc = True
+        try:
+          for _i in range( len(training_results)):
+            dia[_i,_i] = int( training_results[_i][met]* 100 )
+               
+        except:
+          suc = False
+        if suc: 
+          
+          main_visu.plot_matrix(
+            tag = f'train_{met}',
+            data_matrix = dia)
+      
+      ## get test mIoU to right format to log as matrix 
       results.append({'Time': idx, 'Traning': train_res, 'Test': test_results})
       mIoU = []
       for i, task in enumerate( results):
