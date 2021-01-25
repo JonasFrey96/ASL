@@ -290,7 +290,7 @@ class Network(LightningModule):
     t = time.time()- self._epoch_start_time
     t = str(datetime.timedelta(seconds=round(t)))
     t2 = time.time()- self._train_start_time
-    t2 = str(datetime.timedelta(seconds=round(2))) 
+    t2 = str(datetime.timedelta(seconds=round(t2))) 
     if not self.trainer.running_sanity_check:
       rank_zero_info('Time for a complete epoch: '+ t)
       n = self._task_name

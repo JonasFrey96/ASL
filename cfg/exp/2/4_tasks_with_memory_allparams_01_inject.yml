@@ -1,10 +1,10 @@
-name: mlhypersim_4_small_tasks/start_coco_finetune_all_parrallel
+name: ContinualLearning/4_tasks_with_memory_allparams_01_inject
 timestamp: true
-weights_restore: false
+weights_restore: true
 checkpoint_restore: false
-checkpoint_load: COCO/2021-01-15T19:32:57_pretrain_full_24_correct_IoU/epoch=104task_name=0-val_acc_epoch=0.49-val_mIoU_epoch=0.30.ckpt
+checkpoint_load: coco/2021-01-22T16:49:01_train40_24h/last.ckpt
 tramac_restore: false
-lr: 0.05
+lr: 0.003
 lr_scheduler:
   active: true
   cfg:
@@ -16,6 +16,17 @@ optimizer:
   sgd_cfg:
     momentum: 0.9
     weight_decay: 4.0e-05
+
+latent_replay_buffer:
+  active: True
+  cfg:
+    elements: 100
+    bins: 4
+    injection_rate: 0.1
+    mode: 'LIFO'
+  extraction_level: compressed
+  fill_sample_from_batch_ratio: 0.5
+
 trainer:
   precision: 16
   accumulate_grad_batches: 1
@@ -24,15 +35,15 @@ trainer:
   limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs: 50
+  max_epochs: 45
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
   check_val_every_n_epoch: 1
 loader:
   pin_memory: true
-  batch_size: 4
-  batch_size_test: 4
+  batch_size: 16
+  batch_size_test: 16
   shuffle: true
   num_workers: 20
 visu:
@@ -45,17 +56,17 @@ model:
   name: Fast-SCNN
   input_size: 384
   cfg:
-    num_classes: 41
+    num_classes: 40
     aux: false
   freeze:
-    active: true
+    active: false
     mask:
       - true
       - true
       - false 
       - false
 task_generator:
-  mode: mlhypersim_all
+  mode: mlhypersim_random4_tests
 d_val:
   name: nyuv2
   mode: val
@@ -82,8 +93,8 @@ cb_early_stopping:
     min_delta: -0.0001
 cb_checkpoint:
   nameing:
-  - val_acc_epoch
-  - val_mIoU_epoch
+  - val_acc
+  - val_mIoU
   cfg:
     verbose: true
     monitor: val_loss
@@ -94,13 +105,7 @@ cb_checkpoint:
 lr_monitor:
   cfg:
     logging_interval: step
-latent_replay_buffer:
-  active: False
-  cfg:
-    elements: 100
-    bins: 4
-    injection_rate: 1
-    mode: 'LIFO'
+
 move_datasets:
   # - env_var: coco
   - env_var: mlhypersim

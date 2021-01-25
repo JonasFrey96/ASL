@@ -19,6 +19,53 @@ except Exception: #ImportError
     
 __all__ = ['MLHypersim']
 
+
+class ReplayDataset(data.Dataset):
+    def __init__(self, bins, elements, add_p=0.5, replay_p=0.5 ):
+        self._bins = torch.zeros( (bins,elements), dtype=torch.int32 )
+        self._valid = self._bins == 1
+        self._current_bin = 0 
+        self._replay_p = replay_p
+        self._add_p = add_p    
+    
+    def idx(self, index):
+        if ((self._valid).sum() != 0 and
+            random.random() < self._replay_p):
+            index = self.get_element()        
+        elif random.random() < self._add_p:
+            self.add_element(index)
+        return index
+    
+    def set_current_bin(self, bin):
+        if bin < self._bins.shape[0]:
+            self._current_bin = bin
+        else:
+            raise Exception("Invalid bin selected. Bin must be element 0-"+self._bins.shape[0])
+               
+    def get_element(self):
+        indi = torch.nonzero( self._valid, as_tuple=False)
+        sel_ele = torch.randint(0, indi.shape[0], (1,))
+        return self._bins[int(indi[sel_ele,0]),int(indi[sel_ele,1])]
+    
+    def add_element(self, index):
+        if (index == self._bins).sum() == 0:
+            # not in buffer
+            if self._valid[self._current_bin].sum() != self._valid.shape[1]:
+                # free space simply add
+                indi = torch.nonzero( self._valid[self._current_bin,:] == 0 ,as_tuple=False)
+                sel_ele = torch.randint( 0, indi.shape[0], (1,) )
+                sel_ele = int( indi[sel_ele] )
+                self._bins[self._current_bin, sel_ele] = index
+                self._valid[self._current_bin, sel_ele] = True
+            else:
+                # replace
+                sel_ele = torch.randint( 0, self._bins.shape[1], (1,) )
+                self._bins[self._current_bin, sel_ele] = index
+            return True
+        return False
+                
+        
+
 class MLHypersim(data.Dataset):
     def __init__(self, root='/media/scratch2/jonfrey/datasets/mlhypersim/', 
                  mode='train', scenes=[], output_trafo = None, 
@@ -33,6 +80,7 @@ class MLHypersim(data.Dataset):
         root : str, path to the ML-Hypersim folder
         mode : str, option ['train','val]
         """
+        
         self._output_size = output_size
         self._mode = mode
         
@@ -51,7 +99,7 @@ class MLHypersim(data.Dataset):
     
             
     def __getitem__(self, index):
-
+        print(f"I will return index {index}")
         with h5py.File(self.image_pths[index], 'r') as f: img = np.array( f['dataset'] )  
         img[img>1] = 1
         img = torch.from_numpy( img ).type(torch.float32).permute(2,0,1) # C H W
@@ -140,18 +188,19 @@ def test():
     dataset = MLHypersim(
         mode='train',
         scenes=['ai_001_002', 'ai_001_003', 'ai_001_004', 'ai_001_005', 'ai_001_006'],
-        output_trafo = None, 
+        output_trafo = output_transform, 
         output_size=400, 
         degrees = 10, 
         flip_p = 0.5, 
         jitter_bcsh=[0.3, 0.3, 0.3, 0.05])
     
-    img, label = dataset[0]    # C, H, W
-    
-    label = np.uint8( label.numpy() * (255/float(label.max())))[:,:]
-    img = np.uint8( img.permute(1,2,0).numpy()*255 ) # H W C
-    imageio.imwrite('/home/jonfrey/tmp/img.png', img)
-    imageio.imwrite('/home/jonfrey/tmp/label.png', label)
-    
+    for i in range(0,50):    
+        img, label, _img_ori= dataset[i]    # C, H, W
+        
+        label = np.uint8( label.numpy() * (255/float(label.max())))[:,:]
+        img = np.uint8( img.permute(1,2,0).numpy()*255 ) # H W C
+        imageio.imwrite(f'/home/jonfrey/tmp/{i}img.png', img)
+        imageio.imwrite(f'/home/jonfrey/tmp/{i}label.png', label)
+        
 if __name__ == "__main__":
     test()
