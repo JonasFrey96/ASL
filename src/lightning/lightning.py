@@ -68,17 +68,21 @@ class Network(LightningModule):
       writer=None,
       num_classes=self._exp['model']['cfg']['num_classes']+1)
 
+    max_tests = 4
     self.test_acc = pl_metrics.classification.Accuracy()
     self.train_acc = pl_metrics.classification.Accuracy()
-    self.val_acc = pl_metrics.classification.Accuracy()
+    self.val_acc = torch.nn.ModuleList( [pl_metrics.classification.Accuracy() for i in range(max_tests)] )
 
     self.test_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
     self.train_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
-    self.val_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
+    
+    self.val_mIoU = torch.nn.ModuleList( [meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes']) for i in range(max_tests)] )
+    # self.val_mIoU = 
 
     self.logged_images_train = 0
     self.logged_images_val = 0
     self.logged_images_test = 0
+    self._dataloader_index_store = 0
     
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
     self._task_count = -1 # so this here might be a bad idea. Decide if we know the task or not
@@ -229,7 +233,11 @@ class Network(LightningModule):
       self.log('val_mIoU_epoch',val_mIoU_epoch,)
       self.log('val_loss',val_loss)
       
-  def validation_step(self, batch, batch_idx):
+  def validation_step(self, batch, batch_idx, dataloader_idx):
+    if self._dataloader_index_store != dataloader_idx:
+      self._dataloader_index_store = dataloader_idx
+      self.logged_images_val = 0
+      
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
     outputs = self(images)
@@ -240,10 +248,11 @@ class Network(LightningModule):
 
     self.log('val_loss', loss, on_epoch=True)
 
-    return {'pred': pred, 'target': target, 'ori_img': batch[2]}
+    return {'pred': pred, 'target': target, 'ori_img': batch[2], 'dataloader_idx': dataloader_idx}
 
-  def validation_step_end( self, outputs):
+  def validation_step_end( self, outputs ):
     # Logging + Visu
+    dataloader_idx = outputs['dataloader_idx']
     pred, target = outputs['pred'],outputs['target']
     if ( self._exp['visu'].get('val_images',0) > self.logged_images_val and 
          self.current_epoch % self._exp['visu'].get('every_n_epochs',1)== 0) :
@@ -254,19 +263,19 @@ class Network(LightningModule):
       pred_c[0] = pred_c[0]+1
       target_c[0] = target_c[0] +1
       self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right_{self._task_name}_{self.logged_images_val}', seg=target_c[0], method='left')
+      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right__Name_{self._task_name}__Val_Task_{dataloader_idx}__Sample_{self.logged_images_val}', seg=target_c[0], method='left')
       self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
+      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right__Name_{self._task_name}_Val_Task_{dataloader_idx}__Sample_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
       
       
-    self.val_mIoU(pred,target)
+    self.val_mIoU[dataloader_idx] (pred,target)
     # calculates acc only for valid labels
 
     m  =  target > -1
-    self.val_acc(pred[m], target[m])
-    self.log('val_acc', self.val_acc, on_epoch=True, prog_bar=False)
-    self.log('val_mIoU', self.val_mIoU, on_epoch=True, prog_bar=False)
-    self.log('task_count', self._task_count, on_epoch=True, prog_bar=False)
+    self.val_acc[dataloader_idx] (pred[m], target[m])
+    self.log(f'val_acc', self.val_acc[dataloader_idx] , on_epoch=True, prog_bar=False)
+    self.log(f'val_mIoU', self.val_mIoU[dataloader_idx] , on_epoch=True, prog_bar=False)
+    self.log(f'task_count', self._task_count, on_epoch=True, prog_bar=False)
     # self.log('task_name', self._task_name, on_epoch=True)
     
   def validation_epoch_end(self, outputs):

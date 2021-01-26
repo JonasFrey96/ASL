@@ -1,15 +1,15 @@
-name: test/debug
+name: InputReplay/debug
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
 checkpoint_load: coco/2021-01-22T16:49:01_train40_24h/last.ckpt
 tramac_restore: false
-lr: 0.05
+lr: 0.003
 lr_scheduler:
   active: true
   cfg:
     power: 0.9
-    max_epochs: 10
+    max_epochs: 1000
     target_lr: 1.0e-05
 optimizer:
   name: ADAM
@@ -31,19 +31,19 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 10
-  limit_val_batches: 10
-  limit_test_batches: 10
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs: 2
+  max_epochs: 20
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 5
+  check_val_every_n_epoch: 1
 loader:
   pin_memory: true
-  batch_size: 4
-  batch_size_test: 4
+  batch_size: 16
+  batch_size_test: 16
   shuffle: true
   num_workers: 16
 visu:
@@ -59,7 +59,7 @@ model:
     num_classes: 40
     aux: false
   freeze:
-    active: true
+    active: false
     mask:
       - true
       - true
@@ -67,6 +67,13 @@ model:
       - false
 task_generator:
   mode: mlhypersim_random4_tests
+  cfg_replay:
+    bins: 4
+    elements: 100
+    add_p: 0.5
+    replay_p: 0.5
+    current_bin: 0
+
 d_val:
   name: nyuv2
   mode: val
@@ -93,11 +100,12 @@ cb_early_stopping:
     min_delta: -0.0001
 cb_checkpoint:
   nameing:
-  - val_acc_epoch
-  - val_mIoU_epoch
+  - notimp
+  # - val_acc/dataloader_idx_0
+  # - val_mIoU/dataloader_idx_0
   cfg:
     verbose: true
-    monitor: val_loss
+    monitor: val_loss/dataloader_idx_0
     mode: min
     prefix: ''
     save_last: true

@@ -219,22 +219,22 @@ class MLHypersim(ReplayDataset):
 
     def __getitem__(self, index):
         
-        
-        idx = self.idx(index)
-        if idx != -1:
-            global_idx = idx
+        if self._mode == 'train':
+            idx = self.idx(self.global_to_local_idx[index])
+            if idx != -1:
+                global_idx = idx
+            else:
+                global_idx = self.global_to_local_idx[index]
         else:
             global_idx = self.global_to_local_idx[index]
             
-        print(self.get_replay_state())
-
-        with h5py.File(self.image_pths[index], 'r') as f:
+        with h5py.File(self.image_pths[global_idx], 'r') as f:
             img = np.array(f['dataset'])
         img[img > 1] = 1
         img = torch.from_numpy(img).type(
             torch.float32).permute(
             2, 0, 1)  # C H W
-        with h5py.File(self.label_pths[index], 'r') as f:
+        with h5py.File(self.label_pths[global_idx], 'r') as f:
             label = np.array(f['dataset'])
         label = torch.from_numpy(label).type(
             torch.float32)[None, :, :]  # C H W
