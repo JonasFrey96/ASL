@@ -373,103 +373,108 @@ class Network(LightningModule):
       ret = [optimizer]
     return ret
   
-  def train_dataloader(self):
-    output_transform = transforms.Compose([
-            transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-    ])
-    # dataset and dataloader
-    dataset_train = get_dataset(
-      **self._exp['d_train'],
-      env = self._env,
-      output_trafo = output_transform,
-    )
-    print(dataset_train)
-                                      
-    # initalize train and validation indices
-    dataloader_train = torch.utils.data.DataLoader(dataset_train,
-      shuffle = self._exp['loader']['shuffle'],
-      num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
-      pin_memory = self._exp['loader']['pin_memory'],
-      batch_size = self._exp['loader']['batch_size'], 
-      drop_last = True)
+  # def train_dataloader(self):
+  #   output_transform = transforms.Compose([
+  #           transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+  #   ])
+  #   # dataset and dataloader
+  #   dataset_train = get_dataset(
+  #     **self._exp['d_train'],
+  #     env = self._env,
+  #     output_trafo = output_transform,
+  #   )
+  #   print(dataset_train)
+  #   # self.trainer.train_dataloader                              
+  #   # initalize train and validation indices
+  #   if self.trainer.train_dataloader is not None:
+  #     bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
+  #     dataset_train.set_full_state(bins,valids, self._task_count_task_name)
+  #   dataloader_train = torch.utils.data.DataLoader(dataset_train,
+  #     shuffle = self._exp['loader']['shuffle'],
+  #     num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
+  #     pin_memory = self._exp['loader']['pin_memory'],
+  #     batch_size = self._exp['loader']['batch_size'], 
+  #     drop_last = True)
     
-    return dataloader_train
+  #   return dataloader_train
     
-  def val_dataloader(self):
-    output_transform = transforms.Compose([
-      transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-    ])
-    dataset_val = get_dataset(
-      **self._exp['d_val'],
-      env = self._env,
-      output_trafo = output_transform
-    )
+  # def val_dataloader(self):
+  #   output_transform = transforms.Compose([
+  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+  #   ])
+  #   dataset_val = get_dataset(
+  #     **self._exp['d_val'],
+  #     env = self._env,
+  #     output_trafo = output_transform
+  #   )
 
-    dataloader_val = torch.utils.data.DataLoader(dataset_val,
-      shuffle = False,
-      num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
-      pin_memory = self._exp['loader']['pin_memory'],
-      batch_size = self._exp['loader']['batch_size'])
-    return dataloader_val
+  #   dataloader_val = torch.utils.data.DataLoader(dataset_val,
+  #     shuffle = False,
+  #     num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
+  #     pin_memory = self._exp['loader']['pin_memory'],
+  #     batch_size = self._exp['loader']['batch_size'])
+  #   return dataloader_val
 
-  def test_dataloader(self):
-    output_transform = transforms.Compose([
-      transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-    ])
-    dataset_test = get_dataset(
-      **self._exp['d_test'],
-      env = self._env,
-      output_trafo = output_transform
-    )
+  # def test_dataloader(self):
+  #   output_transform = transforms.Compose([
+  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+  #   ])
+  #   dataset_test = get_dataset(
+  #     **self._exp['d_test'],
+  #     env = self._env,
+  #     output_trafo = output_transform
+  #   )
 
-    dataloader_test = torch.utils.data.DataLoader(dataset_test,
-      shuffle = False,
-      num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
-      pin_memory = self._exp['loader']['pin_memory'],
-      batch_size =  self._exp['loader']['batch_size_test'])
-    return dataloader_test
+  #   dataloader_test = torch.utils.data.DataLoader(dataset_test,
+  #     shuffle = False,
+  #     num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
+  #     pin_memory = self._exp['loader']['pin_memory'],
+  #     batch_size =  self._exp['loader']['batch_size_test'])
+  #   return dataloader_test
   
-  def set_train_dataset_cfg(self, dataset_train_cfg, dataset_val_cfg, task_name):
-    self._exp['d_train'] = dataset_train_cfg
-    self._exp['d_val'] = dataset_val_cfg
-    self._task_name = task_name
-    self._task_count += 1
+  # def set_train_dataset_cfg(self, dataset_train_cfg, dataset_val_cfg, task_name):
+  #   self._exp['d_train'] = dataset_train_cfg
+  #   self._exp['d_val'] = dataset_val_cfg
+  #   self._task_name = task_name
+  #   self._task_count += 1
     
-    if self._exp.get('latent_replay_buffer',{}).get('active',False):
-      self._lrb.set_bin( self._task_count)
+  #   if self._exp.get('latent_replay_buffer',{}).get('active',False):
+  #     self._lrb.set_bin( self._task_count)
       
-    # TODO this creation of the dataset to check its length should be avoided
-    output_transform = transforms.Compose([
-      transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-    ])
-    d2 = get_dataset(
-      **self._exp['d_val'],
-      env = self._env,
-      output_trafo = output_transform
-    )
-    d1 = get_dataset(
-      **self._exp['d_train'],
-      env = self._env,
-      output_trafo = output_transform
-    )
+    
+    
+  #   # TODO this creation of the dataset to check its length should be avoided
+  #   output_transform = transforms.Compose([
+  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+  #   ])
+  #   d2 = get_dataset(
+  #     **self._exp['d_val'],
+  #     env = self._env,
+  #     output_trafo = output_transform
+  #   )
+  #   d1 = get_dataset(
+  #     **self._exp['d_train'],
+  #     env = self._env,
+  #     output_trafo = output_transform
+  #   )
         
-    return bool(len(d1) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']) and 
-      len(d2) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']))
+  #   return bool(len(d1) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']) and 
+  #     len(d2) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']))
     
-  def set_test_dataset_cfg(self, dataset_test_cfg, task_name):
-    self._exp['d_test'] = dataset_test_cfg
-    self._task_name = task_name
-    # TODO this creation of the dataset to check its length should be avoided
-    output_transform = transforms.Compose([
-      transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-    ])
-    d1 = get_dataset(
-      **self._exp['d_test'],
-      env = self._env,
-      output_trafo = output_transform
-    )
+  # def set_test_dataset_cfg(self, dataset_test_cfg, task_name):
+  #   self._exp['d_test'] = dataset_test_cfg
+  #   self._task_name = task_name
+  #   # TODO this creation of the dataset to check its length should be avoided
+  #   output_transform = transforms.Compose([
+  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+  #   ])
+  #   d1 = get_dataset(
+  #     **self._exp['d_test'],
+  #     env = self._env,
+  #     output_trafo = output_transform
+  #   )
     
-    return bool( len(d1) > self._exp['loader']['batch_size_test']*self._exp['trainer']['gpus'])
+  #   return bool( len(d1) > self._exp['loader']['batch_size_test']*self._exp['trainer']['gpus'])
       
     
 

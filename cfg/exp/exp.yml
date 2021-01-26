@@ -18,7 +18,7 @@ optimizer:
     weight_decay: 4.0e-05
 
 latent_replay_buffer:
-  active: True
+  active: False
   cfg:
     elements: 100
     bins: 4
