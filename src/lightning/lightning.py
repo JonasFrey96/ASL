@@ -170,9 +170,9 @@ class Network(LightningModule):
           ele = torch.randint(0, valid_elements.shape[0], (1,))
           
           if self._exp['latent_replay_buffer']['extraction_level'] == 'compressed':
-            self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach() ,bin= self._task_count )
+            self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach())
           elif self._exp['latent_replay_buffer']['extraction_level'] == 'input':
-            self._lrb.add(x=images[ele].detach(),y=target[ele].detach() ,bin= self._task_count )
+            self._lrb.add(x=images[ele].detach(),y=target[ele].detach())
         
     self.log('train_loss', loss, on_step=False, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
@@ -383,6 +383,7 @@ class Network(LightningModule):
       env = self._env,
       output_trafo = output_transform,
     )
+    print(dataset_train)
                                       
     # initalize train and validation indices
     dataloader_train = torch.utils.data.DataLoader(dataset_train,
@@ -391,6 +392,7 @@ class Network(LightningModule):
       pin_memory = self._exp['loader']['pin_memory'],
       batch_size = self._exp['loader']['batch_size'], 
       drop_last = True)
+    
     return dataloader_train
     
   def val_dataloader(self):
@@ -432,6 +434,10 @@ class Network(LightningModule):
     self._exp['d_val'] = dataset_val_cfg
     self._task_name = task_name
     self._task_count += 1
+    
+    if self._exp.get('latent_replay_buffer',{}).get('active',False):
+      self._lrb.set_bin( self._task_count)
+      
     # TODO this creation of the dataset to check its length should be avoided
     output_transform = transforms.Compose([
       transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
