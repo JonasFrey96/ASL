@@ -51,6 +51,7 @@ def load_yaml(path):
 def eval_lists_into_dataloaders( eval_lists, env):
   loaders = []
   for eval_task in eval_lists:
+    
     loaders.append( get_dataloader_test(eval_task.dataset_test_cfg, env))
   return loaders
 
@@ -59,18 +60,18 @@ def get_dataloader_test(d_test, env):
           transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
   ])
   # dataset and dataloader
-  dataset_train = get_dataset(
+  dataset_test = get_dataset(
     **d_test,
     env = env,
     output_trafo = output_transform,
   )
-  dataloader_train = torch.utils.data.DataLoader(dataset_train,
+  dataloader_test = torch.utils.data.DataLoader(dataset_test,
     shuffle = exp['loader']['shuffle'],
     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
     pin_memory = exp['loader']['pin_memory'],
     batch_size = exp['loader']['batch_size'], 
     drop_last = True)
-  return dataloader_train
+  return dataloader_test
   
 def get_dataloader_train_val(d_train, d_val, env, replay_state):
 
@@ -322,21 +323,19 @@ if __name__ == "__main__":
       task, eval_lists = out
       main_visu.epoch = idx
       # New Logger
-      rank_zero_info( 'Executing Training Task: '+task.name )
+      rank_zero_info( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
       tbl = TensorBoardLogger(
         save_dir = trainer.default_root_dir,
         name = task.name,default_hp_metric=False)
+
       # only way to avoid PytorchLightning SummaryWriter nameing!
       tbl._experiment = SummaryWriter(
         log_dir=os.path.join(trainer.default_root_dir, task.name), 
         **tbl._kwargs)
       trainer.logger = tbl
-      # when a new fit or test is called in the trainer all dataloaders are initalized from scratch.
-      # here check if the same goes for the optimizers and learning rate schedules in this case
-      # both configues would need to be restored for advanced settings.
-      
-      trainer.current_epoch = 0
-      
+
+
+      trainer.current_epoch = 0      
       model._task_name = task.name
       model._task_count = idx
       dataloader_train, dataloader_val = get_dataloader_train_val(d_train= task.dataset_train_cfg,
@@ -347,9 +346,9 @@ if __name__ == "__main__":
       #Training the model
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
-                              val_dataloaders= dataloader_list_test )
+                              val_dataloaders= dataloader_list_test)
       bins, valids = trainer.train_dataloader.dataset.get_full_state()
-      replay_state = { 'bins':bins, 'valids': valids, 'bin': idx }
+      replay_state = { 'bins':bins, 'valids': valids, 'bin': idx+1 }
       
       training_results.append( trainer.logged_metrics )
       # test_results = []
