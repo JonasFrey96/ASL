@@ -48,13 +48,21 @@ class LatentReplayBuffer(nn.Module):
     self._injections_rate = injection_rate
     
     self.register_buffer('_bin_counts', torch.zeros((bins)))
-    
+    self._bin_count = 0 
     self._size_label = size_label
     self._size = size
     self._dtype = dtype
     self._device = device
-    
-  def add(self, x,y, bin):
+  
+  def set_bin(self,bin):
+    if bin >= 0 and bin < len(self.bins):
+      self._bin_count = bin
+    else:
+      raise AssertionError("Selected bin is invalid")
+      
+  def add(self, x,y, bin=None):
+    if bin is None:
+      bin = self._bin_count
     
     free = self.bins[bin].valid == False
     if self._bin_counts[bin] < self._max_elements:
@@ -93,7 +101,7 @@ class LatentReplayBuffer(nn.Module):
     injection_mask = torch.zeros( (BS), dtype=torch.bool, device=device)
     
     # create injection mask according to set injection_rate
-    if self._bin_counts.sum() < BS:
+    if self._bin_counts.sum() < BS or self._bin_count == 0:
       return injection, injection_labels, injection_mask
     else:
       if self._injections_rate < 1:
