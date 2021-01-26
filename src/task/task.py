@@ -53,6 +53,7 @@ mlhypersim_template_dict = {
     'mode': 'train', 
     'output_size': 384,
     'scenes': [],
+    'cfg_replay':{'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0}
 }
 mlhypersim_scene_names = MLHypersim.get_classes()
 

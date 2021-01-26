@@ -18,22 +18,22 @@ except Exception:  # ImportError
     from helper import Augmentation
 
 import multiprocessing
+import copy 
+
 
 __all__ = ['MLHypersim']
 
 
 """
-Everyting might work out of the box Wait
+The Replay Dataset is not fully thread consistent ( its kind of save ) for two reasons: 
+elements might be added or removed by one task while the other access them.
+Two workers might write to the same location simulationsly.
 
+We could avoid this by makeing the write and read section only available for one worker. 
 
-
-This was a bad idea for the follwing reasons:
-1. The replaybuffer will be destroyed when a new Dataset is initalized
-(This could be avoided by not fully reinit the dataset but just updateing the lists)
-2. The replay buffer will be filled differently for each ddp.
-
-3. Better option would be to write a costume ddp-sampler which includes the replay buffer
-4. Is this re-initit also ?
+We only replace indexe therefore this dosent matter.  
+Additionally we dont care if a index is directly overwritten by an other task since we randomly add the indexe currently
+If we change this RandomReplay Buffer to a more suffisticated approache we might implement this more carefully.
 """
 
 
@@ -41,81 +41,129 @@ class ReplayDataset(data.Dataset):
     def __init__(self, bins, elements, add_p=0.5, replay_p=0.5, current_bin=0):
         self._bins = [
             multiprocessing.Array(
-                'i', (elements)) for i in range(bins)]
+                'I', (elements)) for i in range(bins)]
         self._valid = [
             multiprocessing.Array(
-                'b', (elements)) for i in range(bins)]
-
+                'I', (elements)) for i in range(bins)]
+        self._current_bin = multiprocessing.Value('I', 0)
+         
         self.b = np.zeros(elements)
         self.v = np.zeros(elements)
-
-        self._current_bin = current_bin
+        self._elements = elements
+       
         self._replay_p = replay_p
         self._add_p = add_p
 
     def idx(self, index):
-
-        self.v[:] = self._valid[0][:]
-
-        if ((self.v).sum() != 0 and
-                random.random() < self._replay_p):
-
-            index = self.get_element()
+        
+        if random.random() < self._replay_p:
+            index = self.get_element(index)
 
         elif random.random() < self._add_p:
             self.add_element(index)
         return index
 
     def get_replay_state(self):
-        el = self._bins[0][0]
-        string = "ReplayDataset contains elements "
+        v_el = []
+        for i in self._valid:
+            with i.get_lock(): 
+                self.v = np.frombuffer(i.get_obj(),dtype=np.uint32) # no data copying
+                v_el.append( int( self.v.sum() ) )
+        v = self._current_bin.value
+        string = "ReplayDataset contains elements " + str( v_el) 
+        string += f"\nCurrently selected bin: {v}"
         return string
 
-    def set_current_bin(self, bin):
+    def set_current_bin(self, bin):       
         # might not be necessarry since we create the dataset with the correct
         # bin set
-        if bin < self._bins.shape[0]:
-            self._current_bin = bin
+        if bin < len( self._bins ):
+            self._current_bin.value = bin
         else:
             raise Exception(
                 "Invalid bin selected. Bin must be element 0-" +
-                self._bins.shape[0])
+                len( self._bins))
+            
+    def get_full_state(self):
+        bins = np.zeros( ( len(self._bins),self._elements))
+        valid = np.zeros( ( len(self._valid),self._elements))
+        
+        for b in range( len(self._bins) ):
+            bins[b,:] = self._bins[b][:]
+            valid[b,:] = self._valid[b][:]
+        
+        return bins, valid
+    
+    def set_full_state(self, bins,valids, bin):
+        assert bins.shape[0] == valids.shape[0]
+        assert valids.shape[0] == len(self._bins)
+        assert bins.shape[1] == valids.shape[1]
+        assert valids.shape[1] == self._elements
+        assert bin >= 0 and bin < bins.shape[0]
+        
+        for b in range( len(self._bins) ):
+            with self._bins[b].get_lock(): 
+                self.b = np.frombuffer(self._bins[b].get_obj(),dtype=np.uint32) # no data copying
+                self.b[:] = bins[b,:].astype(np.uint32) 
+            with self._valid[b].get_lock(): 
+                self.v = np.frombuffer(self._valid[b].get_obj(),dtype=np.uint32) # no data copying
+                self.v[:] = valids[b,:].astype(np.uint32)
+                
+        self._current_bin.value = bin
+         
 
-    def get_element(self):
-        if self._current_bin > 0:
-            if self._current_bin > 1:
-                b = int(np.random.randint(0, self._current_bin - 1, (1,)))
+    def get_element(self, index):
+
+        v = self._current_bin.value
+        if v > 0:
+            if v > 1:
+                b = int(np.random.randint(0, v - 1, (1,)))
             else:
                 b = 0
-
-        self.v = self._valid[b]
-        indi = np.nonzero(self.v)
-
-        sel_ele = np.random.randint(0, indi.shape[0], (1,))
-
-        return self._bins[b, int(indi[sel_ele, 1])]
+            # we assume that all previous bins are filled. 
+            # Therefore contain more values 
+            with self._valid[b].get_lock(): # synchronize access
+                with self._bins[b].get_lock(): 
+                    
+                    self.v = np.frombuffer(self._valid[b].get_obj(),dtype=np.uint32) # no data copying
+                    self.b = np.frombuffer(self._bins[b].get_obj(),dtype=np.uint32) # no data copying
+                    
+                    indi = np.nonzero(self.v)[0]
+                    if indi.shape[0] == 0:
+                        sel_ele = [0]
+                    else:
+                        sel_ele = np.random.randint(0, indi.shape[0], (1,))
+                    
+                    return int( self.b[ int(indi[sel_ele]) ] )
+                
+        return -1
 
     def add_element(self, index):
+        v = self._current_bin.value
+        
+        with self._valid[v].get_lock(): # synchronize access
+            with self._bins[v].get_lock(): 
+                
+                self.v = np.frombuffer(self._valid[v].get_obj(),dtype=np.uint32) # no data copying
+                self.b = np.frombuffer(self._bins[v].get_obj(),dtype=np.uint32) # no data copying
+                    
+                if (index == self.b).sum() == 0:
+                    # not in buffer
+                    if self.v.sum() != self.v.shape[0]:
+                        # free space simply add
+                        indi = np.nonzero(self.v == 0)[0]
+                        sel_ele = np.random.randint(0, indi.shape[0], (1,))
+                        sel_ele = int(indi[sel_ele])
 
-        self.b[:] = self._bins[self._current_bin][:]
-        self.v[:] = self._valid[self._current_bin][:]
+                        self.b[sel_ele] = index
+                        self.v[sel_ele] = True
 
-        if (index == self.b).sum() == 0:
-            # not in buffer
-            if self.v.sum() != self.v.shape[0]:
-                # free space simply add
-                indi = np.nonzero(self.v == 0)
-                sel_ele = np.random.randint(0, indi.shape[0], (1,))
-                sel_ele = int(indi[sel_ele])
-
-                self._bins[self._current_bin][sel_ele] = index
-                self._valid[self._current_bin][sel_ele] = True
-
-            else:
-                # replace
-                sel_ele = np.random.randint(0, self.b.shape[0], (1,))
-                self._bins[self._current_bin][sel_ele] = index
-            return True
+                    else:
+                        # replace
+                        sel_ele = np.random.randint(0, self.b.shape[0], (1,))
+                        self.b[sel_ele] = index
+                    
+                    return True
 
         return False
 
@@ -135,7 +183,7 @@ class MLHypersim(ReplayDataset):
                 0.3,
                 0.3,
                 0.05],
-            current_bin=0):
+            cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0}):
         """
         Each dataloader loads the full .mat file into memory.
         For the small dataset size this is perfect.
@@ -150,11 +198,7 @@ class MLHypersim(ReplayDataset):
         super(
             MLHypersim,
             self).__init__(
-            5,
-            1000,
-            add_p=0.5,
-            replay_p=0.5,
-            current_bin=current_bin)
+            ** cfg_replay)
 
         self._output_size = output_size
         self._mode = mode
@@ -169,15 +213,20 @@ class MLHypersim(ReplayDataset):
 
         self._output_trafo = output_trafo
 
-        print(torch.utils.data.get_worker_info())
         # full training dataset with all objects
         # TODO
         #self._weights = pd.read_csv(f'cfg/dataset/ml-hypersim/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
 
     def __getitem__(self, index):
-        index = self.idx(index)
+        
+        
+        idx = self.idx(index)
+        if idx != -1:
+            global_idx = idx
+        else:
+            global_idx = self.global_to_local_idx[index]
+            
         print(self.get_replay_state())
-        print(torch.utils.data.get_worker_info())
 
         with h5py.File(self.image_pths[index], 'r') as f:
             img = np.array(f['dataset'])
@@ -239,21 +288,26 @@ class MLHypersim(ReplayDataset):
         self.sceneTypes = list(set(self.scenes))
         self.sceneTypes.sort()
 
+        self.global_to_local_idx = [i for i in range(len(self.image_pths))]
+        
+        self.filtered_image_pths = copy.deepcopy( self.image_pths ) 
         # Scene filtering checked by inspection
         for sce in self.sceneTypes:
-            images_in_scene = [i for i in self.image_pths if i.find(sce) != -1]
+            images_in_scene = [i for i in self.filtered_image_pths if i.find(sce) != -1]
             k = int((1 - train_val_split) * len(images_in_scene))
             if mode == 'train':
                 remove_ls = images_in_scene[k:]
             elif mode == 'val':
                 remove_ls = images_in_scene[:k]
 
-            idx = self.image_pths.index(remove_ls[0])
+            idx = self.filtered_image_pths.index(remove_ls[0])
             for i in range(len(remove_ls)):
-                del self.image_pths[idx]
-                del self.label_pths[idx]
-                del self.scenes[idx]
-        self.length = len(self.image_pths)
+                del self.filtered_image_pths[idx]
+                #del self.label_pths[idx]
+                #del self.scenes[idx]
+                del self.global_to_local_idx[idx]
+                
+        self.length = len(self.global_to_local_idx)
 
     @staticmethod
     def get_classes():
@@ -262,15 +316,15 @@ class MLHypersim(ReplayDataset):
         return sceneTypes
 
     def _filter_scene(self, scenes):
+        
+        
         images_idx = []
         for sce in scenes:
-            images_idx += [i for i in range(len(self.image_pths))
-                           if (self.image_pths[i]).find(sce) != -1]
+            images_idx += [i for i in range(len(self.filtered_image_pths))
+                           if (self.filtered_image_pths[i]).find(sce) != -1]
         idx = np.array(images_idx)
-        self.image_pths = (np.array(self.image_pths)[idx]).tolist()
-        self.label_pths = (np.array(self.label_pths)[idx]).tolist()
-        self.scenes = (np.array(self.scenes)[idx]).tolist()
-        self.length = len(self.image_pths)
+        self.global_to_local_idx =  (np.array(self.global_to_local_idx)[idx]).tolist()
+        self.length = len(self.global_to_local_idx)
 
 
 def test():
@@ -304,9 +358,63 @@ def test():
                                              num_workers=4,
                                              pin_memory=False,
                                              batch_size=2)
-
+    print('Start')
     for j, data in enumerate(dataloader):
+        t = data
         print(j)
+        if j == 50: 
+            print('Set bin to 1')
+            dataloader.dataset.set_current_bin(bin=1)
+            
+        if j > 100:
+            break
+        
+    bins, valids = dataloader.dataset.get_full_state()
+    
+    # create new dataset 
+    dataset = MLHypersim(
+        mode='train',
+        scenes=[
+            'ai_001_002',
+            'ai_001_003',
+            'ai_001_004',
+            'ai_001_005',
+            'ai_001_006'],
+        output_trafo=output_transform,
+        output_size=400,
+        degrees=10,
+        flip_p=0.5,
+        jitter_bcsh=[
+            0.3,
+            0.3,
+            0.3,
+            0.05])
+    
+    dataloader = torch.utils.data.DataLoader(dataset,
+                                             shuffle=False,
+                                             num_workers=16,
+                                             pin_memory=False,
+                                             batch_size=2)
+    
+    dataloader.dataset.set_full_state(bins,valids, 2)
+    for j, data in enumerate(dataloader):
+        t = data
+    for j, data in enumerate(dataloader):
+        t = data
+    for j, data in enumerate(dataloader):
+        t = data
+    for j, data in enumerate(dataloader):
+        t = data              
+    for j, data in enumerate(dataloader):
+        t = data
+    for j, data in enumerate(dataloader):
+        t = data       
+        if j == 50: 
+            print('Set bin to 3')
+            dataloader.dataset.set_current_bin(bin=3)
+        
+        
+        #print(j)
         # img, label, _img_ori= dataset[i]    # C, H, W
 
         # label = np.uint8( label.numpy() * (255/float(label.max())))[:,:]

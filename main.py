@@ -33,6 +33,9 @@ import numpy as np
 from pytorch_lightning.loggers.neptune import NeptuneLogger
 import datetime
 import time
+from datasets import get_dataset
+from torchvision import transforms
+from math import ceil
 
 def file_path(string):
   if os.path.isfile(string):
@@ -45,6 +48,68 @@ def load_yaml(path):
     res = yaml.load(file, Loader=yaml.FullLoader) 
   return res
 
+def eval_lists_into_dataloaders( eval_lists, env):
+  loaders = []
+  for eval_task in eval_lists:
+    loaders.append( get_dataloader_test(eval_task.dataset_test_cfg, env))
+  return loaders
+
+def get_dataloader_test(d_test, env):
+  output_transform = transforms.Compose([
+          transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+  ])
+  # dataset and dataloader
+  dataset_train = get_dataset(
+    **d_test,
+    env = env,
+    output_trafo = output_transform,
+  )
+  dataloader_train = torch.utils.data.DataLoader(dataset_train,
+    shuffle = exp['loader']['shuffle'],
+    num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
+    pin_memory = exp['loader']['pin_memory'],
+    batch_size = exp['loader']['batch_size'], 
+    drop_last = True)
+  return dataloader_train
+  
+def get_dataloader_train_val(d_train, d_val, env, replay_state):
+
+  output_transform = transforms.Compose([
+          transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
+  ])
+  # dataset and dataloader
+  dataset_train = get_dataset(
+    **d_train,
+    env = env,
+    output_trafo = output_transform,
+  )
+  
+  if replay_state is not None:
+    # dont loss the buffer replay state if a new dataset is created
+    dataset_train.set_full_state(**replay_state)
+    
+  dataloader_train = torch.utils.data.DataLoader(dataset_train,
+    shuffle = exp['loader']['shuffle'],
+    num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
+    pin_memory = exp['loader']['pin_memory'],
+    batch_size = exp['loader']['batch_size'], 
+    drop_last = True)
+  
+  dataset_val = get_dataset(
+    **d_val,
+    env = env,
+    output_trafo = output_transform,
+  )
+  dataloader_val = torch.utils.data.DataLoader(dataset_val,
+    shuffle = exp['loader']['shuffle'],
+    num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
+    pin_memory = exp['loader']['pin_memory'],
+    batch_size = exp['loader']['batch_size'], 
+    drop_last = True)
+    
+  return dataloader_train, dataloader_val
+    
+    
 if __name__ == "__main__":
   seed_everything(42)
 
@@ -240,19 +305,10 @@ if __name__ == "__main__":
   
   mode = exp.get('paper_analysis', {}).get('mode','normal')
   
+  replay_state = None
   if mode == 'normal':
     for idx, out in enumerate(tc) :  
-      if idx != 0:
-        # reset model checkpoint storeing for each training task!
-        checkpoint_callback = ModelCheckpoint(
-          filepath=filepath,
-          **exp['cb_checkpoint']['cfg']
-        )
-        # create a new Trainer. 
-        trainer = Trainer(**exp['trainer'],
-          default_root_dir=model_path,
-          callbacks=cb_ls)
-              
+ 
       if idx != 0:
         t = time.time() - _task_start_time
         t = str(datetime.timedelta(seconds=t))
@@ -261,7 +317,8 @@ if __name__ == "__main__":
         rank_zero_info(f'Time for task {idx}: '+ t)
         rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
         _task_start_time = time.time()
-    
+
+      
       task, eval_lists = out
       main_visu.epoch = idx
       # New Logger
@@ -277,77 +334,83 @@ if __name__ == "__main__":
       # when a new fit or test is called in the trainer all dataloaders are initalized from scratch.
       # here check if the same goes for the optimizers and learning rate schedules in this case
       # both configues would need to be restored for advanced settings.
+      
       trainer.current_epoch = 0
-      suc = model.set_train_dataset_cfg(
-        dataset_train_cfg=task.dataset_train_cfg,
-        dataset_val_cfg=task.dataset_val_cfg,
-        task_name=task.name
-      )
-      if not suc:
-        rank_zero_warn( "Training Task "+ task.name + 
-                        " not started. Not enough val/train data!")
-        continue
-      train_res = trainer.fit(model)
+      
+      model._task_name = task.name
+      model._task_count = idx
+      dataloader_train, dataloader_val = get_dataloader_train_val(d_train= task.dataset_train_cfg,
+                                                                  d_val= task.dataset_val_cfg,
+                                                                  env=env , replay_state = replay_state)
+      dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
+      
+      #Training the model
+      train_res = trainer.fit(model = model,
+                              train_dataloader= dataloader_train,
+                              val_dataloaders= dataloader_list_test )
+      bins, valids = trainer.train_dataloader.dataset.get_full_state()
+      replay_state = { 'bins':bins, 'valids': valids, 'bin': idx }
+      
       training_results.append( trainer.logged_metrics )
-      test_results = []
-      for eval_task in eval_lists:
-        rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
-                        " of Training Task: " + task.name )
-        suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg, task_name=eval_task.name)
-        if not suc:
-          rank_zero_warn( "Evaluation Task "+ eval_task.name + 
-                          " not started. Not enough test data!")
-          continue
+      # test_results = []
+      # for eval_task in eval_lists:
+      #   rank_zero_info( "Executing Evaluation Task: "+ eval_task.name + 
+      #                   " of Training Task: " + task.name )
+      #   suc = model.set_test_dataset_cfg( dataset_test_cfg=eval_task.dataset_test_cfg, task_name=eval_task.name)
+      #   if not suc:
+      #     rank_zero_warn( "Evaluation Task "+ eval_task.name + 
+      #                     " not started. Not enough test data!")
+      #     continue
         
-        # TODO: one task might call mutiple tests!
-        test_res = trainer.test(model)
-        new_res= {}
-        for k in test_res[0].keys():
-          try:
-            new_res[k] = float( test_res[0][k])
-          except:
-            pass
+      #   # TODO: one task might call mutiple tests!
+      #   test_res = trainer.test(model)
+      #   new_res= {}
+      #   for k in test_res[0].keys():
+      #     try:
+      #       new_res[k] = float( test_res[0][k])
+      #     except:
+      #       pass
             
-        test_results.append(new_res)
+      #   test_results.append(new_res)
       
-      ## create diagonal metric for all test resutls
-      for met in training_results[0].keys():
-        dia = np.zeros( (len(training_results),len(training_results)))
-        suc = True
-        try:
-          for _i in range( len(training_results)):
-            dia[_i,_i] = int( training_results[_i][met]* 100 )
+      # ## create diagonal metric for all test resutls
+      # for met in training_results[0].keys():
+      #   dia = np.zeros( (len(training_results),len(training_results)))
+      #   suc = True
+      #   try:
+      #     for _i in range( len(training_results)):
+      #       dia[_i,_i] = int( training_results[_i][met]* 100 )
                
-        except:
-          suc = False
-        if suc: 
+      #   except:
+      #     suc = False
+      #   if suc: 
           
-          main_visu.plot_matrix(
-            tag = f'train_{met}',
-            data_matrix = dia)
+      #     main_visu.plot_matrix(
+      #       tag = f'train_{met}',
+      #       data_matrix = dia)
       
-      ## get test mIoU to right format to log as matrix 
-      results.append({'Time': idx, 'Traning': train_res, 'Test': test_results})
-      mIoU = []
-      for i, task in enumerate( results):
-        test_vals = []
-        for j, test in enumerate(task['Test']):
-          test_vals.append( test['test_mIoU'])
-        mIoU.append(test_vals)
+      # ## get test mIoU to right format to log as matrix 
+      # results.append({'Time': idx, 'Traning': train_res, 'Test': test_results})
+      # mIoU = []
+      # for i, task in enumerate( results):
+      #   test_vals = []
+      #   for j, test in enumerate(task['Test']):
+      #     test_vals.append( test['test_mIoU'])
+      #   mIoU.append(test_vals)
       
-      max_tests = 0
-      for task in mIoU:
-        if len(task) > max_tests :
-          max_tests  = len(task)
+      # max_tests = 0
+      # for task in mIoU:
+      #   if len(task) > max_tests :
+      #     max_tests  = len(task)
       
-      for i in range(len( mIoU)):
-        if len(mIoU[i]) < max_tests :
-          mIoU[i] = mIoU[i] + [0.0] * (max_tests -len(mIoU[i]))
-      data_matrix = np.array( mIoU) * 100
-      data_matrix = np.around(data_matrix , decimals=0)
-      main_visu.plot_matrix(
-        tag = 'mIoU',
-        data_matrix = data_matrix)
+      # for i in range(len( mIoU)):
+      #   if len(mIoU[i]) < max_tests :
+      #     mIoU[i] = mIoU[i] + [0.0] * (max_tests -len(mIoU[i]))
+      # data_matrix = np.array( mIoU) * 100
+      # data_matrix = np.around(data_matrix , decimals=0)
+      # main_visu.plot_matrix(
+      #   tag = 'mIoU',
+      #   data_matrix = data_matrix)
       
   elif  mode == 'paper_analysis':
     # This mode should not be used for training. 
@@ -376,9 +439,6 @@ if __name__ == "__main__":
       
       if idx != 0:
         print(f'Start training samples {j}')
-
-
-
         t = time.time() - _task_start_time
         t = str(datetime.timedelta(seconds=t))
         t2 = time.time() - _task_start_training
@@ -402,7 +462,10 @@ if __name__ == "__main__":
       # when a new fit or test is called in the trainer all dataloaders are initalized from scratch.
       # here check if the same goes for the optimizers and learning rate schedules in this case
       # both configues would need to be restored for advanced settings.
+      
       trainer.current_epoch = 0
+      
+      
       suc = model.set_train_dataset_cfg(
         dataset_train_cfg=task.dataset_train_cfg,
         dataset_val_cfg=task.dataset_val_cfg,
