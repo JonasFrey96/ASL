@@ -53,6 +53,7 @@ mlhypersim_template_dict = {
     'mode': 'train', 
     'output_size': 384,
     'scenes': [],
+    'replay': False,
     'cfg_replay':{'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0}
 }
 mlhypersim_scene_names = MLHypersim.get_classes()
@@ -76,8 +77,13 @@ class TaskCreator():
     self._task_list = []
     self._eval_lists = []
     
+    
+    self.replay_adaptive_add_p = kwargs.get('replay_adaptive_add_p',False)
+    
     if kwargs.get('cfg_replay', None) is not None:
-      mlhypersim_template_dict['cfg_replay'] = kwargs.get('cfg_replay', None)
+      mlhypersim_template_dict['cfg_replay'] = kwargs['cfg_replay']
+   
+    mlhypersim_template_dict['replay'] = kwargs.get('replay',False)
       
     if mode == 'SingleScenesCountsDescending':
       self._getTaskSingleScenesCountsDescending()  
@@ -171,6 +177,12 @@ class TaskCreator():
       val['mode'] = 'val'
       train['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
       val['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
+      
+      if self.replay_adaptive_add_p:
+        if i == 0:
+          train['cfg_replay']['replay_p'] = 0.0
+        else:
+          train['cfg_replay']['replay_p'] = float(i)/float(i+1)
       
       task_idx = str(i).zfill(2)
       t = Task(name = f'Task_{task_idx}_mlhyper_random4_test_all',

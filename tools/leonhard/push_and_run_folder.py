@@ -72,9 +72,8 @@ for j,e in enumerate(exps):
     logging.warning('   Error: Number of workers dosent align with requested cores!')
     logging.warning('   Error: Either set ignore_workers flag true or change config')
     exps.remove(e)
-  
   # Validate if config trainer settings fits with job.
-  if gpus > 1 and doc['trainer']['accelerator'] != 'ddp':
+  elif gpus > 1 and doc['trainer']['accelerator'] != 'ddp':
     logging.warning('   Error: Mutiple GPUs but not using ddp')
     exps.remove(e)
   elif doc['trainer']['gpus'] != gpus and doc['trainer']['gpus'] != -1:
@@ -84,66 +83,70 @@ for j,e in enumerate(exps):
     model_paths.append( doc['name'] ) 
     
 logging.info('')
+
+if len(model_paths) == 0:
+  logging.info('Model Paths Empty!')
   
-export_cmd = """export LSF_ENVDIR=/cluster/apps/lsf/conf; export LSF_SERVERDIR=/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/etc;"""
-bsub_cmd = """/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub"""
-  
-with open(os.path.join( home, 'ASL', env )) as f:
-  doc = yaml.load(f, Loader=yaml.FullLoader) 
-  base = doc['base']
-model_paths = [os.path.join(base,i) for i in model_paths] 
-
-# Push to cluster 
-cmd = f"""rsync -a --delete {home}/ASL/* jonfrey@login.leonhard.ethz.ch:/cluster/home/jonfrey/ASL"""
-os.system(cmd)
-
-# Executue commands on cluster
-import paramiko
-try:
-
-  host = "login.leonhard.ethz.ch"
-  port = 22
-  username = "jonfrey"
-  ssh = paramiko.SSHClient()
-  ssh.load_system_host_keys()
-  #ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-  ssh.connect(host, port, username)
-  
-  N = len(exps)
-  logging.info(f'Using bsub to schedule {N}-jobs:')
-  for j, e in enumerate(exps):
-    e = e.replace('/home/jonfrey/ASL/','')
-    logging.info('   Model Path:'+ model_paths[j])
-    p = model_paths[j].split('/')
-    p = '/'.join(p[:-1])
-
-    #Remote make Path
-    cmd = f'mkdir -p {p}'
-    stdin, stdout, stderr = ssh.exec_command(cmd)
-
-    name = model_paths[j].split('/')[-1] + str(j) + '.out'
-    o = f""" -oo {p}/{name} """
-    cmd = f"""{export_cmd} cd $HOME/ASL && {bsub_cmd}{o}-n {w} -W {s1} -R "rusage[mem={ram},ngpus_excl_p={gpus}]" -R "select[gpu_mtotal0>={mem}]" """ 
-    if scratch > 0:
-      cmd += f"""-R "rusage[scratch={scratch}]" """
-    cmd += f"""./tools/leonhard/submit.sh --env={env} --exp={e}"""  
+else:  
+  export_cmd = """export LSF_ENVDIR=/cluster/apps/lsf/conf; export LSF_SERVERDIR=/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/etc;"""
+  bsub_cmd = """/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub"""
     
-    cmd = cmd.replace('\n', '')
-    logging.info(f'   {j}-Command: {cmd}')
+  with open(os.path.join( home, 'ASL', env )) as f:
+    doc = yaml.load(f, Loader=yaml.FullLoader) 
+    base = doc['base']
+  model_paths = [os.path.join(base,i) for i in model_paths] 
+
+  # Push to cluster 
+  cmd = f"""rsync -a --delete {home}/ASL/* jonfrey@login.leonhard.ethz.ch:/cluster/home/jonfrey/ASL"""
+  os.system(cmd)
+
+  # Executue commands on cluster
+  import paramiko
+  try:
+
+    host = "login.leonhard.ethz.ch"
+    port = 22
+    username = "jonfrey"
+    ssh = paramiko.SSHClient()
+    ssh.load_system_host_keys()
+    #ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    ssh.connect(host, port, username)
     
-    if not fake:
+    N = len(exps)
+    logging.info(f'Using bsub to schedule {N}-jobs:')
+    for j, e in enumerate(exps):
+      e = e.replace('/home/jonfrey/ASL/','')
+      logging.info('   Model Path:'+ model_paths[j])
+      p = model_paths[j].split('/')
+      p = '/'.join(p[:-1])
+
+      #Remote make Path
+      cmd = f'mkdir -p {p}'
       stdin, stdout, stderr = ssh.exec_command(cmd)
-      #a = stdin.readlines()
-      b = stdout.readlines()[0]
-      c = stderr.readlines()
-      logging.info(f'   {j}-Results: {b}')
-    else:
-      logging.info('   Fake Flag is set')
-    #Remote schedule jobs
-finally:  
-  if ssh is not None:
-    ssh.close()
-    try:
-      del ssh, stdin, stdout, stderr
-    except:
-      pass
+
+      name = model_paths[j].split('/')[-1] + str(j) + '.out'
+      o = f""" -oo {p}/{name} """
+      cmd = f"""{export_cmd} cd $HOME/ASL && {bsub_cmd}{o}-n {w} -W {s1} -R "rusage[mem={ram},ngpus_excl_p={gpus}]" -R "select[gpu_mtotal0>={mem}]" """ 
+      if scratch > 0:
+        cmd += f"""-R "rusage[scratch={scratch}]" """
+      cmd += f"""./tools/leonhard/submit.sh --env={env} --exp={e}"""  
+      
+      cmd = cmd.replace('\n', '')
+      logging.info(f'   {j}-Command: {cmd}')
+      
+      if not fake:
+        stdin, stdout, stderr = ssh.exec_command(cmd)
+        #a = stdin.readlines()
+        b = stdout.readlines()[0]
+        c = stderr.readlines()
+        logging.info(f'   {j}-Results: {b}')
+      else:
+        logging.info('   Fake Flag is set')
+      #Remote schedule jobs
+  finally:  
+    if ssh is not None:
+      ssh.close()
+      try:
+        del ssh, stdin, stdout, stderr
+      except:
+        pass
