@@ -30,9 +30,10 @@ from pytorch_lightning.utilities import rank_zero_info
 
 from torch.nn import functional as F
 # MODULES
-from models import FastSCNN
+from models import FastSCNN, Teacher
 from datasets import get_dataset
-from loss import  MixSoftmaxCrossEntropyLoss, MixSoftmaxCrossEntropyOHEMLoss
+from loss import cross_entropy_soft
+
 #from .metrices import IoU, PixAcc
 from visu import Visualizer
 from lightning import meanIoUTorchCorrect
@@ -59,8 +60,7 @@ class Network(LightningModule):
       self.model = FastSCNN(**self._exp['model']['cfg'])
     else:
       raise Exception('Model name not implemented')
-    self.criterion = MixSoftmaxCrossEntropyOHEMLoss(aux=False, aux_weight=0.4,
-      ignore_index=-1)
+    
     p_visu = os.path.join( self._exp['name'], 'visu')
     
     self.visualizer = Visualizer(
@@ -98,8 +98,6 @@ class Network(LightningModule):
         extraction_size = (3,s,s)
       else: 
         raise Exception()
-        
-      
       
       self._lrb = LatentReplayBuffer(
         size = extraction_size,
@@ -107,8 +105,23 @@ class Network(LightningModule):
         **self._exp['latent_replay_buffer']['cfg'],
         dtype = self._type,
         device=self.device)
-      self._replayed_samples = 0
-      self._real_samples = 0
+
+      
+    # set correct teaching mode.
+    self._teaching = self._exp.get('teaching',{}).get('active',False)
+    if self._teaching: 
+      if self._exp['task_generator']['total_tasks'] == 1:
+        self._teaching = False
+      if not (self._exp['task_generator']).get('replay',False):
+        self._teaching = False
+    if self._teaching: 
+      self.teacher = Teacher(
+        num_classes= self._exp['model']['cfg']['num_classes'],
+        n_teacher= self._exp['task_generator']['total_tasks']-1,
+        soft_labels= self._exp['teaching']['soft_labels'] )
+    
+    self._replayed_samples = 0
+    self._real_samples = 0
       
   def forward(self, batch, **kwargs):
     if kwargs.get('injection', None) is not None:
@@ -137,6 +150,56 @@ class Network(LightningModule):
     self.logged_images_val = 0
     self.logged_images_test = 0
 
+  def compute_loss(self, pred, target, images, replayed ):
+    if self._teaching and (replayed != -1).sum() != 0:
+      # work to do
+      nr_replayed = (replayed != -1).sum()
+      BS = replayed.shape[0]
+      self._replayed_samples += int( nr_replayed )
+      self._real_samples += int( BS - nr_replayed )
+      
+      if self._exp['teaching']['soft_labels']:
+        # TODO Results during training in NANs ???? 
+        
+        t_aux = target.clone()
+        mask = (target > -1).type(target.dtype)
+        t_aux = torch.clamp(t_aux,0) # inplace operator
+        target_onehot = torch.nn.functional.one_hot(t_aux, 
+          num_classes= self._exp['model']['cfg']['num_classes']).permute(0,3,1,2).type(images.dtype)
+      else:
+        target_accum = target.clone()
+        
+      for teacher in range(self._exp['task_generator']['total_tasks']-1):
+        if (replayed == teacher).sum() != 0:
+          m = (replayed == teacher)[:,0]
+          tar = self.teacher( images.detach(), teacher) 
+          if self._exp['teaching']['soft_labels']:
+            tar = torch.nn.functional.softmax(tar, dim=1) # to get a valid prob distribution 
+            rep_mask = m[:,None,None,None].repeat(1,*tar.shape[1:]).type(images.dtype)
+            ori_mask = (rep_mask == 0).type(images.dtype)
+            target_onehot = target_onehot * ori_mask + tar * rep_mask
+          else:
+            tar = torch.argmax(tar, dim=3)
+            rep_mask = m[:,None,None].repeat(1,*target_accum.shape[1:]).type(torch.int64)
+            ori_mask = (rep_mask == 0).type(torch.int64)
+            target_accum = (target_accum * ori_mask + tar * rep_mask).type(torch.int64)
+            
+          
+      if self._exp['teaching']['soft_labels']:
+        loss = cross_entropy_soft(pred, target_onehot, mask).mean()
+        if torch.any( torch.isnan(loss) ):
+          print('Error')
+          raise Exception('Error')
+        
+      else:
+        loss = F.cross_entropy(pred, target_accum, ignore_index=-1)
+      
+    else:
+      BS = replayed.shape[0]
+      self._real_samples += int( BS )
+      loss = F.cross_entropy(pred, target, ignore_index=-1)
+    return loss
+  
   def training_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]
@@ -149,8 +212,8 @@ class Network(LightningModule):
         injection = injection, 
         injection_mask = mask_injection)
       
-      self._replayed_samples += int( mask_injection.sum() )
-      self._real_samples += int( BS - mask_injection.sum() )
+      # self._replayed_samples += int( mask_injection.sum() )
+      # self._real_samples += int( BS - mask_injection.sum() )
       if mask_injection.sum() != 0:
         # set the labels to the stored labels
         target[mask_injection] = injection_labels[mask_injection]
@@ -161,9 +224,12 @@ class Network(LightningModule):
         ori_img[mask_injection] = img[mask_injection]
     else:
       outputs = self(batch = images)
-      
-    #_loss = self.criterion(outputs, target)
-    loss = F.cross_entropy(outputs[0], target, ignore_index=-1)
+
+    loss = self.compute_loss(  
+              pred = outputs[0], 
+              target = target, 
+              images= images, 
+              replayed = batch[3] )
     
     # write to latent replay buffer
     if self._exp.get('latent_replay_buffer',{}).get('active',False) and not self.trainer.running_sanity_check:
@@ -192,11 +258,12 @@ class Network(LightningModule):
         self.logger.experiment.add_scalars('lr_bins', 
           dic, 
           global_step=self.global_step)
-        self.logger.experiment.add_scalars('samples', 
-          {'real': torch.tensor(self._real_samples),
-          'replayed': torch.tensor(self._replayed_samples)}, 
-          global_step=self.global_step)
-      
+        
+    self.logger.experiment.add_scalars('samples', 
+      {'real': torch.tensor(self._real_samples),
+      'replayed': torch.tensor(self._replayed_samples)}, 
+      global_step=self.global_step)
+  
     # Logging + Visu
     if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 
       pred = torch.argmax(outputs['pred'], 1)
@@ -315,6 +382,11 @@ class Network(LightningModule):
       )
     self._epoch_start_time = time.time()
     
+  def on_train_end(self):
+    if self._teaching:
+      rank_zero_info( "Store current model as new teacher")
+      self.teacher.absorbe_model( self.model, self._task_count)
+  
   def test_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss

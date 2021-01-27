@@ -1,4 +1,4 @@
-name: InputReplay/debug
+name: test/debug
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -16,7 +16,6 @@ optimizer:
   sgd_cfg:
     momentum: 0.9
     weight_decay: 4.0e-05
-
 latent_replay_buffer:
   active: False
   cfg:
@@ -26,32 +25,34 @@ latent_replay_buffer:
     mode: 'LIFO'
   extraction_level: input
   fill_sample_from_batch_ratio: 0.5
-
+teaching:
+  active: True
+  soft_labels: True
 trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 1.0
-  limit_val_batches: 1.0
+  limit_train_batches: 10
+  limit_val_batches: 10
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs: 20
+  max_epochs: 1
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
   check_val_every_n_epoch: 1
 loader:
   pin_memory: true
-  batch_size: 16
-  batch_size_test: 16
+  batch_size: 4
+  batch_size_test: 4
   shuffle: true
-  num_workers: 16
+  num_workers: 4
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
-  train_images: 1
-  val_images: 1
-  test_images: 1
+  train_images: 0
+  val_images: 0
+  test_images: 0
 model:
   name: Fast-SCNN
   input_size: 384
@@ -66,6 +67,7 @@ model:
       - false 
       - false
 task_generator:
+  total_tasks: 4
   mode: mlhypersim_random4_tests
   cfg_replay:
     bins: 4
@@ -73,22 +75,9 @@ task_generator:
     add_p: 0.5
     replay_p: 0.5
     current_bin: 0
+  replay_adaptive_add_p: True
+  replay: True
 
-d_val:
-  name: nyuv2
-  mode: val
-  output_size: 384
-  load_all: false
-d_train:
-  name: nyuv2
-  mode: train
-  output_size: 384
-  load_all: false
-d_test:
-  name: nyuv2
-  mode: val
-  output_size: 384
-  load_all: false
 cb_early_stopping:
   active: false
   cfg:

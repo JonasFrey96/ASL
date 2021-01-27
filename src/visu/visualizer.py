@@ -67,7 +67,7 @@ col_map = cm.colors.ListedColormap(li)
 # define a function which returns an image as numpy array from figure
 def get_img_from_fig(fig, dpi=180):
   buf = io.BytesIO()
-  fig.savefig(buf, format="png", dpi=dpi)
+  fig.savefig(buf, format="png", dpi=dpi, transparent=False, pad_inches=0.2 )
   buf.seek(0)
   img_arr = np.frombuffer(buf.getvalue(), dtype=np.uint8)
   buf.close()
@@ -215,7 +215,7 @@ class MainVisualizer():
     return img
 
   @image_functionality  
-  def plot_matrix(self, data_matrix, max_tasks=None, max_tests= None,
+  def plot_matrix(self, data_matrix, higher_is_better= True, title='TitleNotDefined',max_tasks=None, max_tests= None,
                   label_x=None, label_y=None, *args,**kwargs):
 
     if max_tasks is None and max_tests is None:
@@ -240,7 +240,10 @@ class MainVisualizer():
         label_x = ["Test "+str(i) for i in range(max_tests)]
     
     fig, ax = plt.subplots()
-    im = ax.imshow(data_matrix,cmap=cm.get_cmap('PiYG')  )
+    if higher_is_better:
+      im = ax.imshow(data_matrix,cmap=cm.get_cmap('PiYG')  )
+    else:
+      im = ax.imshow(data_matrix,cmap=cm.get_cmap('PiYG_r')  )
 
     # We want to show all ticks...
     ax.set_xticks(np.arange(len(label_x)))
@@ -262,9 +265,10 @@ class MainVisualizer():
                            ha="center", va="center", color="w",
                           fontdict = {'backgroundcolor':(0,0,0,0.2)})
 
-    ax.set_title("Training Result")
+    ax.set_title(title)
     #fig.tight_layout()
     arr = get_img_from_fig(fig, dpi=600)
+    plt.close()
     return np.uint8(arr)
   
   
@@ -314,6 +318,7 @@ class MainVisualizer():
             axs[nr].plot(i[0], i[1], color=val, linestyle = line_styles[j], label=task['eval_names'][j])
         plt.legend(loc='upper left')
     arr = get_img_from_fig(fig, dpi=600)
+    plt.close()
     return np.uint8(arr)
   
 class Visualizer():

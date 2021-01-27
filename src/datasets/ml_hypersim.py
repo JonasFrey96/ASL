@@ -38,7 +38,10 @@ If we change this RandomReplay Buffer to a more suffisticated approache we might
 
 
 class ReplayDataset(data.Dataset):
-    def __init__(self, bins, elements, add_p=0.5, replay_p=0.5, current_bin=0):
+    def __init__(self, bins, elements, add_p=0.5, replay_p=0.5, current_bin=0, replay=False):
+        if replay == False:
+            return
+           
         self._bins = [
             multiprocessing.Array(
                 'I', (elements)) for i in range(bins)]
@@ -55,13 +58,14 @@ class ReplayDataset(data.Dataset):
         self._add_p = add_p
 
     def idx(self, index):
-        
+        bin = -1
         if random.random() < self._replay_p:
-            index = self.get_element(index)
+            index, bin = self.get_element(index)
 
         elif random.random() < self._add_p:
             self.add_element(index)
-        return index
+          
+        return index, bin
 
     def get_replay_state(self):
         v_el = []
@@ -134,9 +138,9 @@ class ReplayDataset(data.Dataset):
                     else:
                         sel_ele = np.random.randint(0, indi.shape[0], (1,))
                     
-                    return int( self.b[ int(indi[sel_ele]) ] )
+                    return int( self.b[ int(indi[sel_ele]) ] ), int(b)
                 
-        return -1
+        return -1, -1
 
     def add_element(self, index):
         v = self._current_bin.value
@@ -183,7 +187,8 @@ class MLHypersim(ReplayDataset):
                 0.3,
                 0.3,
                 0.05],
-            cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0}):
+            replay = False,
+            cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0} ):
         """
         Each dataloader loads the full .mat file into memory.
         For the small dataset size this is perfect.
@@ -198,7 +203,7 @@ class MLHypersim(ReplayDataset):
         super(
             MLHypersim,
             self).__init__(
-            ** cfg_replay)
+            ** cfg_replay, replay=replay)
 
         self._output_size = output_size
         self._mode = mode
@@ -212,21 +217,26 @@ class MLHypersim(ReplayDataset):
                                        jitter_bcsh)
 
         self._output_trafo = output_trafo
-
+        self._replay = replay
         # full training dataset with all objects
         # TODO
         #self._weights = pd.read_csv(f'cfg/dataset/ml-hypersim/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
 
     def __getitem__(self, index):
-        
-        if self._mode == 'train':
-            idx = self.idx(self.global_to_local_idx[index])
-            if idx != -1:
-                global_idx = idx
+        replayed = torch.tensor( [-1] , dtype=torch.int32)
+        if self._replay:
+            if self._mode == 'train':
+                idx, bin = self.idx(self.global_to_local_idx[index])
+                if idx != -1:
+                    global_idx = idx
+                    replayed[0] = bin
+                else:
+                    global_idx = self.global_to_local_idx[index]
             else:
                 global_idx = self.global_to_local_idx[index]
         else:
-            global_idx = self.global_to_local_idx[index]
+	        global_idx = self.global_to_local_idx[index]
+	        
             
         with h5py.File(self.image_pths[global_idx], 'r') as f:
             img = np.array(f['dataset'])
@@ -257,7 +267,7 @@ class MLHypersim(ReplayDataset):
             img = self._output_trafo(img)
 
         label[label > 0] = label[label > 0] - 1
-        return img, label.type(torch.int64)[0, :, :], img_ori
+        return img, label.type(torch.int64)[0, :, :], img_ori, replayed
 
     def __len__(self):
         return self.length
@@ -335,41 +345,41 @@ def test():
     output_transform = tf.Compose([
         tf.Normalize([.485, .456, .406], [.229, .224, .225]),
     ])
-    dataset = MLHypersim(
-        mode='train',
-        scenes=[
-            'ai_001_002',
-            'ai_001_003',
-            'ai_001_004',
-            'ai_001_005',
-            'ai_001_006'],
-        output_trafo=output_transform,
-        output_size=400,
-        degrees=10,
-        flip_p=0.5,
-        jitter_bcsh=[
-            0.3,
-            0.3,
-            0.3,
-            0.05])
+    # dataset = MLHypersim(
+    #     mode='train',
+    #     scenes=[
+    #         'ai_001_002',
+    #         'ai_001_003',
+    #         'ai_001_004',
+    #         'ai_001_005',
+    #         'ai_001_006'],
+    #     output_trafo=output_transform,
+    #     output_size=400,
+    #     degrees=10,
+    #     flip_p=0.5,
+    #     jitter_bcsh=[
+    #         0.3,
+    #         0.3,
+    #         0.3,
+    #         0.05])
 
-    dataloader = torch.utils.data.DataLoader(dataset,
-                                             shuffle=False,
-                                             num_workers=4,
-                                             pin_memory=False,
-                                             batch_size=2)
-    print('Start')
-    for j, data in enumerate(dataloader):
-        t = data
-        print(j)
-        if j == 50: 
-            print('Set bin to 1')
-            dataloader.dataset.set_current_bin(bin=1)
+    # dataloader = torch.utils.data.DataLoader(dataset,
+    #                                          shuffle=False,
+    #                                          num_workers=16,
+    #                                          pin_memory=False,
+    #                                          batch_size=2)
+    # print('Start')
+    # for j, data in enumerate(dataloader):
+    #     t = data
+    #     print(j)
+    #     if j == 50: 
+    #         print('Set bin to 1')
+    #         dataloader.dataset.set_current_bin(bin=1)
             
-        if j > 100:
-            break
+    #     if j > 100:
+    #         break
         
-    bins, valids = dataloader.dataset.get_full_state()
+    # bins, valids = dataloader.dataset.get_full_state()
     
     # create new dataset 
     dataset = MLHypersim(
@@ -388,7 +398,8 @@ def test():
             0.3,
             0.3,
             0.3,
-            0.05])
+            0.05],
+        replay=True)
     
     dataloader = torch.utils.data.DataLoader(dataset,
                                              shuffle=False,
@@ -396,24 +407,15 @@ def test():
                                              pin_memory=False,
                                              batch_size=2)
     
-    dataloader.dataset.set_full_state(bins,valids, 2)
+    # dataloader.dataset.set_full_state(bins,valids, 2)
+    import time
+    st = time.time()
+    print("Start")
     for j, data in enumerate(dataloader):
         t = data
-    for j, data in enumerate(dataloader):
-        t = data
-    for j, data in enumerate(dataloader):
-        t = data
-    for j, data in enumerate(dataloader):
-        t = data              
-    for j, data in enumerate(dataloader):
-        t = data
-    for j, data in enumerate(dataloader):
-        t = data       
-        if j == 50: 
-            print('Set bin to 3')
-            dataloader.dataset.set_current_bin(bin=3)
-        
-        
+        print(j)
+
+    print('Total time', time.time()-st)
         #print(j)
         # img, label, _img_ori= dataset[i]    # C, H, W
 
