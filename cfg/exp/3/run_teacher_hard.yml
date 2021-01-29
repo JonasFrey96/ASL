@@ -1,4 +1,4 @@
-name: InputReplayVsFullDataset/replay_adaptive
+name: Teacher/run_hard_labels
 timestamp: true
 weights_restore: true
 checkpoint_restore: false
@@ -28,8 +28,8 @@ latent_replay_buffer:
   fill_sample_from_batch_ratio: 0.5
 
 teaching:
-  active: False
-  soft_labels: True
+  active: True
+  soft_labels: False
 
 trainer:
   precision: 16
@@ -43,7 +43,7 @@ trainer:
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 10
 loader:
   pin_memory: true
   batch_size: 16
@@ -53,9 +53,9 @@ loader:
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
-  train_images: 2
-  val_images: 2
-  test_images: 2
+  train_images: 1
+  val_images: 1
+  test_images: 1
 model:
   name: Fast-SCNN
   input_size: 384
@@ -69,7 +69,6 @@ model:
       - true
       - false 
       - false
-
 task_generator:
   total_tasks: 4
   mode: mlhypersim_random4_tests

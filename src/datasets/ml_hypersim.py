@@ -59,7 +59,7 @@ class ReplayDataset(data.Dataset):
 
     def idx(self, index):
         bin = -1
-        if random.random() < self._replay_p:
+        if random.random() < self._replay_p and self._current_bin.value != 0:
             index, bin = self.get_element(index)
 
         elif random.random() < self._add_p:
@@ -134,7 +134,7 @@ class ReplayDataset(data.Dataset):
                     
                     indi = np.nonzero(self.v)[0]
                     if indi.shape[0] == 0:
-                        sel_ele = [0]
+                        sel_ele = 0
                     else:
                         sel_ele = np.random.randint(0, indi.shape[0], (1,))
                     
@@ -188,7 +188,8 @@ class MLHypersim(ReplayDataset):
                 0.3,
                 0.05],
             replay = False,
-            cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0} ):
+            cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
+            data_augmentation= True, data_augmentation_for_replay=True):
         """
         Each dataloader loads the full .mat file into memory.
         For the small dataset size this is perfect.
@@ -218,12 +219,15 @@ class MLHypersim(ReplayDataset):
 
         self._output_trafo = output_trafo
         self._replay = replay
+        self._data_augmentation = data_augmentation
+        self._data_augmentation_for_replay = data_augmentation_for_replay
         # full training dataset with all objects
         # TODO
         #self._weights = pd.read_csv(f'cfg/dataset/ml-hypersim/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
 
     def __getitem__(self, index):
         replayed = torch.tensor( [-1] , dtype=torch.int32)
+        idx = -1
         if self._replay:
             if self._mode == 'train':
                 idx, bin = self.idx(self.global_to_local_idx[index])
@@ -235,8 +239,7 @@ class MLHypersim(ReplayDataset):
             else:
                 global_idx = self.global_to_local_idx[index]
         else:
-	        global_idx = self.global_to_local_idx[index]
-	        
+            global_idx = self.global_to_local_idx[index]
             
         with h5py.File(self.image_pths[global_idx], 'r') as f:
             img = np.array(f['dataset'])
@@ -249,12 +252,13 @@ class MLHypersim(ReplayDataset):
         label = torch.from_numpy(label).type(
             torch.float32)[None, :, :]  # C H W
 
-        if self._mode == 'train':
+        if (self._mode == 'train' and 
+            ( ( self._data_augmentation and idx == -1) or 
+              ( self._data_augmentation_for_replay and idx != -1) ) ):
+            
             img, label = self._augmenter.apply(img, label)
-        elif self._mode == 'val' or self._mode == 'test':
-            img, label = self._augmenter.apply(img, label, only_crop=True)
         else:
-            raise Exception('Invalid Dataset Mode')
+            img, label = self._augmenter.apply(img, label, only_crop=True)
 
         # check if reject
         if (label != -1).sum() < 10:

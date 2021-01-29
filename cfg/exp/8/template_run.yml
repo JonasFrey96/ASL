@@ -1,4 +1,4 @@
-name: template_ml/load_it
+name: template/hypersim
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -6,7 +6,7 @@ checkpoint_load: coco/2021-01-22T16:49:01_train40_24h/last.ckpt
 tramac_restore: false
 lr: 0.003
 
-start_at_task: 1
+start_at_task: 0
 max_tasks: 4
 
 replay_state_sync_back:
@@ -34,33 +34,33 @@ latent_replay_buffer:
   extraction_level: input
   fill_sample_from_batch_ratio: 0.5
 teaching:
-  active: True
+  active: False
   soft_labels: True
   soft_labels_weight: 1
 trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 10
-  limit_val_batches: 10
-  limit_test_batches: 10
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs: 1
+  max_epochs: 50
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
   check_val_every_n_epoch: 1
 loader:
   pin_memory: true
-  batch_size: 4
+  batch_size: 16
   shuffle: true
-  num_workers: 0
+  num_workers: 16
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
-  train_images: 0
-  val_images: 0
-  test_images: 0
+  train_images: 1
+  val_images: 1
+  test_images: 1
 model:
   name: Fast-SCNN
   input_size: 384

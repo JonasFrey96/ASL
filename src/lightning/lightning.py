@@ -22,7 +22,7 @@ import pandas as pd
 # DL-framework
 import torch
 from pytorch_lightning.core.lightning import LightningModule
-from pytorch_lightning import Trainer, seed_everything
+from pytorch_lightning import Trainer
 import pytorch_lightning as pl
 from torchvision import transforms
 from pytorch_lightning import metrics as pl_metrics
@@ -30,7 +30,7 @@ from pytorch_lightning.utilities import rank_zero_info
 
 from torch.nn import functional as F
 # MODULES
-from models import FastSCNN, Teacher
+from models import FastSCNN, Teacher, ReplayStateSyncBack
 from datasets import get_dataset
 from loss import cross_entropy_soft
 
@@ -51,11 +51,12 @@ def wrap(s,length, hard=False):
 class Network(LightningModule):
   def __init__(self, exp, env):
     super().__init__()
+    
     self._epoch_start_time = time.time()
     self._exp = exp
     self._env = env
     self.hparams['lr'] = self._exp['lr']
-
+    
     if self._exp['model']['name'] == 'Fast-SCNN': 
       self.model = FastSCNN(**self._exp['model']['cfg'])
     else:
@@ -85,7 +86,7 @@ class Network(LightningModule):
     self._dataloader_index_store = 0
     
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
-    self._task_count = -1 # so this here might be a bad idea. Decide if we know the task or not
+    self._task_count = 0 # so this here might be a bad idea. Decide if we know the task or not
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
     self._train_start_time = time.time()
     
@@ -114,6 +115,7 @@ class Network(LightningModule):
         self._teaching = False
       if not (self._exp['task_generator']).get('replay',False):
         self._teaching = False
+    
     if self._teaching: 
       self.teacher = Teacher(
         num_classes= self._exp['model']['cfg']['num_classes'],
@@ -122,7 +124,17 @@ class Network(LightningModule):
     
     self._replayed_samples = 0
     self._real_samples = 0
-      
+    
+    if self._exp['replay_state_sync_back']['active']:
+      self._rssb_active = True
+      if self._exp['replay_state_sync_back']['get_size_from_task_generator']:
+        bins = self._exp['task_generator']['cfg_replay']['bins']
+        elements = self._exp['task_generator']['cfg_replay']['elements']
+      else:
+        raise Exception('Not Implemented something else')
+      self._rssb = ReplayStateSyncBack(bins=bins, elements=elements)
+    else:
+      self._rssb_active = False
   def forward(self, batch, **kwargs):
     if kwargs.get('injection', None) is not None:
       outputs = self.model.injection_forward(
@@ -133,10 +145,29 @@ class Network(LightningModule):
       outputs = self.model(batch)
     
     return outputs
-    
+      
   def on_train_start(self):
     self.visualizer.writer = self.logger.experiment
+    if self._rssb_active: 
+      bins, valids = self._rssb.get()
+      self.trainer.train_dataloader.dataset.set_full_state(
+        bins=bins, 
+        valids=valids,
+        bin= self._task_count)
+  def on_save_checkpoint(self, params):
+    if self._rssb_active:
+      bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
+      self._rssb.absorbe(bins,valids)
+    
+  def on_train_end(self):
+    if self._teaching:
+      rank_zero_info( "Store current model as new teacher")
+      self.teacher.absorbe_model( self.model, self._task_count)
 
+    if self._rssb_active:
+      bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
+      self._rssb.absorbe(bins,valids)
+      
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch
     
@@ -150,14 +181,16 @@ class Network(LightningModule):
     self.logged_images_val = 0
     self.logged_images_test = 0
 
-  def compute_loss(self, pred, target, images, replayed ):
-    if self._teaching and (replayed != -1).sum() != 0:
-      # work to do
-      nr_replayed = (replayed != -1).sum()
-      BS = replayed.shape[0]
-      self._replayed_samples += int( nr_replayed )
-      self._real_samples += int( BS - nr_replayed )
+
       
+  def compute_loss(self, pred, target, images, replayed ):
+    nr_replayed = (replayed != -1).sum()
+    BS = replayed.shape[0]
+    self._replayed_samples += int( nr_replayed )
+    self._real_samples += int( BS - nr_replayed )
+    
+    if self._teaching and (replayed != -1).sum() != 0:
+            
       if self._exp['teaching']['soft_labels']:
         # TODO Results during training in NANs ???? 
         
@@ -172,9 +205,15 @@ class Network(LightningModule):
       for teacher in range(self._exp['task_generator']['total_tasks']-1):
         if (replayed == teacher).sum() != 0:
           m = (replayed == teacher)[:,0]
-          tar = self.teacher( images.detach(), teacher) 
+          with torch.no_grad():
+            tar = self.teacher( images.detach(), teacher) 
+          tar.requires_grad = True
+          
           if self._exp['teaching']['soft_labels']:
+            
+            # if we are not doing the softmax this would we prefect and results in loss of 0 for the next task
             tar = torch.nn.functional.softmax(tar, dim=1) # to get a valid prob distribution 
+            
             rep_mask = m[:,None,None,None].repeat(1,*tar.shape[1:]).type(images.dtype)
             ori_mask = (rep_mask == 0).type(images.dtype)
             target_onehot = target_onehot * ori_mask + tar * rep_mask
@@ -186,17 +225,16 @@ class Network(LightningModule):
             
           
       if self._exp['teaching']['soft_labels']:
-        loss = cross_entropy_soft(pred, target_onehot, mask).mean()
-        if torch.any( torch.isnan(loss) ):
-          print('Error')
-          raise Exception('Error')
-        
+        # MSE for soft labels. CategoricalCrossEntropy for gt-labels
+        loss_soft = F.mse_loss(pred,target_onehot,reduction='none').mean(dim=[1,2,3])
+        loss = F.cross_entropy(pred, target, ignore_index=-1,reduction='none').mean(dim=[1,2])
+        loss = loss * (replayed[:,0]== -1) + loss_soft * (replayed[:,0]!= -1) * self._exp['teaching']['soft_labels_weight']
+        loss = loss.mean()
       else:
         loss = F.cross_entropy(pred, target_accum, ignore_index=-1)
       
     else:
-      BS = replayed.shape[0]
-      self._real_samples += int( BS )
+      
       loss = F.cross_entropy(pred, target, ignore_index=-1)
     return loss
   
@@ -230,7 +268,6 @@ class Network(LightningModule):
               target = target, 
               images= images, 
               replayed = batch[3] )
-    
     # write to latent replay buffer
     if self._exp.get('latent_replay_buffer',{}).get('active',False) and not self.trainer.running_sanity_check:
       valid_elements = torch.nonzero(mask_injection==0, as_tuple=False)
@@ -299,6 +336,9 @@ class Network(LightningModule):
       self.log('val_acc_epoch',val_acc_epoch)
       self.log('val_mIoU_epoch',val_mIoU_epoch,)
       self.log('val_loss',val_loss)
+    
+    
+    
       
   def validation_step(self, batch, batch_idx, dataloader_idx):
     if self._dataloader_index_store != dataloader_idx:
@@ -346,6 +386,8 @@ class Network(LightningModule):
     # self.log('task_name', self._task_name, on_epoch=True)
     
   def validation_epoch_end(self, outputs):
+
+    
     metrics = self.trainer.logger_connector.callback_metrics
     me =  copy.deepcopy ( metrics ) 
     for k in me.keys():
@@ -382,10 +424,7 @@ class Network(LightningModule):
       )
     self._epoch_start_time = time.time()
     
-  def on_train_end(self):
-    if self._teaching:
-      rank_zero_info( "Store current model as new teacher")
-      self.teacher.absorbe_model( self.model, self._task_count)
+
   
   def test_step(self, batch, batch_idx):
     images = batch[0]
