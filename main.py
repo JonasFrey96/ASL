@@ -67,14 +67,14 @@ def get_dataloader_test(d_test, env):
     output_trafo = output_transform,
   )
   dataloader_test = torch.utils.data.DataLoader(dataset_test,
-    shuffle = exp['loader']['shuffle'],
+    shuffle = False,
     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
     pin_memory = exp['loader']['pin_memory'],
     batch_size = exp['loader']['batch_size'], 
     drop_last = True)
   return dataloader_test
   
-def get_dataloader_train_val(d_train, d_val, env, replay_state):
+def get_dataloader_train_val(d_train, d_val, env):
 
   output_transform = transforms.Compose([
           transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
@@ -86,9 +86,6 @@ def get_dataloader_train_val(d_train, d_val, env, replay_state):
     output_trafo = output_transform,
   )
   
-  if replay_state is not None:
-    # dont loss the buffer replay state if a new dataset is created
-    dataset_train.set_full_state(**replay_state)
     
   dataloader_train = torch.utils.data.DataLoader(dataset_train,
     shuffle = exp['loader']['shuffle'],
@@ -103,7 +100,7 @@ def get_dataloader_train_val(d_train, d_val, env, replay_state):
     output_trafo = output_transform,
   )
   dataloader_val = torch.utils.data.DataLoader(dataset_val,
-    shuffle = exp['loader']['shuffle'],
+    shuffle = False,
     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
     pin_memory = exp['loader']['pin_memory'],
     batch_size = exp['loader']['batch_size'], 
@@ -111,10 +108,24 @@ def get_dataloader_train_val(d_train, d_val, env, replay_state):
     
   return dataloader_train, dataloader_val
     
-    
+def log_important_params( main_tbl, exp):
+  dic = {}
+  dic['total_tasks'] = exp['task_generator']['total_tasks']
+  dic['task_cfg'] = exp['task_generator']['mode']
+  dic['replay_buffer_size_per_bin'] = exp['task_generator']['cfg_replay']['bins']
+  dic['replay_adaptive_replay'] = exp['task_generator']['replay_adaptive_add_p']
+  dic['replay_active'] = exp['task_generator']['replay']
+  dic['teaching_active'] = exp['teaching']['active'] 
+  dic['teaching_soft_labels'] = exp['teaching']['soft_labels'] 
+  dic['model_finetune'] = exp['model']['freeze']['active']
+  
+  print(dic)
+  main_tbl.add_hparams(
+    hparam_dict = dic, metric_dict={'best_metric':0.0})
+  main_tbl.flush()
+        
 if __name__ == "__main__":
   seed_everything(42)
-
   def signal_handler(signal, frame):
     print('exiting on CRTL-C')
     sys.exit(0)
@@ -226,19 +237,7 @@ if __name__ == "__main__":
     
 
   model = Network(exp=exp, env=env)
-
-
-  filepath = os.path.join(model_path, '{task_count}-{epoch}-')
-
-  if len(exp['cb_checkpoint'].get('nameing',[])) > 0:
-    #filepath += '-{task_name:10s}'
-    for m in exp['cb_checkpoint']['nameing']: 
-      filepath += '-{'+ m + ':.2f}'
-
-  checkpoint_callback = ModelCheckpoint(
-    filepath=filepath,
-    **exp['cb_checkpoint']['cfg']
-  )
+  
   lr_monitor = LearningRateMonitor(
     **exp['lr_monitor']['cfg'])
 
@@ -249,9 +248,27 @@ if __name__ == "__main__":
     cb_ls = [early_stop_callback, lr_monitor]
   else:
     cb_ls = [lr_monitor]
-  cb_ls.append( checkpoint_callback )
   
-    
+  
+  for i in range(exp['task_generator']['total_tasks']):
+    filepath = os.path.join(model_path, 'task'+str(i)+'-{epoch:02d}') #{task_count/dataloader_idx_0:02d}
+    dic = copy.deepcopy( exp['cb_checkpoint']['cfg'])
+    try:
+      if len(exp['cb_checkpoint'].get('nameing',[])) > 0:
+        #filepath += '-{task_name:10s}'
+        for m in exp['cb_checkpoint']['nameing']: 
+          filepath += '-{'+ m + ':.2f}'
+    except:
+      pass
+    dic['monitor'] += str(i)
+    print(filepath)
+    checkpoint_callback = ModelCheckpoint(
+      filepath=filepath,
+      **dic
+    )
+    cb_ls.append( checkpoint_callback )
+      
+        
   # Always use advanced profiler
   if exp['trainer'].get('profiler', False):
     exp['trainer']['profiler'] = AdvancedProfiler(output_filename=os.path.join(model_path, 'profile.out'))
@@ -294,6 +311,9 @@ if __name__ == "__main__":
       log_dir = os.path.join(  trainer.default_root_dir, "MainLogger"))
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             writer=main_tbl, epoch=0, store=True, num_classes=22 )
+  
+  log_important_params( main_tbl, exp)
+  
   tc = TaskCreator(**exp['task_generator'],output_size=exp['model']['input_size'])
   results = []
   training_results = []
@@ -303,10 +323,15 @@ if __name__ == "__main__":
   
   mode = exp.get('paper_analysis', {}).get('mode','normal')
   
-  replay_state = None
   if mode == 'normal':
     for idx, out in enumerate(tc) :  
- 
+      if idx < exp['start_at_task']:
+        # TODO Check if everything works when starting directly with task 1 
+        # check with the stored buffer state !!!
+        rank_zero_warn('Skipped the {idx}-th Task !!!')
+        continue     
+      
+      
       if idx != 0:
         t = time.time() - _task_start_time
         t = str(datetime.timedelta(seconds=t))
@@ -337,16 +362,12 @@ if __name__ == "__main__":
       model._task_count = idx
       dataloader_train, dataloader_val = get_dataloader_train_val(d_train= task.dataset_train_cfg,
                                                                   d_val= task.dataset_val_cfg,
-                                                                  env=env , replay_state = replay_state)
+                                                                  env=env)
       dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
-      
       #Training the model
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
-      if exp['task_generator'].get('replay',True):
-        bins, valids = trainer.train_dataloader.dataset.get_full_state()
-        replay_state = { 'bins':bins, 'valids': valids, 'bin': idx+1 }
         
       
       training_results.append( copy.deepcopy(trainer.logged_metrics) )

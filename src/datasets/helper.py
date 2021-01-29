@@ -2,6 +2,7 @@ from torchvision import transforms as tf
 from torchvision.transforms import functional as F
 import torch
 import PIL
+import random
 __all__ = ['Augmentation']
 
 class Augmentation():
@@ -31,9 +32,8 @@ class Augmentation():
       i, j, h, w = self._crop.get_params( img, (self._output_size, self._output_size) )
       img = F.crop(img, i, j, h, w)
       label = F.crop(label, i, j, h, w)
-      
       # Rotate
-      angle = self._rot.get_params( degrees = (self._degrees,self._degrees) )
+      angle = random.uniform(-self._degrees, self._degrees)
       img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=None)
       label = F.rotate(label, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
       

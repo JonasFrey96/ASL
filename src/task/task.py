@@ -54,7 +54,9 @@ mlhypersim_template_dict = {
     'output_size': 384,
     'scenes': [],
     'replay': False,
-    'cfg_replay':{'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0}
+    'cfg_replay':{'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
+    'data_augmentation': True,
+    'data_augmentation_for_replay': True
 }
 mlhypersim_scene_names = MLHypersim.get_classes()
 
@@ -79,7 +81,14 @@ class TaskCreator():
     
     
     self.replay_adaptive_add_p = kwargs.get('replay_adaptive_add_p',False)
+    da = kwargs.get('data_augmentation',None) 
+    if da is not None:
+      mlhypersim_template_dict['data_augmentation'] = da
     
+    darp = kwargs.get('data_augmentation_for_replay',None) 
+    if darp is not None:
+      mlhypersim_template_dict['data_augmentation_for_replay'] = darp
+      
     if kwargs.get('cfg_replay', None) is not None:
       mlhypersim_template_dict['cfg_replay'] = kwargs['cfg_replay']
    

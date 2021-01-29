@@ -1,5 +1,5 @@
-name: Teacher/run_soft_labels
-timestamp: false
+name: InputReplayVsFullDataset/replay_adaptive_10_elements
+timestamp: true
 weights_restore: true
 checkpoint_restore: false
 checkpoint_load: coco/2021-01-22T16:49:01_train40_24h/last.ckpt
@@ -28,7 +28,7 @@ latent_replay_buffer:
   fill_sample_from_batch_ratio: 0.5
 
 teaching:
-  active: True
+  active: False
   soft_labels: True
 
 trainer:
@@ -43,19 +43,19 @@ trainer:
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 10
 loader:
   pin_memory: true
   batch_size: 16
   batch_size_test: 16
   shuffle: true
-  num_workers: 16
+  num_workers: 20
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
-  train_images: 2
-  val_images: 2
-  test_images: 2
+  train_images: 1
+  val_images: 1
+  test_images: 1
 model:
   name: Fast-SCNN
   input_size: 384
@@ -69,12 +69,13 @@ model:
       - true
       - false 
       - false
+
 task_generator:
   total_tasks: 4
   mode: mlhypersim_random4_tests
   cfg_replay:
     bins: 4
-    elements: 100
+    elements: 10
     add_p: 0.5
     replay_p: 0.5
     current_bin: 0

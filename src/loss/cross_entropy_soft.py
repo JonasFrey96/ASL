@@ -16,11 +16,12 @@ def cross_entropy_soft(pred, target, mask):
   loss : [torch.tensor]
       [mean soft label cross entropy per sample]
   """
+  assert mask.sum() != 0
+  
   pred = torch.nn.functional.log_softmax(pred, dim=1)
   
   res = -(target * pred).sum(dim=1)
-  
-  res = (res * mask).mean()
+  res = (res * mask).mean(dim=[1,2]).mean()
   
   return res
 
