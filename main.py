@@ -29,6 +29,7 @@ from lightning import Network
 from task import TaskCreator
 from visu import MainVisualizer
 import numpy as np
+from callbacks import TaskSpecificEarlyStopping
 
 from pytorch_lightning.loggers.neptune import NeptuneLogger
 import datetime
@@ -37,6 +38,7 @@ from datasets import get_dataset
 from torchvision import transforms
 from math import ceil
 import copy 
+
 
 def file_path(string):
   if os.path.isfile(string):
@@ -249,9 +251,13 @@ if __name__ == "__main__":
   else:
     cb_ls = [lr_monitor]
   
-  
+  tses = TaskSpecificEarlyStopping(
+    nr_tasks=exp['task_generator']['total_tasks'] , 
+    **task_specific_early_stopping
+  )
+  cb_ls.append(tses)
   for i in range(exp['task_generator']['total_tasks']):
-    filepath = os.path.join(model_path, 'task'+str(i)+'-{epoch:02d}') #{task_count/dataloader_idx_0:02d}
+    filepath = os.path.join(model_path, 'task'+str(i)+'-{epoch:02d}--{step:06d}') #{task_count/dataloader_idx_0:02d}
     dic = copy.deepcopy( exp['cb_checkpoint']['cfg'])
     try:
       if len(exp['cb_checkpoint'].get('nameing',[])) > 0:
@@ -306,9 +312,9 @@ if __name__ == "__main__":
     else:
       raise Exception('Checkpoint not a file')
     
-
+      
   main_tbl = SummaryWriter(
-      log_dir = os.path.join(  trainer.default_root_dir, "MainLogger"))
+      log_dir = os.path.join(  trainer.default_root_dir, exp['name'].split('/')[-1] + "_Main"))
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             writer=main_tbl, epoch=0, store=True, num_classes=22 )
   
@@ -321,71 +327,81 @@ if __name__ == "__main__":
   _task_start_training = time.time()
   _task_start_time = time.time()
   
-  mode = exp.get('paper_analysis', {}).get('mode','normal')
-  
-  if mode == 'normal':
-    for idx, out in enumerate(tc) :  
-      if idx < exp['start_at_task']:
-        # TODO Check if everything works when starting directly with task 1 
-        # check with the stored buffer state !!!
-        rank_zero_warn('Skipped the {idx}-th Task !!!')
-        continue     
+  for idx, out in enumerate(tc) :  
+    
+    if idx != 0:
+      t = time.time() - _task_start_time
+      t = str(datetime.timedelta(seconds=t))
+      t2 = time.time() - _task_start_training
+      t2 = str(datetime.timedelta(seconds=t2))
+      rank_zero_info(f'Time for task {idx}: '+ t)
+      rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
+      _task_start_time = time.time()
+
+    
+    task, eval_lists = out
+    main_visu.epoch = idx
+    # New Logger
+    rank_zero_info( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
+    tbl = TensorBoardLogger(
+      save_dir = trainer.default_root_dir,
+      name = task.name,default_hp_metric=False)
+
+    # only way to avoid PytorchLightning SummaryWriter nameing!
+    tbl._experiment = SummaryWriter(
+      log_dir=os.path.join(trainer.default_root_dir, task.name), 
+      **tbl._kwargs)
+    trainer.logger = tbl
+
+
+    trainer.current_epoch = 0      
+    model._task_name = task.name
+    model._task_count = idx
+    dataloader_train, dataloader_val = get_dataloader_train_val(d_train= task.dataset_train_cfg,
+                                                                d_val= task.dataset_val_cfg,
+                                                                env=env)
+    dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
+    #Training the model
+    
+    if idx < exp['start_at_task']:
+      # TODO Check if everything works when starting directly with task 1 
+      # check with the stored buffer state !!!
+      rank_zero_warn('Skipped the {idx}-th Training Task !!!')
       
-      
-      if idx != 0:
-        t = time.time() - _task_start_time
-        t = str(datetime.timedelta(seconds=t))
-        t2 = time.time() - _task_start_training
-        t2 = str(datetime.timedelta(seconds=t2))
-        rank_zero_info(f'Time for task {idx}: '+ t)
-        rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
-        _task_start_time = time.time()
-
-      
-      task, eval_lists = out
-      main_visu.epoch = idx
-      # New Logger
-      rank_zero_info( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
-      tbl = TensorBoardLogger(
-        save_dir = trainer.default_root_dir,
-        name = task.name,default_hp_metric=False)
-
-      # only way to avoid PytorchLightning SummaryWriter nameing!
-      tbl._experiment = SummaryWriter(
-        log_dir=os.path.join(trainer.default_root_dir, task.name), 
-        **tbl._kwargs)
-      trainer.logger = tbl
-
-
-      trainer.current_epoch = 0      
-      model._task_name = task.name
-      model._task_count = idx
-      dataloader_train, dataloader_val = get_dataloader_train_val(d_train= task.dataset_train_cfg,
-                                                                  d_val= task.dataset_val_cfg,
-                                                                  env=env)
-      dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
-      #Training the model
+      if exp['teaching']['active']:
+        model.teacher.absorbe_model( model.model, idx)
+      trainer.limit_train_batches = 1
+      trainer.max_epochs = 1
+      trainer.check_val_every_n_epoch = 1
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
-        
+      trainer.limit_train_batches = exp['trainer']['limit_test_batches']
+      trainer.max_epochs = exp['trainer']['max_epochs']
+      trainer.check_val_every_n_epoch =  exp['trainer']['check_val_every_n_epoch']
       
-      training_results.append( copy.deepcopy(trainer.logged_metrics) )
+    else:
+      train_res = trainer.fit(model = model,
+                              train_dataloader= dataloader_train,
+                              val_dataloaders= dataloader_list_test)
       
-      for met in ['val_loss/dataloader_idx_', 'val_acc/dataloader_idx_', 'val_mIoU/dataloader_idx_']:
-        data_matrix  = np.zeros( (len(training_results),len(dataloader_list_test) ) )
-        for _i, res in enumerate( training_results  ):
-          for _j in range( len(dataloader_list_test) ):
-            data_matrix [_i,_j] = res[met+str(_j)] * 100
-        
-        data_matrix = np.round( data_matrix, decimals=1)
-        if met.find('loss') != -1:
-          higher_is_better = False
-        else:
-          higher_is_better = True
-        
-        main_visu.plot_matrix(
-            tag = str( met.split('/')[0]),
-            data_matrix = data_matrix,
-            higher_is_better= higher_is_better,
-            title=str( met.split('/')[0]))
+    
+    training_results.append( copy.deepcopy(trainer.logged_metrics) )
+    
+    for met in ['val_loss/dataloader_idx_', 'val_acc/dataloader_idx_', 'val_mIoU/dataloader_idx_']:
+      data_matrix  = np.zeros( (len(training_results),len(dataloader_list_test) ) )
+      for _i, res in enumerate( training_results  ):
+        for _j in range( len(dataloader_list_test) ):
+          data_matrix [_i,_j] = res[met+str(_j)] * 100
+      
+      data_matrix = np.round( data_matrix, decimals=1)
+      if met.find('loss') != -1:
+        higher_is_better = False
+      else:
+        higher_is_better = True
+      
+      main_visu.plot_matrix(
+          tag = str( met.split('/')[0]),
+          data_matrix = data_matrix,
+          higher_is_better= higher_is_better,
+          title=str( met.split('/')[0]))
