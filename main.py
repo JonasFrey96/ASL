@@ -253,7 +253,7 @@ if __name__ == "__main__":
   
   tses = TaskSpecificEarlyStopping(
     nr_tasks=exp['task_generator']['total_tasks'] , 
-    **task_specific_early_stopping
+    **exp['task_specific_early_stopping']
   )
   cb_ls.append(tses)
   for i in range(exp['task_generator']['total_tasks']):
@@ -362,31 +362,80 @@ if __name__ == "__main__":
                                                                 env=env)
     dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
     #Training the model
+    trainer.should_stop = False
     
     if idx < exp['start_at_task']:
       # TODO Check if everything works when starting directly with task 1 
       # check with the stored buffer state !!!
-      rank_zero_warn('Skipped the {idx}-th Training Task !!!')
       
-      if exp['teaching']['active']:
-        model.teacher.absorbe_model( model.model, idx)
+      # rank_zero_warn('Skipped the {idx}-th Training Task !!!')
+      
+      # print("Before storing 0 trainer")
+      # model.teacher.print_weight_summary()
+      # string = ''
+      # sum = 0
+      # for i in model.model.parameters():
+      #   sum += i[0].sum()
+      # string += f'   CurrentModel: WeightSum == {sum}\n'
+      # rank_zero_info(string)
+      
+      
+      # model.teacher.absorbe_model( model.model, idx) 
+      # print("Teacher before started training")
+      
+      # model.teacher.print_weight_summary()
+      # string = ''
+      # sum = 0
+      # for i in model.model.parameters():
+      #   sum += i[0].sum()
+      # string += f'   CurrentModel: WeightSum == {sum}\n'
+      # rank_zero_info(string)
+      
+      trainer.limit_val_batches = 10
       trainer.limit_train_batches = 1
       trainer.max_epochs = 1
       trainer.check_val_every_n_epoch = 1
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
-      trainer.limit_train_batches = exp['trainer']['limit_test_batches']
+      # model.on_train_end()
       trainer.max_epochs = exp['trainer']['max_epochs']
       trainer.check_val_every_n_epoch =  exp['trainer']['check_val_every_n_epoch']
-      
+      trainer.limit_val_batches = exp['trainer']['limit_val_batches']
+      trainer.limit_train_batches = exp['trainer']['limit_train_batches']
     else:
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
+    if exp['teaching']['active']:
+      rank_zero_info( "Store current model as new teacher")
+      model.teacher.absorbe_model( model.model, model._task_count, exp['name'])
+    # if exp['teaching']['active']:
+    #   sr = f'Absorbed the model after start training the {idx}-th Training Task !!!'
+    #   rank_zero_warn(sr)
       
-    
+    #   print("Before storing after training")
+    #   model.teacher.print_weight_summary()
+    #   string = ''
+    #   sum = 0
+    #   for i in model.model.parameters():
+    #     sum += i[0].sum()
+    #   string += f'   CurrentModel: WeightSum == {sum}\n'
+    #   rank_zero_info(string)
+    #   # model.teacher.absorbe_model( model.model, idx)  
+    #   print("After absorebing model after teaching")
+    #   model.teacher.print_weight_summary()
+      
+    #   string = ''
+    #   sum = 0
+    #   for i in model.model.parameters():
+    #     sum += i[0].sum()
+    #   string += f'   CurrentModel: WeightSum == {sum}\n'
+    #   rank_zero_info(string)
+      
+      
     training_results.append( copy.deepcopy(trainer.logged_metrics) )
+    mds = trainer.optimizers[0].state_dict()['state']
     
     for met in ['val_loss/dataloader_idx_', 'val_acc/dataloader_idx_', 'val_mIoU/dataloader_idx_']:
       data_matrix  = np.zeros( (len(training_results),len(dataloader_list_test) ) )

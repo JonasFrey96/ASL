@@ -68,7 +68,7 @@ class Network(LightningModule):
       p_visu=p_visu,
       writer=None,
       num_classes=self._exp['model']['cfg']['num_classes']+1)
-
+    self._mode = 'train'
     max_tests = 4
     self.test_acc = pl_metrics.classification.Accuracy()
     self.train_acc = pl_metrics.classification.Accuracy()
@@ -135,6 +135,7 @@ class Network(LightningModule):
       self._rssb = ReplayStateSyncBack(bins=bins, elements=elements)
     else:
       self._rssb_active = False
+  
   def forward(self, batch, **kwargs):
     if kwargs.get('injection', None) is not None:
       outputs = self.model.injection_forward(
@@ -142,10 +143,15 @@ class Network(LightningModule):
         injection = kwargs['injection'], 
         injection_mask = kwargs['injection_mask'])
     else:
+      # if self._mode == 'train':
       outputs = self.model(batch)
-    
+      # else:
+        # outputs = self.teacher.models[0](batch)
     return outputs
-      
+  
+  def on_train_epoch_start(self):
+    self._mode = 'train'
+     
   def on_train_start(self):
     self.visualizer.writer = self.logger.experiment
     if self._rssb_active: 
@@ -154,15 +160,16 @@ class Network(LightningModule):
         bins=bins, 
         valids=valids,
         bin= self._task_count)
+      
   def on_save_checkpoint(self, params):
     if self._rssb_active:
       bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
       self._rssb.absorbe(bins,valids)
     
   def on_train_end(self):
-    if self._teaching:
-      rank_zero_info( "Store current model as new teacher")
-      self.teacher.absorbe_model( self.model, self._task_count)
+    # if self._teaching:
+    #   rank_zero_info( "Store current model as new teacher")
+    #   self.teacher.absorbe_model( self.model, self._task_count, self._exp['name'])
 
     if self._rssb_active:
       bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
@@ -181,7 +188,15 @@ class Network(LightningModule):
     self.logged_images_val = 0
     self.logged_images_test = 0
 
-
+    if self._teaching:
+      self.teacher.print_weight_summary()
+    
+    string = ''
+    sum = 0
+    for i in self.model.parameters():
+      sum += i[0].sum()
+    string += f'   CurrentModel: WeightSum == {sum}\n'
+    rank_zero_info(string)
       
   def compute_loss(self, pred, target, images, replayed ):
     nr_replayed = (replayed != -1).sum()
@@ -192,13 +207,7 @@ class Network(LightningModule):
     if self._teaching and (replayed != -1).sum() != 0:
             
       if self._exp['teaching']['soft_labels']:
-        # TODO Results during training in NANs ???? 
-        
-        t_aux = target.clone()
-        mask = (target > -1).type(target.dtype)
-        t_aux = torch.clamp(t_aux,0) # inplace operator
-        target_onehot = torch.nn.functional.one_hot(t_aux, 
-          num_classes= self._exp['model']['cfg']['num_classes']).permute(0,3,1,2).type(images.dtype)
+        target_onehot = torch.zeros( (BS,self._exp['model']['cfg']['num_classes'],images.shape[2],images.shape[3]), dtype=pred.dtype, device=pred.device ) 
       else:
         target_accum = target.clone()
         
@@ -206,35 +215,43 @@ class Network(LightningModule):
         if (replayed == teacher).sum() != 0:
           m = (replayed == teacher)[:,0]
           with torch.no_grad():
-            tar = self.teacher( images.detach(), teacher) 
-          tar.requires_grad = True
+            tar = self.teacher( images, teacher) 
           
           if self._exp['teaching']['soft_labels']:
-            
             # if we are not doing the softmax this would we prefect and results in loss of 0 for the next task
-            tar = torch.nn.functional.softmax(tar, dim=1) # to get a valid prob distribution 
-            
             rep_mask = m[:,None,None,None].repeat(1,*tar.shape[1:]).type(images.dtype)
             ori_mask = (rep_mask == 0).type(images.dtype)
             target_onehot = target_onehot * ori_mask + tar * rep_mask
           else:
-            tar = torch.argmax(tar, dim=3)
             rep_mask = m[:,None,None].repeat(1,*target_accum.shape[1:]).type(torch.int64)
             ori_mask = (rep_mask == 0).type(torch.int64)
             target_accum = (target_accum * ori_mask + tar * rep_mask).type(torch.int64)
             
           
-      if self._exp['teaching']['soft_labels']:
+      if self._exp['teaching']['soft_labels'] and  (replayed != -1).sum() != 0:
         # MSE for soft labels. CategoricalCrossEntropy for gt-labels
-        loss_soft = F.mse_loss(pred,target_onehot,reduction='none').mean(dim=[1,2,3])
+        if self._exp['teaching'].get('loss_function', 'MSE') == 'MSE':
+          loss_soft = F.mse_loss( torch.nn.functional.softmax(pred, dim=1)  ,target_onehot,reduction='none').mean(dim=[1,2,3])
+        elif self._exp['teaching'].get('loss_function', 'MSE') == 'KL':
+          se = torch.nn.functional.softmax(pred, dim=1) 
+          se = se.clamp( 0.01,0.99 )
+          pred_log_prob = torch.log( se )
+          # CE(q,p) = KL(q,p) + H(q)
+          # minmizing KL is qual to min. CE 
+          loss_soft = F.kl_div( pred_log_prob, target_onehot , reduction='none', log_target=False).mean(dim=[1,2,3])
+          
+        else: 
+          raise Exception('Invalid Input for loss_function')
+        
         loss = F.cross_entropy(pred, target, ignore_index=-1,reduction='none').mean(dim=[1,2])
         loss = loss * (replayed[:,0]== -1) + loss_soft * (replayed[:,0]!= -1) * self._exp['teaching']['soft_labels_weight']
         loss = loss.mean()
+        
+      elif self._exp['teaching']['soft_labels']: 
+        loss = F.cross_entropy(pred, target, ignore_index=-1)
       else:
         loss = F.cross_entropy(pred, target_accum, ignore_index=-1)
-      
     else:
-      
       loss = F.cross_entropy(pred, target, ignore_index=-1)
     return loss
   
@@ -242,8 +259,8 @@ class Network(LightningModule):
     images = batch[0]
     target = batch[1]
     BS = images.shape[0]
-    
     ori_img = batch[2]
+    
     if self._exp.get('latent_replay_buffer',{}).get('active',False):
       injection, injection_labels, mask_injection = self._lrb(BS, device=images.device)
       outputs = self(batch = images, 
@@ -255,7 +272,6 @@ class Network(LightningModule):
       if mask_injection.sum() != 0:
         # set the labels to the stored labels
         target[mask_injection] = injection_labels[mask_injection]
-        
         # set the masked image to green
         img = torch.zeros(ori_img.shape, device= self.device)
         img[:,1,:,:] = 1
@@ -327,7 +343,7 @@ class Network(LightningModule):
       self.visualizer.plot_image(tag=f'train_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
     
     return {'loss': outputs['loss']}
-  
+        
   def on_train_epoch_end(self, outputs):
     if self.current_epoch % self.trainer.check_val_every_n_epoch != 0:
       val_acc_epoch = torch.tensor( 999, device=self.device)
@@ -337,9 +353,6 @@ class Network(LightningModule):
       self.log('val_mIoU_epoch',val_mIoU_epoch,)
       self.log('val_loss',val_loss)
     
-    
-    
-      
   def validation_step(self, batch, batch_idx, dataloader_idx):
     if self._dataloader_index_store != dataloader_idx:
       self._dataloader_index_store = dataloader_idx
@@ -350,7 +363,6 @@ class Network(LightningModule):
     outputs = self(images)
     
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
-
     pred = torch.argmax(outputs[0], 1)
 
     self.log('val_loss', loss, on_epoch=True)
@@ -384,10 +396,11 @@ class Network(LightningModule):
     self.log(f'val_mIoU', self.val_mIoU[dataloader_idx] , on_epoch=True, prog_bar=False)
     self.log(f'task_count', self._task_count, on_epoch=True, prog_bar=False)
     # self.log('task_name', self._task_name, on_epoch=True)
-    
+  
+  def on_validation_epoch_start(self):
+    self._mode = 'val'
+  
   def validation_epoch_end(self, outputs):
-
-    
     metrics = self.trainer.logger_connector.callback_metrics
     me =  copy.deepcopy ( metrics ) 
     for k in me.keys():
@@ -423,9 +436,7 @@ class Network(LightningModule):
         f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
       )
     self._epoch_start_time = time.time()
-    
 
-  
   def test_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]    #[-1,n] labeled with -1 should not induce a loss

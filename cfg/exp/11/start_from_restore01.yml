@@ -1,4 +1,4 @@
-name: SoftLabels/start_from_restore01
+name: SoftLabels2/start_from_restore01
 timestamp: false
 weights_restore: true
 checkpoint_restore: false

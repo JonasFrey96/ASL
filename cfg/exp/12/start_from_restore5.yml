@@ -1,4 +1,4 @@
-name: SoftLabels2/start_from_restore05
+name: SoftLabels3/soft_5
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -14,8 +14,8 @@ replay_state_sync_back:
   get_size_from_task_generator: true
 
 task_specific_early_stopping:
-  patience: 5
-  timelimit_in_min: 60
+  patience: 20
+  timelimit_in_min: 70
   verbose: True
 
 lr_scheduler:
@@ -41,7 +41,7 @@ latent_replay_buffer:
 teaching:
   active: True
   soft_labels: True
-  soft_labels_weight: 0.5
+  soft_labels_weight: 5
 trainer:
   precision: 16
   accumulate_grad_batches: 1

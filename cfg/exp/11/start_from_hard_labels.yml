@@ -1,4 +1,4 @@
-name: SoftLabels/start_from_hard_labels
+name: SoftLabels2/start_from_hard_labels
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
