@@ -1,5 +1,5 @@
-name: SoftLabels2/start_from_restore05
-timestamp: false
+name: ModifySoftLabels/soft_labels_5
+timestamp: true
 weights_restore: true
 checkpoint_restore: false
 checkpoint_load: template/hypersim/task0-epoch=46.ckpt
@@ -14,8 +14,8 @@ replay_state_sync_back:
   get_size_from_task_generator: true
 
 task_specific_early_stopping:
-  patience: 5
-  timelimit_in_min: 60
+  patience: 20
+  timelimit_in_min: 70
   verbose: True
 
 lr_scheduler:
@@ -23,7 +23,7 @@ lr_scheduler:
   cfg:
     power: 0.9
     max_epochs: 1000
-    target_lr: 1.0e-05
+    target_lr: 1.0e-04
 optimizer:
   name: ADAM
   sgd_cfg:
@@ -41,7 +41,8 @@ latent_replay_buffer:
 teaching:
   active: True
   soft_labels: True
-  soft_labels_weight: 0.5
+  soft_labels_weight: 5
+  loss_function: MSE
 trainer:
   precision: 16
   accumulate_grad_batches: 1
@@ -50,7 +51,7 @@ trainer:
   limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
-  max_epochs: 50
+  max_epochs: 1000
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0

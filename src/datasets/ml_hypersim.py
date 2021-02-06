@@ -271,7 +271,7 @@ class MLHypersim(ReplayDataset):
             img = self._output_trafo(img)
 
         label[label > 0] = label[label > 0] - 1
-        return img, label.type(torch.int64)[0, :, :], img_ori, replayed
+        return img, label.type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
 
     def __len__(self):
         return self.length
