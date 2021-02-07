@@ -17,6 +17,7 @@
 	- [1.7. Continual Learning Options](#17-continual-learning-options)
 	- [1.8. Scaling performance](#18-scaling-performance)
 	- [1.9. Datasets](#19-datasets)
+	- [1.10 NeptuneAI Logger](#110-neptuneai-logger)
 - [2. Acknowledgement](#2-acknowledgement)
 
 ## 1.1. Challenge
@@ -223,8 +224,11 @@ Rougly running at 1.8 it/s
 |                 | Depth:        | False                                  |
 |                 | Total Size:   | 20GB                                   |
 
+## 1.10 NeptuneAI Logger
+```
+neptune tensorboard /PATH/TO/TensorBoard_logdir --project jonasfrey96/ASL
+```
 
-		
 # 2. Acknowledgement  
 Special thanks to:  
 People at <http://continualai.org> for the inspiration and feedback.  

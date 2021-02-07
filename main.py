@@ -1,4 +1,3 @@
-
 import os 
 import sys 
 sys.path.insert(0, os.getcwd())
@@ -38,6 +37,40 @@ from datasets import get_dataset
 from torchvision import transforms
 from math import ceil
 import copy 
+
+import neptune
+import neptune
+import os
+import time
+print("Start neptune session")
+
+def _create_or_get_experiment2(self):
+  """
+  Super bad !!! Dont do this
+  """
+  proxies = {
+  'http': 'http://proxy.ethz.ch:3128',
+  'https': 'http://proxy.ethz.ch:3128',
+  }
+  if self.offline_mode:
+      project = neptune.Session(backend=neptune.OfflineBackend()).get_project('dry-run/project')
+  else:
+      #project_qualified_name='jonasfrey96/ASL', api_token=os.environ["NEPTUNE_API_TOKEN"], proxies=proxies
+      session = neptune.init(project_qualified_name='jonasfrey96/ASL', api_token=self.api_key,proxies=proxies) # add your credential
+      print(type(session))
+      session = neptune.Session(api_token=self.api_key,proxies=proxies)
+      project = session.get_project(self.project_name)
+
+  if self.experiment_id is None:
+      e = project.create_experiment(name=self.experiment_name, **self._kwargs)
+      self.experiment_id = e.id
+  else:
+      e = project.get_experiments(id=self.experiment_id)[0]
+      self.experiment_name = e.get_system_properties()['name']
+      self.params = e.get_parameters()
+      self.properties = e.get_properties()
+      self.tags = e.get_tags()
+  return e
 
 
 def file_path(string):
@@ -110,26 +143,24 @@ def get_dataloader_train_val(d_train, d_val, env):
     
   return dataloader_train, dataloader_val
     
-def log_important_params( main_tbl, exp):
+def log_important_params( exp ):
   dic = {}
   dic['total_tasks'] = exp['task_generator']['total_tasks']
   dic['task_cfg'] = exp['task_generator']['mode']
-  dic['replay_buffer_size_per_bin'] = exp['task_generator']['cfg_replay']['bins']
+  dic['replay_buffer_size_per_bin'] = exp['task_generator']['cfg_replay']['elements']
   dic['replay_adaptive_replay'] = exp['task_generator']['replay_adaptive_add_p']
   dic['replay_active'] = exp['task_generator']['replay']
   dic['teaching_active'] = exp['teaching']['active'] 
   dic['teaching_soft_labels'] = exp['teaching']['soft_labels'] 
   dic['model_finetune'] = exp['model']['freeze']['active']
   
-  print(dic)
-  main_tbl.add_hparams(
-    hparam_dict = dic, metric_dict={'best_metric':0.0})
-  main_tbl.flush()
-        
+  return dic
 if __name__ == "__main__":
   seed_everything(42)
   def signal_handler(signal, frame):
     print('exiting on CRTL-C')
+    logger.experiment.stop()
+    
     sys.exit(0)
 
   # this is needed for leonhard to use interactive session and dont freeze on
@@ -138,7 +169,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/exp.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/20/validate_neptune.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -199,6 +230,7 @@ if __name__ == "__main__":
         os.makedirs(model_path)
       except:
         pass
+  
   # Setup logger for each ddp-task 
   logging.getLogger("lightning").setLevel(logging.DEBUG)
   logger = logging.getLogger("lightning")
@@ -206,7 +238,12 @@ if __name__ == "__main__":
   logger.addHandler(fh)
       
   # Copy Dataset from Scratch to Nodes SSD
+
   if env['workstation'] == False:
+    # use proxy hack for neptunai !!!
+    NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
+
+    # move data to ssd
     for dataset in exp['move_datasets']:
       scratchdir = os.getenv('TMPDIR')
       print( 'scratchdir:', scratchdir, 'dataset:', dataset['env_var'])
@@ -274,7 +311,24 @@ if __name__ == "__main__":
     )
     cb_ls.append( checkpoint_callback )
       
-        
+  params = log_important_params( exp )
+     
+  if env['workstation']:
+    t1 = 'workstation'
+  else:
+    t1 = 'leonhard'
+  
+  if local_rank == 0:
+    logger = NeptuneLogger(
+      api_key=os.environ["NEPTUNE_API_TOKEN"],
+      project_name="jonasfrey96/asl",
+      experiment_name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
+      params=params, # Optional,
+      tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1]] + exp["tag_list"], # Optional,
+      close_after_fit = False,
+      offline_mode = False
+    )
+
   # Always use advanced profiler
   if exp['trainer'].get('profiler', False):
     exp['trainer']['profiler'] = AdvancedProfiler(output_filename=os.path.join(model_path, 'profile.out'))
@@ -283,23 +337,40 @@ if __name__ == "__main__":
       
   if exp.get('checkpoint_restore', False):
     p = os.path.join( env['base'], exp['checkpoint_load'])
-    trainer = Trainer( **exp['trainer'],
-      default_root_dir = model_path,
-      callbacks=cb_ls, 
-      resume_from_checkpoint = p)
-    
+    if local_rank == 0:
+      trainer = Trainer( **exp['trainer'],
+        default_root_dir = model_path,
+        callbacks=cb_ls, 
+        resume_from_checkpoint = p,
+        logger=logger) 
+    else:
+      trainer = Trainer( **exp['trainer'],
+        default_root_dir = model_path,
+        callbacks=cb_ls, 
+        resume_from_checkpoint = p,
+        logger=False) 
+      
   else:
-    if exp.get('tramac_restore', False): 
-      p = env['tramac_weights']
-      if os.path.isfile( p ):
-        name, ext = os.path.splitext( p )
-        assert ext == '.pkl' or '.pth', 'Sorry only .pth and .pkl files supported.'
-        logger.info( f'Resuming training TRAMAC, loading {p}...' )
-        model.model.load_state_dict(torch.load(p, map_location=lambda storage, loc: storage))
-
-    trainer = Trainer(**exp['trainer'],
-      default_root_dir=model_path,
-      callbacks=cb_ls)
+    # if exp.get('tramac_restore', False): 
+    #   p = env['tramac_weights']
+    #   if os.path.isfile( p ):
+    #     name, ext = os.path.splitext( p )
+    #     assert ext == '.pkl' or '.pth', 'Sorry only .pth and .pkl files supported.'
+    #     logger.info( f'Resuming training TRAMAC, loading {p}...' )
+    #     model.model.load_state_dict(torch.load(p, map_location=lambda storage, loc: storage))
+    
+    if local_rank == 0:
+      trainer = Trainer(**exp['trainer'],
+        default_root_dir=model_path,
+        callbacks=cb_ls,
+        logger=logger)
+    else:
+      trainer = Trainer(**exp['trainer'],
+        default_root_dir=model_path,
+        callbacks=cb_ls,
+        logger=False)
+      
+    
 
   if exp.get('weights_restore', False):
     # it is not strict since the latent replay buffer is not always available
@@ -312,13 +383,10 @@ if __name__ == "__main__":
     else:
       raise Exception('Checkpoint not a file')
     
-      
-  main_tbl = SummaryWriter(
-      log_dir = os.path.join(  trainer.default_root_dir, exp['name'].split('/')[-1] + "_Main"))
-  main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
-                            writer=main_tbl, epoch=0, store=True, num_classes=22 )
   
-  log_important_params( main_tbl, exp)
+  
+  main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
+                            logger=logger, epoch=0, store=True, num_classes=22 )
   
   tc = TaskCreator(**exp['task_generator'],output_size=exp['model']['input_size'])
   results = []
@@ -338,23 +406,11 @@ if __name__ == "__main__":
       rank_zero_info(f'Time for Task 0- Task {idx}: '+ t2)
       _task_start_time = time.time()
 
-    
     task, eval_lists = out
     main_visu.epoch = idx
     # New Logger
     rank_zero_info( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
-    tbl = TensorBoardLogger(
-      save_dir = trainer.default_root_dir,
-      name = task.name,default_hp_metric=False)
 
-    # only way to avoid PytorchLightning SummaryWriter nameing!
-    tbl._experiment = SummaryWriter(
-      log_dir=os.path.join(trainer.default_root_dir, task.name), 
-      **tbl._kwargs)
-    trainer.logger = tbl
-
-
-    trainer.current_epoch = 0      
     model._task_name = task.name
     model._task_count = idx
     dataloader_train, dataloader_val = get_dataloader_train_val(d_train= task.dataset_train_cfg,
@@ -363,35 +419,10 @@ if __name__ == "__main__":
     dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
     #Training the model
     trainer.should_stop = False
-    
+    print("GLOBAL STEP ", model.global_step)
+     
     if idx < exp['start_at_task']:
-      # TODO Check if everything works when starting directly with task 1 
-      # check with the stored buffer state !!!
-      
-      # rank_zero_warn('Skipped the {idx}-th Training Task !!!')
-      
-      # print("Before storing 0 trainer")
-      # model.teacher.print_weight_summary()
-      # string = ''
-      # sum = 0
-      # for i in model.model.parameters():
-      #   sum += i[0].sum()
-      # string += f'   CurrentModel: WeightSum == {sum}\n'
-      # rank_zero_info(string)
-      
-      
-      # model.teacher.absorbe_model( model.model, idx) 
-      # print("Teacher before started training")
-      
-      # model.teacher.print_weight_summary()
-      # string = ''
-      # sum = 0
-      # for i in model.model.parameters():
-      #   sum += i[0].sum()
-      # string += f'   CurrentModel: WeightSum == {sum}\n'
-      # rank_zero_info(string)
-      
-      trainer.limit_val_batches = 10
+      trainer.limit_val_batches = 1.0
       trainer.limit_train_batches = 1
       trainer.max_epochs = 1
       trainer.check_val_every_n_epoch = 1
@@ -407,32 +438,10 @@ if __name__ == "__main__":
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
+    
     if exp['teaching']['active']:
       rank_zero_info( "Store current model as new teacher")
       model.teacher.absorbe_model( model.model, model._task_count, exp['name'])
-    # if exp['teaching']['active']:
-    #   sr = f'Absorbed the model after start training the {idx}-th Training Task !!!'
-    #   rank_zero_warn(sr)
-      
-    #   print("Before storing after training")
-    #   model.teacher.print_weight_summary()
-    #   string = ''
-    #   sum = 0
-    #   for i in model.model.parameters():
-    #     sum += i[0].sum()
-    #   string += f'   CurrentModel: WeightSum == {sum}\n'
-    #   rank_zero_info(string)
-    #   # model.teacher.absorbe_model( model.model, idx)  
-    #   print("After absorebing model after teaching")
-    #   model.teacher.print_weight_summary()
-      
-    #   string = ''
-    #   sum = 0
-    #   for i in model.model.parameters():
-    #     sum += i[0].sum()
-    #   string += f'   CurrentModel: WeightSum == {sum}\n'
-    #   rank_zero_info(string)
-      
       
     training_results.append( copy.deepcopy(trainer.logged_metrics) )
     mds = trainer.optimizers[0].state_dict()['state']
@@ -454,3 +463,5 @@ if __name__ == "__main__":
           data_matrix = data_matrix,
           higher_is_better= higher_is_better,
           title=str( met.split('/')[0]))
+
+logger.experiment.stop()

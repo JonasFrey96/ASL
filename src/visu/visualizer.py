@@ -9,6 +9,8 @@ import matplotlib
 import matplotlib.pyplot as plt
 import io
 import cv2
+from matplotlib.backends.backend_agg import FigureCanvasAgg
+import PIL import Image
 
 __all__ = ['Visualizer', 'MainVisualizer']
 
@@ -66,15 +68,15 @@ col_map = cm.colors.ListedColormap(li)
 
 # define a function which returns an image as numpy array from figure
 def get_img_from_fig(fig, dpi=180):
-  buf = io.BytesIO()
-  fig.savefig(buf, format="png", dpi=dpi, transparent=False, pad_inches=0.2 )
-  buf.seek(0)
-  img_arr = np.frombuffer(buf.getvalue(), dtype=np.uint8)
-  buf.close()
-  img = cv2.imdecode(img_arr, 1)
-  img = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
-
-  return img
+  canvas = FigureCanvasAgg(fig)
+  # Retrieve a view on the renderer buffer
+  canvas.draw()
+  buf = canvas.buffer_rgba()
+  # convert to a NumPy array
+  buf = np.asarray(buf)
+  buf = Image.fromarray(buf)
+  buf = buf.convert('RGB')
+  return buf
 
 def image_functionality(func):
   def wrap(*args, **kwargs):
@@ -102,7 +104,7 @@ def image_functionality(func):
       log = True
     
     if log:
-      log_tensorboard = args[0].writer is not None
+      log_exp = args[0].logger is not None
       tag = kwargs.get('tag', 'TagNotDefined')
       jupyter = kwargs.get('jupyter', False)
       # Each logging call is able to override the setting that is stored in the visualizer
@@ -121,16 +123,17 @@ def image_functionality(func):
         p = os.path.join( args[0].p_visu, f'{epoch}_{tag}.png')
         imageio.imwrite(p, img)
       
-      if log_tensorboard:
+      if log_exp:
         H,W,C = img.shape
-        ds = cv2.resize( img , dsize=(int(W/4), int(H/4)), interpolation=cv2.INTER_CUBIC)
+        ds = cv2.resize( img , dsize=(int(W/2), int(H/2)), interpolation=cv2.INTER_CUBIC)
         
-        args[0].writer.add_image(
-          tag, 
-          ds, 
-          global_step=epoch, 
-          dataformats='HWC')
-
+        args[0].logger.log_image(
+          log_name = tag, 
+          image = ds, 
+          step=epoch)
+        
+        
+        
       if jupyter:
           display( Image.fromarray(img))  
         
@@ -138,10 +141,10 @@ def image_functionality(func):
   return wrap
 
 class MainVisualizer():
-  def __init__(self, p_visu, writer=None, epoch=0, store=True, num_classes=22):
+  def __init__(self, p_visu, logger= None, epoch=0, store=True, num_classes=22):
     self.p_visu = p_visu
-    self.writer = writer
-
+    self.logger = logger
+    
     if not os.path.exists(self.p_visu):
       os.makedirs(self.p_visu)
     
