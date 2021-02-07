@@ -5,11 +5,11 @@ checkpoint_restore: false
 checkpoint_load: template/hypersim/task0-epoch=46.ckpt
 tramac_restore: false
 lr: 0.003
-logger: np
 tag_list:
   - mlhypersim
   - replay
   - soft_labels
+  - neptune_test
 
 start_at_task: 1
 max_tasks: 4
@@ -20,7 +20,7 @@ replay_state_sync_back:
 
 task_specific_early_stopping:
   patience: 10
-  timelimit_in_min: 0.5
+  timelimit_in_min: 30
   verbose: True
 
 lr_scheduler:
@@ -65,7 +65,7 @@ loader:
   pin_memory: true
   batch_size: 16
   shuffle: true
-  num_workers: 8
+  num_workers: 16
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1

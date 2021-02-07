@@ -153,7 +153,8 @@ class Network(LightningModule):
     self._mode = 'train'
      
   def on_train_start(self):
-    self.visualizer.writer = self.logger.experiment
+    self.visualizer.logger= self.logger
+      
     if self._rssb_active: 
       bins, valids = self._rssb.get()
       self.trainer.train_dataloader.dataset.set_full_state(
@@ -183,7 +184,6 @@ class Network(LightningModule):
       self.model.freeze_module(mask)
       rank_zero_info(f'Model Freeze Following Layers {mask}') 
        
-
     self.logged_images_train = 0
     self.logged_images_val = 0
     self.logged_images_test = 0
@@ -302,20 +302,23 @@ class Network(LightningModule):
   
   def training_step_end(self, outputs):
     # Log replay buffer stats
+    print(self.global_step, self.current_epoch)
+    
     if self._exp.get('latent_replay_buffer',{}).get('active',False):
       if self.global_step % (self._exp['visu']).get('log_every_y_global_steps',10) == 0:
         dic = {}
         for i in range( len( self._lrb.bins) ):
           filled =  self._lrb._bin_counts[i]
           dic[f'lrb_bin_{i}'] = filled.clone().detach()    
-        self.logger.experiment.add_scalars('lr_bins', 
-          dic, 
-          global_step=self.global_step)
         
-    self.logger.experiment.add_scalars('samples', 
-      {'real': torch.tensor(self._real_samples),
-      'replayed': torch.tensor(self._replayed_samples)}, 
-      global_step=self.global_step)
+        self.logger.log_metrics( 
+          metrics = dic,
+          step = self.global_step)
+    self.logger.log_metrics( 
+      metrics = { 'real': torch.tensor(self._real_samples),
+                  'replayed': torch.tensor(self._replayed_samples)},
+      step = self.global_step)
+    
   
     # Logging + Visu
     if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 
