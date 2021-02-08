@@ -1,5 +1,4 @@
-name: dev/latent_replay
-offline_mode: true
+name: latent_replay/soft_labels
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -8,9 +7,6 @@ tramac_restore: false
 lr: 0.003
 tag_list:
   - mlhypersim
-  - replay
-  - soft_labels
-  - test_latent_replay
 
 start_at_task: 1
 max_tasks: 4
@@ -20,8 +16,8 @@ replay_state_sync_back:
   get_size_from_task_generator: true
 
 task_specific_early_stopping:
-  patience: 10
-  timelimit_in_min: 10
+  patience: 20
+  timelimit_in_min: 70
   verbose: True
 
 lr_scheduler:
@@ -37,31 +33,29 @@ optimizer:
     weight_decay: 4.0e-05
 teaching:
   active: True
-  soft_labels: False
-  soft_labels_weight: 10
+  soft_labels: True
+  soft_labels_weight: 25
   loss_function: MSE
 latent_replay:
-  # currently latent replay is the same as freezing the layers
-  active: False
-
+  active: True
 trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
   limit_train_batches: 1.0
-  limit_val_batches: 10
+  limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
   max_epochs: 1000
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 2
 loader:
   pin_memory: true
   batch_size: 16
   shuffle: true
-  num_workers: 8
+  num_workers: 16
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1

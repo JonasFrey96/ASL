@@ -20,14 +20,15 @@ def inject(x,injection_features, injection_mask):
       x.shape[2] == injection_features.shape[2] and
       x.shape[3] == injection_features.shape[3] ):
     s = x.shape
-    x = x + injection_features * injection_mask[:,:,None,None].repeat(1, s[1], s[2], s[3])
+    m_replace = injection_mask[:,:,None,None].repeat(1, s[1], s[2], s[3])
+    m_keep = m_replace == False
+    x = x * m_keep.type(x.dtype) + injection_features * m_replace.type(x.dtype)
   return x
 
 class FastSCNN(nn.Module):
   def __init__(self, num_classes, aux=False, **kwargs):
     super().__init__()
     self.aux = aux
-    
     
     learning_to_downsample = LearningToDownsample(32, 48, 64)
     global_feature_extractor = GlobalFeatureExtractor(64, [64, 96, 128], 128, 6, [3, 3, 3])
@@ -109,7 +110,6 @@ class FastSCNN(nn.Module):
     
     return tuple(outputs)
   
-
   def freeze_module(self, mask=[False,False,False,False], layer=None ):
     if layer is not None:
       mask = []
