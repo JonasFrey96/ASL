@@ -44,6 +44,9 @@ latent_replay:
   # currently latent replay is the same as freezing the layers
   active: False
 
+buffer:
+  fill_after_fit: True
+  mode: softmax_max
 trainer:
   precision: 16
   accumulate_grad_batches: 1
