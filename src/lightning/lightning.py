@@ -216,7 +216,6 @@ class Network(LightningModule):
     teacher_targets = None
     if ( (replayed != -1).sum() != 0 and
       ( self._exp.get('latent_replay',{}).get('active',False) or self._teaching)):
-        
         teacher_targets, injection_features = self.teacher.get_latent_replay(images, replayed)
         
         if self._exp.get('latent_replay',{}).get('active',False):
@@ -228,7 +227,6 @@ class Network(LightningModule):
     else:
       outputs = self(batch = images)
 
-    
     loss = self.compute_loss(  
               pred = outputs[0], 
               target = target,

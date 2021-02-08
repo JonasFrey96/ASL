@@ -453,5 +453,7 @@ if __name__ == "__main__":
           data_matrix = data_matrix,
           higher_is_better= higher_is_better,
           title=str( met.split('/')[0]))
-
-logger.experiment.stop()
+try:
+  logger.experiment.stop()
+except:
+  pass

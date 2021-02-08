@@ -7,6 +7,7 @@ from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
 from os.path import join
 import os
 import time
+import copy
 __all__ = ['Teacher']
 
 
@@ -28,7 +29,6 @@ class Teacher(nn.Module):
     # not used, replayed by get_latent_replay
     x = self.models[teacher](x)[0]
 
-      
   def print_weight_summary(self):
     string = 'Summary Teacher:\n'
     for j in range(len(self.models)):
@@ -55,10 +55,10 @@ class Teacher(nn.Module):
       res_targets = self.softmax(res_targets).detach()
     else:
       res_targets = torch.argmax(res_targets, 1).detach().type(torch.int64)      
-    return res_targets, res_features.detach()
+    return res_targets.clone(), res_features.clone().detach()
   
   def get_features(self, x, teacher):
-    return self.models[teacher](x)
+    return self.models[teacher](x) #ERROR 
   
   def absorbe_model(self, model, teacher, path=None):
 	
@@ -68,9 +68,9 @@ class Teacher(nn.Module):
       
       para_copy = dict( model.named_parameters() )
       for name, params in self.models[teacher].named_parameters():
-        params.data.copy_( para_copy[name])
+        # params.data.copy_( para_copy[name].clone)
+        params.data = para_copy[name].clone()
      
-        
       # if os.path.exists(path):
       #   self.models[teacher].load_state_dict( torch.load(path, map_location = list(model.parameters())[0].device ) )
       #   # self.models[teacher].load_state_dict( torch.load(path) )
@@ -81,7 +81,6 @@ class Teacher(nn.Module):
       #   os.remove(path) 
       # else:
       #   print("The file does not exist")
-       
     
     for i , mod in enumerate(self.models):
       mod.freeze_module( mask=[True, True, True, True] )
