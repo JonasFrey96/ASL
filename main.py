@@ -169,7 +169,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/20/validate_neptune.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/exp.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -319,15 +319,28 @@ if __name__ == "__main__":
     t1 = 'leonhard'
   
   if local_rank == 0:
-    logger = NeptuneLogger(
-      api_key=os.environ["NEPTUNE_API_TOKEN"],
-      project_name="jonasfrey96/asl",
-      experiment_name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
-      params=params, # Optional,
-      tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1]] + exp["tag_list"], # Optional,
-      close_after_fit = False,
-      offline_mode = False
+    if not exp.get('offline_mode', False):
+      logger = NeptuneLogger(
+        api_key=os.environ["NEPTUNE_API_TOKEN"],
+        project_name="jonasfrey96/asl",
+        experiment_name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
+        params=params, # Optional,
+        tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1]] + exp["tag_list"], # Optional,
+        close_after_fit = False,
+        offline_mode = exp.get('offline_mode', False)
+      )
+    else:
+      logger = TensorBoardLogger(
+        save_dir=model_path,
+        name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
+        default_hp_metric=params, # Optional,
+      )
+  else:
+    logger = TensorBoardLogger(
+        save_dir=model_path+'/rank/'+str(local_rank),
+        name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
     )
+    
 
   # Always use advanced profiler
   if exp['trainer'].get('profiler', False):
@@ -337,39 +350,16 @@ if __name__ == "__main__":
       
   if exp.get('checkpoint_restore', False):
     p = os.path.join( env['base'], exp['checkpoint_load'])
-    if local_rank == 0:
-      trainer = Trainer( **exp['trainer'],
-        default_root_dir = model_path,
-        callbacks=cb_ls, 
-        resume_from_checkpoint = p,
-        logger=logger) 
-    else:
-      trainer = Trainer( **exp['trainer'],
-        default_root_dir = model_path,
-        callbacks=cb_ls, 
-        resume_from_checkpoint = p,
-        logger=False) 
-      
+    trainer = Trainer( **exp['trainer'],
+      default_root_dir = model_path,
+      callbacks=cb_ls, 
+      resume_from_checkpoint = p,
+      logger=logger) 
   else:
-    # if exp.get('tramac_restore', False): 
-    #   p = env['tramac_weights']
-    #   if os.path.isfile( p ):
-    #     name, ext = os.path.splitext( p )
-    #     assert ext == '.pkl' or '.pth', 'Sorry only .pth and .pkl files supported.'
-    #     logger.info( f'Resuming training TRAMAC, loading {p}...' )
-    #     model.model.load_state_dict(torch.load(p, map_location=lambda storage, loc: storage))
-    
-    if local_rank == 0:
-      trainer = Trainer(**exp['trainer'],
-        default_root_dir=model_path,
-        callbacks=cb_ls,
-        logger=logger)
-    else:
-      trainer = Trainer(**exp['trainer'],
-        default_root_dir=model_path,
-        callbacks=cb_ls,
-        logger=False)
-      
+    trainer = Trainer(**exp['trainer'],
+      default_root_dir=model_path,
+      callbacks=cb_ls,
+      logger=logger)   
     
 
   if exp.get('weights_restore', False):
@@ -419,10 +409,10 @@ if __name__ == "__main__":
     dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
     #Training the model
     trainer.should_stop = False
-    print("GLOBAL STEP ", model.global_step)
+    # print("GLOBAL STEP ", model.global_step)
      
     if idx < exp['start_at_task']:
-      trainer.limit_val_batches = 1.0
+      # trainer.limit_val_batches = 1.0
       trainer.limit_train_batches = 1
       trainer.max_epochs = 1
       trainer.check_val_every_n_epoch = 1

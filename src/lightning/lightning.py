@@ -37,7 +37,6 @@ from loss import cross_entropy_soft
 #from .metrices import IoU, PixAcc
 from visu import Visualizer
 from lightning import meanIoUTorchCorrect
-from latent_replay import LatentReplayBuffer
 import datetime
 
 __all__ = ['Network']
@@ -90,26 +89,9 @@ class Network(LightningModule):
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
     self._train_start_time = time.time()
     
-    if self._exp.get('latent_replay_buffer',{}).get('active',False):
-      
-      if self._exp['latent_replay_buffer']['extraction_level'] == 'compressed':
-        extraction_size = (128,12,12)
-      elif self._exp['latent_replay_buffer']['extraction_level'] == 'input':
-        s = self._exp['model']['input_size']
-        extraction_size = (3,s,s)
-      else: 
-        raise Exception()
-      
-      self._lrb = LatentReplayBuffer(
-        size = extraction_size,
-        size_label = (exp['model']['input_size'],exp['model']['input_size']),
-        **self._exp['latent_replay_buffer']['cfg'],
-        dtype = self._type,
-        device=self.device)
-
       
     # set correct teaching mode.
-    self._teaching = self._exp.get('teaching',{}).get('active',False)
+    self._teaching = self._exp.get('teaching',{}).get('active',False) or self._exp.get('latent_replay',{}).get('active',False)
     if self._teaching: 
       if self._exp['task_generator']['total_tasks'] == 1:
         self._teaching = False
@@ -120,7 +102,8 @@ class Network(LightningModule):
       self.teacher = Teacher(
         num_classes= self._exp['model']['cfg']['num_classes'],
         n_teacher= self._exp['task_generator']['total_tasks']-1,
-        soft_labels= self._exp['teaching']['soft_labels'] )
+        soft_labels= self._exp['teaching']['soft_labels'],
+        fast_params = self._exp['model']['cfg'])
     
     self._replayed_samples = 0
     self._real_samples = 0
@@ -137,16 +120,14 @@ class Network(LightningModule):
       self._rssb_active = False
   
   def forward(self, batch, **kwargs):
-    if kwargs.get('injection', None) is not None:
+    if kwargs.get('replayed', None) is not None:
+      injection_mask = kwargs['replayed'] != -1
       outputs = self.model.injection_forward(
         x = batch, 
-        injection = kwargs['injection'], 
-        injection_mask = kwargs['injection_mask'])
+        injection_features = kwargs['injection_features'], 
+        injection_mask = injection_mask)
     else:
-      # if self._mode == 'train':
       outputs = self.model(batch)
-      # else:
-        # outputs = self.teacher.models[0](batch)
     return outputs
   
   def on_train_epoch_start(self):
@@ -154,6 +135,10 @@ class Network(LightningModule):
      
   def on_train_start(self):
     self.visualizer.logger= self.logger
+      
+    if (self._task_count != 0 and
+        self.model.extract):
+      self.model.freeze_module(layer=self.model.extract_layer)
       
     if self._rssb_active: 
       bins, valids = self._rssb.get()
@@ -168,10 +153,6 @@ class Network(LightningModule):
       self._rssb.absorbe(bins,valids)
     
   def on_train_end(self):
-    # if self._teaching:
-    #   rank_zero_info( "Store current model as new teacher")
-    #   self.teacher.absorbe_model( self.model, self._task_count, self._exp['name'])
-
     if self._rssb_active:
       bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
       self._rssb.absorbe(bins,valids)
@@ -198,122 +179,68 @@ class Network(LightningModule):
     string += f'   CurrentModel: WeightSum == {sum}\n'
     rank_zero_info(string)
       
-  def compute_loss(self, pred, target, images, replayed ):
+  def compute_loss(self, pred, target, teacher_targets, images, replayed ):
     nr_replayed = (replayed != -1).sum()
     BS = replayed.shape[0]
     self._replayed_samples += int( nr_replayed )
     self._real_samples += int( BS - nr_replayed )
     
     if self._teaching and (replayed != -1).sum() != 0:
-            
+      
       if self._exp['teaching']['soft_labels']:
-        target_onehot = torch.zeros( (BS,self._exp['model']['cfg']['num_classes'],images.shape[2],images.shape[3]), dtype=pred.dtype, device=pred.device ) 
-      else:
-        target_accum = target.clone()
-        
-      for teacher in range(self._exp['task_generator']['total_tasks']-1):
-        if (replayed == teacher).sum() != 0:
-          m = (replayed == teacher)[:,0]
-          with torch.no_grad():
-            tar = self.teacher( images, teacher) 
-          
-          if self._exp['teaching']['soft_labels']:
-            # if we are not doing the softmax this would we prefect and results in loss of 0 for the next task
-            rep_mask = m[:,None,None,None].repeat(1,*tar.shape[1:]).type(images.dtype)
-            ori_mask = (rep_mask == 0).type(images.dtype)
-            target_onehot = target_onehot * ori_mask + tar * rep_mask
-          else:
-            rep_mask = m[:,None,None].repeat(1,*target_accum.shape[1:]).type(torch.int64)
-            ori_mask = (rep_mask == 0).type(torch.int64)
-            target_accum = (target_accum * ori_mask + tar * rep_mask).type(torch.int64)
-            
-          
-      if self._exp['teaching']['soft_labels'] and  (replayed != -1).sum() != 0:
         # MSE for soft labels. CategoricalCrossEntropy for gt-labels
+        
         if self._exp['teaching'].get('loss_function', 'MSE') == 'MSE':
-          loss_soft = F.mse_loss( torch.nn.functional.softmax(pred, dim=1)  ,target_onehot,reduction='none').mean(dim=[1,2,3])
-        elif self._exp['teaching'].get('loss_function', 'MSE') == 'KL':
-          se = torch.nn.functional.softmax(pred, dim=1) 
-          se = se.clamp( 0.01,0.99 )
-          pred_log_prob = torch.log( se )
-          # CE(q,p) = KL(q,p) + H(q)
-          # minmizing KL is qual to min. CE 
-          loss_soft = F.kl_div( pred_log_prob, target_onehot , reduction='none', log_target=False).mean(dim=[1,2,3])
-          
+          loss_soft = F.mse_loss( torch.nn.functional.softmax(pred, dim=1),teacher_targets,reduction='none').mean(dim=[1,2,3])
         else: 
           raise Exception('Invalid Input for loss_function')
-        
         loss = F.cross_entropy(pred, target, ignore_index=-1,reduction='none').mean(dim=[1,2])
         loss = loss * (replayed[:,0]== -1) + loss_soft * (replayed[:,0]!= -1) * self._exp['teaching']['soft_labels_weight']
         loss = loss.mean()
         
-      elif self._exp['teaching']['soft_labels']: 
+      else: 
+        target = target * (replayed[:,0]== -1)[:,None,None].repeat(1,target.shape[1],target.shape[2]) + teacher_targets * (replayed[:,0] != -1)[:,None,None].repeat(1,target.shape[1],target.shape[2])
         loss = F.cross_entropy(pred, target, ignore_index=-1)
-      else:
-        loss = F.cross_entropy(pred, target_accum, ignore_index=-1)
     else:
+      # use gt labels
       loss = F.cross_entropy(pred, target, ignore_index=-1)
     return loss
   
   def training_step(self, batch, batch_idx):
     images = batch[0]
     target = batch[1]
-    BS = images.shape[0]
     ori_img = batch[2]
+    replayed = batch[3]
+    BS = images.shape[0]
     
-    if self._exp.get('latent_replay_buffer',{}).get('active',False):
-      injection, injection_labels, mask_injection = self._lrb(BS, device=images.device)
-      outputs = self(batch = images, 
-        injection = injection, 
-        injection_mask = mask_injection)
-      
-      # self._replayed_samples += int( mask_injection.sum() )
-      # self._real_samples += int( BS - mask_injection.sum() )
-      if mask_injection.sum() != 0:
-        # set the labels to the stored labels
-        target[mask_injection] = injection_labels[mask_injection]
-        # set the masked image to green
-        img = torch.zeros(ori_img.shape, device= self.device)
-        img[:,1,:,:] = 1
-        ori_img[mask_injection] = img[mask_injection]
+    teacher_targets = None
+    if ( (replayed != -1).sum() != 0 and
+      ( self._exp.get('latent_replay',{}).get('active',False) or self._teaching)):
+        
+        teacher_targets, injection_features = self.teacher.get_latent_replay(images, replayed)
+        
+        if self._exp.get('latent_replay',{}).get('active',False):
+          outputs = self(batch = images, 
+                        injection_features = injection_features, 
+                        replayed = replayed)
+        else:
+          outputs = self(batch = images) 
     else:
       outputs = self(batch = images)
 
+    
     loss = self.compute_loss(  
               pred = outputs[0], 
-              target = target, 
+              target = target,
+              teacher_targets = teacher_targets,
               images= images, 
-              replayed = batch[3] )
-    # write to latent replay buffer
-    if self._exp.get('latent_replay_buffer',{}).get('active',False) and not self.trainer.running_sanity_check:
-      valid_elements = torch.nonzero(mask_injection==0, as_tuple=False)
-      if valid_elements.shape[0] != 0:
-        # check for the case only latent replay performed
-        if random.random() < self._exp['latent_replay_buffer']['fill_sample_from_batch_ratio']: 
-          ele = torch.randint(0, valid_elements.shape[0], (1,))
-          
-          if self._exp['latent_replay_buffer']['extraction_level'] == 'compressed':
-            self._lrb.add(x=outputs[1][ele].detach(),y=target[ele].detach())
-          elif self._exp['latent_replay_buffer']['extraction_level'] == 'input':
-            self._lrb.add(x=images[ele].detach(),y=target[ele].detach())
+              replayed = replayed)
         
     self.log('train_loss', loss, on_step=False, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
   
   def training_step_end(self, outputs):
     # Log replay buffer stats
-    print(self.global_step, self.current_epoch)
-    
-    if self._exp.get('latent_replay_buffer',{}).get('active',False):
-      if self.global_step % (self._exp['visu']).get('log_every_y_global_steps',10) == 0:
-        dic = {}
-        for i in range( len( self._lrb.bins) ):
-          filled =  self._lrb._bin_counts[i]
-          dic[f'lrb_bin_{i}'] = filled.clone().detach()    
-        
-        self.logger.log_metrics( 
-          metrics = dic,
-          step = self.global_step)
     self.logger.log_metrics( 
       metrics = { 'real': torch.tensor(self._real_samples),
                   'replayed': torch.tensor(self._replayed_samples)},
@@ -507,110 +434,6 @@ class Network(LightningModule):
       ret = [optimizer]
     return ret
   
-  # def train_dataloader(self):
-  #   output_transform = transforms.Compose([
-  #           transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-  #   ])
-  #   # dataset and dataloader
-  #   dataset_train = get_dataset(
-  #     **self._exp['d_train'],
-  #     env = self._env,
-  #     output_trafo = output_transform,
-  #   )
-  #   print(dataset_train)
-  #   # self.trainer.train_dataloader                              
-  #   # initalize train and validation indices
-  #   if self.trainer.train_dataloader is not None:
-  #     bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
-  #     dataset_train.set_full_state(bins,valids, self._task_count_task_name)
-  #   dataloader_train = torch.utils.data.DataLoader(dataset_train,
-  #     shuffle = self._exp['loader']['shuffle'],
-  #     num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
-  #     pin_memory = self._exp['loader']['pin_memory'],
-  #     batch_size = self._exp['loader']['batch_size'], 
-  #     drop_last = True)
-    
-  #   return dataloader_train
-    
-  # def val_dataloader(self):
-  #   output_transform = transforms.Compose([
-  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-  #   ])
-  #   dataset_val = get_dataset(
-  #     **self._exp['d_val'],
-  #     env = self._env,
-  #     output_trafo = output_transform
-  #   )
-
-  #   dataloader_val = torch.utils.data.DataLoader(dataset_val,
-  #     shuffle = False,
-  #     num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
-  #     pin_memory = self._exp['loader']['pin_memory'],
-  #     batch_size = self._exp['loader']['batch_size'])
-  #   return dataloader_val
-
-  # def test_dataloader(self):
-  #   output_transform = transforms.Compose([
-  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-  #   ])
-  #   dataset_test = get_dataset(
-  #     **self._exp['d_test'],
-  #     env = self._env,
-  #     output_trafo = output_transform
-  #   )
-
-  #   dataloader_test = torch.utils.data.DataLoader(dataset_test,
-  #     shuffle = False,
-  #     num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
-  #     pin_memory = self._exp['loader']['pin_memory'],
-  #     batch_size =  self._exp['loader']['batch_size_test'])
-  #   return dataloader_test
-  
-  # def set_train_dataset_cfg(self, dataset_train_cfg, dataset_val_cfg, task_name):
-  #   self._exp['d_train'] = dataset_train_cfg
-  #   self._exp['d_val'] = dataset_val_cfg
-  #   self._task_name = task_name
-  #   self._task_count += 1
-    
-  #   if self._exp.get('latent_replay_buffer',{}).get('active',False):
-  #     self._lrb.set_bin( self._task_count)
-      
-    
-    
-  #   # TODO this creation of the dataset to check its length should be avoided
-  #   output_transform = transforms.Compose([
-  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-  #   ])
-  #   d2 = get_dataset(
-  #     **self._exp['d_val'],
-  #     env = self._env,
-  #     output_trafo = output_transform
-  #   )
-  #   d1 = get_dataset(
-  #     **self._exp['d_train'],
-  #     env = self._env,
-  #     output_trafo = output_transform
-  #   )
-        
-  #   return bool(len(d1) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']) and 
-  #     len(d2) > (self._exp['loader']['batch_size']*self._exp['trainer']['gpus']))
-    
-  # def set_test_dataset_cfg(self, dataset_test_cfg, task_name):
-  #   self._exp['d_test'] = dataset_test_cfg
-  #   self._task_name = task_name
-  #   # TODO this creation of the dataset to check its length should be avoided
-  #   output_transform = transforms.Compose([
-  #     transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-  #   ])
-  #   d1 = get_dataset(
-  #     **self._exp['d_test'],
-  #     env = self._env,
-  #     output_trafo = output_transform
-  #   )
-    
-  #   return bool( len(d1) > self._exp['loader']['batch_size_test']*self._exp['trainer']['gpus'])
-      
-    
 
 import pytest
 class TestLightning:

@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import io
 import cv2
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-import PIL import Image
+from PIL import Image
 
 __all__ = ['Visualizer', 'MainVisualizer']
 
@@ -68,6 +68,7 @@ col_map = cm.colors.ListedColormap(li)
 
 # define a function which returns an image as numpy array from figure
 def get_img_from_fig(fig, dpi=180):
+  fig.set_dpi(dpi)
   canvas = FigureCanvasAgg(fig)
   # Retrieve a view on the renderer buffer
   canvas.draw()
@@ -126,13 +127,20 @@ def image_functionality(func):
       if log_exp:
         H,W,C = img.shape
         ds = cv2.resize( img , dsize=(int(W/2), int(H/2)), interpolation=cv2.INTER_CUBIC)
-        
-        args[0].logger.log_image(
-          log_name = tag, 
-          image = ds, 
-          step=epoch)
-        
-        
+        if args[0].logger is not None:
+          try:
+            # logger == neptuneai
+            args[0].logger.log_image(
+              log_name = tag, 
+              image = ds, 
+              step=epoch)
+          except:
+            # logger == tensorboard
+            args[0].logger.experiment.add_image(
+              tag = tag, 
+              img_tensor = ds, 
+              global_step=epoch,
+              dataformats='HWC')
         
       if jupyter:
           display( Image.fromarray(img))  
