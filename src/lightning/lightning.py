@@ -38,6 +38,11 @@ from loss import cross_entropy_soft
 from visu import Visualizer
 from lightning import meanIoUTorchCorrect
 import datetime
+from math import ceil
+
+# Uncertainty
+from uncertainty import get_softmax_uncertainty_max, get_softmax_uncertainty_distance
+
 
 __all__ = ['Network']
 def wrap(s,length, hard=False):
@@ -156,6 +161,9 @@ class Network(LightningModule):
     if self._rssb_active:
       bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
       self._rssb.absorbe(bins,valids)
+    
+    if self._exp.get('buffer',{}).get('fill_after_fit', False):
+      self.fill_buffer()
       
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch
@@ -432,7 +440,66 @@ class Network(LightningModule):
       ret = [optimizer]
     return ret
   
+  def fill_buffer(self):
+    # how can we desig this
+    # this function needs to be called the number of tasks -> its not so important that it is effiecent
+    # load the sample with the datloader in a blocking way -> This might take 5 Minutes per task
+    rank_zero_info('Fill buffer')
+    
+    BS = self._exp['loader']['batch_size']
+    auxillary_dataloader = torch.utils.data.DataLoader(
+      self.trainer.train_dataloader.dataset,
+      shuffle = False,
+      num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
+      pin_memory = self._exp['loader']['pin_memory'],
+      batch_size = BS, 
+      drop_last = True)
+    
+    ret = torch.zeros( (int(BS*len(auxillary_dataloader)),2), device=self.device )
+    # ret should be filles with globale index and measurment
+    
+    s = 0
+    for batch_idx, batch in enumerate(auxillary_dataloader):
+      for b in range(len(batch)):
+        batch[b] = batch[b].to(self.device)
+      
+      res, global_index = self.fill_step(batch, batch_idx)
+      
+      for ba in range( res.shape[0] ):  
+        ret[s,0] = res[ba]
+        ret[s,1] = global_index[ba]
+        s += 1
+    
+    _, indi = torch.topk( ret[:,0] , self._rssb.bins.shape[1] )
+    self._rssb.bins[self._task_count,:] = ret[:,1][indi]
+    rank_zero_info('Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
+    
+    
+  def fill_step(self, batch, batch_idx):
+    images = batch[0]
+    target = batch[1]
+    ori_img = batch[2]
+    replayed = batch[3]
+    BS = images.shape[0]
+    global_index =  batch[4]
+    
+    outputs = self(batch = images) 
+    pred = outputs[0]
+    
+    m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
+    if m == 'softmax_max':
+      res = get_softmax_uncertainty_max(pred) # confident 0 , uncertain 1
+    elif m == 'softmax_distance':
+      res = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
+    elif m == 'loss':
+	    res = F.cross_entropy(pred, target, ignore_index=-1) # correct 0 , incorrect high
+    else:
+      raise Exception('Mode to fill buffer is not defined!')
 
+    return res, global_index
+    
+  
+  
 import pytest
 class TestLightning:
   def  test_iout(self):
