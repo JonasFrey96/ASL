@@ -330,16 +330,14 @@ class MLHypersim(ReplayDataset):
         return sceneTypes
 
     def _filter_scene(self, scenes):
-        
-        
-        images_idx = []
-        for sce in scenes:
-            images_idx += [i for i in range(len(self.filtered_image_pths))
-                           if (self.filtered_image_pths[i]).find(sce) != -1]
-        idx = np.array(images_idx)
-        self.global_to_local_idx =  (np.array(self.global_to_local_idx)[idx]).tolist()
-        self.length = len(self.global_to_local_idx)
-
+        if len(scenes) != 0:
+            images_idx = []
+            for sce in scenes:
+                images_idx += [i for i in range(len(self.filtered_image_pths))
+                            if (self.filtered_image_pths[i]).find(sce) != -1]
+            idx = np.array(images_idx)
+            self.global_to_local_idx =  (np.array(self.global_to_local_idx)[idx]).tolist()
+            self.length = len(self.global_to_local_idx)
 
 def test():
     # pytest -q -s src/datasets/ml_hypersim.py

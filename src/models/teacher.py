@@ -16,22 +16,18 @@ The Teacher model can be used to create soft labels.
 """
 
 class Teacher(nn.Module):
-  def __init__(self, num_classes, n_teacher, soft_labels = True, verbose = True):
+  def __init__(self, num_classes, n_teacher, soft_labels = True, verbose = True, fast_params = {}):
     super().__init__()
-    self.models = nn.ModuleList( [FastSCNN(num_classes) for i in range(n_teacher)] ) 
+    self.models = nn.ModuleList( [FastSCNN(**fast_params) for i in range(n_teacher)] ) 
     self.soft_labels = soft_labels
     self.n_classes = num_classes
     self.softmax = torch.nn.Softmax( dim=1 )
     self.verbose = verbose
     
   def forward(self, x, teacher):
+    # not used, replayed by get_latent_replay
     x = self.models[teacher](x)[0]
-    if self.soft_labels:
-      return self.softmax(x).detach()
-    else:
-      x = torch.argmax(x, 1).detach()
-      return x
-      
+
       
   def print_weight_summary(self):
     string = 'Summary Teacher:\n'
@@ -42,35 +38,34 @@ class Teacher(nn.Module):
       string += f'   Teacher Level {j}: WeightSum == {sum}\n'
     rank_zero_info(string)
     
-    
+  def get_latent_replay(self, images, replayed):
+    with torch.no_grad():
+      res_targets, res_features = None, None
+      for n in range(len(self.models)):
+          mask = (replayed == n)[:,0]
+          if mask.sum() != 0:
+            if res_targets is not None:
+              target, features = self.get_features( images, n) 
+              res_targets[mask] = target[mask]
+              res_features[mask] = features[mask]
+            else:
+              res_targets, res_features = self.get_features( images, n) 
+  
+    if self.soft_labels:
+      res_targets = self.softmax(res_targets).detach()
+    else:
+      res_targets = torch.argmax(res_targets, 1).detach().type(torch.int64)      
+    return res_targets, res_features.detach()
+  
+  def get_features(self, x, teacher):
+    return self.models[teacher](x)
+  
   def absorbe_model(self, model, teacher, path=None):
 	
     if teacher < len(self.models):
       if self.verbose:
-        rank_zero_info( f'We are storing the model {teacher} as a new teacher')
-        rank_zero_info( f'We are storing the model {teacher} as a new teacher')
-        rank_zero_info( f'We are storing the model {teacher} as a new teacher')
-        rank_zero_info( f'We are storing the model {teacher} as a new teacher')
-        rank_zero_info( f'We are storing the model {teacher} as a new teacher')
+        rank_zero_info( f'Storing the model {teacher} as a new teacher')
       
-      d = str(list(model.parameters())[0].device)
-      if path is not None:
-        pa = os.environ.get('TMPDIR')
-        if type(pa) is str:
-          if pa.find('tmp') != -1:
-            pa = path
-            
-        path = join(path, f'weights_tmp_{d}.pth')
-        
-      else:
-        path = f'weights_tmp_{d}.pth'
-      string = 'I will save current model weights to ' + path
-      rank_zero_info( string )
-
-      # torch.save(model.state_dict(), path )
-      # time.sleep(1)
-      # for a,b  in zip( model.parameters(),self.models[teacher].parameters() ):
-        # b=a.clone()
       para_copy = dict( model.named_parameters() )
       for name, params in self.models[teacher].named_parameters():
         params.data.copy_( para_copy[name])
