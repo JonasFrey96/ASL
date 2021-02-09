@@ -1,4 +1,4 @@
-name: populating_buffer/softmax_max
+name: populating_buffer_new/softmax_max
 offline_mode: false
 timestamp: false
 weights_restore: true

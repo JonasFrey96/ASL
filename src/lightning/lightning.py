@@ -27,7 +27,7 @@ import pytorch_lightning as pl
 from torchvision import transforms
 from pytorch_lightning import metrics as pl_metrics
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
-
+from torchvision.utils import make_grid
 from torch.nn import functional as F
 # MODULES
 from models import FastSCNN, Teacher, ReplayStateSyncBack
@@ -511,21 +511,22 @@ class Network(LightningModule):
     _, indi = torch.topk( ret[:,0] , 16 )
     images = []
     labels = []
-    for ind in range(list( indi )):
+    for ind in list( indi ):
       batch = self.trainer.train_dataloader.dataset[ind]
-      images.append( batch[0]) # 3,H,W
+      images.append( batch[2]) # 3,H,W
       labels.append( batch[1][None].repeat(3,1,1)) # 3,H,W    
 
     grid_images = make_grid(images,nrow = 4,padding = 2,
             scale_each = False, pad_value = 0)
-    grid_labels = make_grid(labels[None],nrow = 4,padding = 2,
+    grid_labels = make_grid(labels,nrow = 4,padding = 2,
             scale_each = False, pad_value = -1)
 
-    self.visualizer.plot_image(grid_images, tag='{self._task_count}_Buffer_Sample_Images')
-    self.visualizer.plot_segmentation( seg = grid_labels[0], tag='{self._task_count}_Buffer_Sample_Labels')
+    self.visualizer.plot_image(grid_images, tag=f'{self._task_count}_Buffer_Sample_Images')
+    self.visualizer.plot_segmentation( seg = grid_labels[0], tag=f'{self._task_count}_Buffer_Sample_Labels')
     m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
     
-    self.visualizer.plot_bar(ret[:,0], x_label='Sample', y_label='Value '+m , title='Bar Plot', sort=True, reverse=True)
+    self.visualizer.plot_bar(ret[:,0], x_label='Sample', y_label='Value '+m ,
+                             title='Bar Plot', sort=True, reverse=True, tag=f'{self._task_count}_Buffer_Eval_Metric')
     rank_zero_info('Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
       
   def fill_step(self, batch, batch_idx):

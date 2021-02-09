@@ -1,4 +1,4 @@
-name: populating_buffer/softmax_distance
+name: populating_buffer_new/softmax_distance
 offline_mode: false
 timestamp: false
 weights_restore: true
