@@ -175,7 +175,8 @@ class Network(LightningModule):
     
     if self._exp.get('buffer',{}).get('fill_after_fit', False):
       self.fill_buffer()
-      
+    
+    rank_zero_info('Training end reset val_results.')
     self._val_results = {} # reset the buffer for the next task
     
   def on_epoch_start(self):
@@ -264,7 +265,6 @@ class Network(LightningModule):
       metrics = { 'real': torch.tensor(self._real_samples),
                   'replayed': torch.tensor(self._replayed_samples)},
       step = self.global_step)
-    
   
     # Logging + Visu
     if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 

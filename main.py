@@ -39,7 +39,6 @@ from math import ceil
 import copy 
 
 import neptune
-import neptune
 import os
 import time
 print("Start neptune session")
@@ -329,6 +328,9 @@ if __name__ == "__main__":
         close_after_fit = False,
         offline_mode = exp.get('offline_mode', False)
       )
+      # logger.experiment.
+      
+      
     else:
       logger = TensorBoardLogger(
         save_dir=model_path,
