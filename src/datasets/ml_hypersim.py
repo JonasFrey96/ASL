@@ -226,6 +226,15 @@ class MLHypersim(ReplayDataset):
         #self._weights = pd.read_csv(f'cfg/dataset/ml-hypersim/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
 
     def __getitem__(self, index):
+        """
+        Returns
+        -------
+        img [torch.tensor]: CxHxW, torch.float
+        label [torch.tensor]: HxW, torch.int64
+        img_ori [torch.tensor]: CxHxW, torch.float
+        replayed [torch.tensor]: 1 torch.float32 
+        global_idx [int]: global_index in dataset
+        """
         replayed = torch.tensor( [-1] , dtype=torch.int32)
         idx = -1
         if self._replay:

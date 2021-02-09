@@ -26,7 +26,7 @@ from pytorch_lightning import Trainer
 import pytorch_lightning as pl
 from torchvision import transforms
 from pytorch_lightning import metrics as pl_metrics
-from pytorch_lightning.utilities import rank_zero_info
+from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
 
 from torch.nn import functional as F
 # MODULES
@@ -70,19 +70,20 @@ class Network(LightningModule):
     
     self.visualizer = Visualizer(
       p_visu=p_visu,
-      writer=None,
+      logger=None,
       num_classes=self._exp['model']['cfg']['num_classes']+1)
     self._mode = 'train'
     max_tests = 4
     self.test_acc = pl_metrics.classification.Accuracy()
     self.train_acc = pl_metrics.classification.Accuracy()
-    self.val_acc = torch.nn.ModuleList( [pl_metrics.classification.Accuracy() for i in range(max_tests)] )
+    self.val_acc = torch.nn.ModuleList( 
+      [pl_metrics.classification.Accuracy() for i in range(max_tests)] )
 
     self.test_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
     self.train_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
     
-    self.val_mIoU = torch.nn.ModuleList( [meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes']) for i in range(max_tests)] )
-    # self.val_mIoU = 
+    self.val_mIoU = torch.nn.ModuleList( 
+      [meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes']) for i in range(max_tests)] )
 
     self.logged_images_train = 0
     self.logged_images_val = 0
@@ -96,7 +97,8 @@ class Network(LightningModule):
     
       
     # set correct teaching mode.
-    self._teaching = self._exp.get('teaching',{}).get('active',False) or self._exp.get('latent_replay',{}).get('active',False)
+    self._teaching = (self._exp.get('teaching',{}).get('active',False) or 
+                      self._exp.get('latent_replay',{}).get('active',False))
     if self._teaching: 
       if self._exp['task_generator']['total_tasks'] == 1:
         self._teaching = False
@@ -112,6 +114,8 @@ class Network(LightningModule):
     
     self._replayed_samples = 0
     self._real_samples = 0
+    self._val_results = {} 
+    # resetted on_train_end. filled in validation_epoch_end
     
     if self._exp['replay_state_sync_back']['active']:
       self._rssb_active = True
@@ -144,9 +148,15 @@ class Network(LightningModule):
     if (self._task_count != 0 and
         self.model.extract):
       self.model.freeze_module(layer=self.model.extract_layer)
-      
+      rank_zero_warn( 'Freezed the model given that we start to extract data from teacher')
+      rank_zero_warn( 'Therefore not training upper layers')
+    
     if self._rssb_active: 
       bins, valids = self._rssb.get()
+      rank_zero_info( 'Reload saved buffer state')
+      for i in range(self._task_count):
+        s = 'Restored for task {i}: \n' + str(bins[i])
+        rank_zero_info( s )
       self.trainer.train_dataloader.dataset.set_full_state(
         bins=bins, 
         valids=valids,
@@ -154,6 +164,7 @@ class Network(LightningModule):
       
   def on_save_checkpoint(self, params):
     if self._rssb_active:
+      rank_zero_info( 'When saving checkpoint also save buffer state')
       bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
       self._rssb.absorbe(bins,valids)
     
@@ -165,6 +176,8 @@ class Network(LightningModule):
     if self._exp.get('buffer',{}).get('fill_after_fit', False):
       self.fill_buffer()
       
+    self._val_results = {} # reset the buffer for the next task
+    
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch
     
@@ -345,13 +358,34 @@ class Network(LightningModule):
       except:
         pass
     
-    # if 'train_loss_epoch' in me.keys():
-    #   t_l = me[ 'train_loss_epoch']  
-    # else:
-    
     t_l = me.get('train_loss', 'NotDef')
     v_acc = me.get('val_acc', 'NotDef')
     v_mIoU = me.get('val_mIoU', 'NotDef')  
+    
+    if len( self._val_results ) == 0:
+      for i in range(self._exp['max_tasks']):
+        self._val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
+    else:
+      val_results = {}
+      for i in range(self._exp['max_tasks']):
+        val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
+        res = (self._val_results[f'val_acc/dataloader_idx_{i}'] -
+          val_results[f'val_acc/dataloader_idx_{i}'])
+        self.log(f'forgetting/acc_idx_{i}', res, on_epoch=True, prog_bar=False)
+      
+      if self._task_count > 0:
+        res = 0
+        for i in range(self._task_count):
+          res += (self._val_results[f'val_acc/dataloader_idx_{i}'] -
+            val_results[f'val_acc/dataloader_idx_{i}'])
+        
+        res /= self._task_count
+        self.log(f'forgetting/acc_avg_pervious', res, on_epoch=True, prog_bar=False)
+      
+      res = ( val_results[f'val_acc/dataloader_idx_{self._task_count}']-
+        self._val_results[f'val_acc/dataloader_idx_{self._task_count}'] )
+      self.log(f'learning/acc_current', res, on_epoch=True, prog_bar=False)
+      
     epoch = str(self.current_epoch)
     
     t = time.time()- self._epoch_start_time
@@ -455,7 +489,7 @@ class Network(LightningModule):
       batch_size = BS, 
       drop_last = True)
     
-    ret = torch.zeros( (int(BS*len(auxillary_dataloader)),2), device=self.device )
+    ret = torch.zeros( (int(BS*len(auxillary_dataloader)),3), device=self.device )
     # ret should be filles with globale index and measurment
     
     s = 0
@@ -472,18 +506,32 @@ class Network(LightningModule):
     
     _, indi = torch.topk( ret[:,0] , self._rssb.bins.shape[1] )
     self._rssb.bins[self._task_count,:] = ret[:,1][indi]
+    
+    # use the top 16 images to create an buffer overview
+    _, indi = torch.topk( ret[:,0] , 16 )
+    images = []
+    labels = []
+    for ind in range(list( indi )):
+      batch = self.trainer.train_dataloader.dataset[ind]
+      images.append( batch[0]) # 3,H,W
+      labels.append( batch[1][None].repeat(3,1,1)) # 3,H,W    
+
+    grid_images = make_grid(images,nrow = 4,padding = 2,
+            scale_each = False, pad_value = 0)
+    grid_labels = make_grid(labels[None],nrow = 4,padding = 2,
+            scale_each = False, pad_value = -1)
+
+    self.visualizer.plot_image(grid_images, tag='{self._task_count}_Buffer_Sample_Images')
+    self.visualizer.plot_segmentation( seg = grid_labels[0], tag='{self._task_count}_Buffer_Sample_Labels')
+    m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
+    
+    self.visualizer.plot_bar(ret[:,0], x_label='Sample', y_label='Value '+m , title='Bar Plot', sort=True, reverse=True)
     rank_zero_info('Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
-    
-    
+      
   def fill_step(self, batch, batch_idx):
-    images = batch[0]
-    target = batch[1]
-    ori_img = batch[2]
-    replayed = batch[3]
-    BS = images.shape[0]
-    global_index =  batch[4]
-    
-    outputs = self(batch = images) 
+    BS = batch[0].shape[0]
+    global_index =  batch[4]    
+    outputs = self(batch = batch[0]) 
     pred = outputs[0]
     
     m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
@@ -492,14 +540,12 @@ class Network(LightningModule):
     elif m == 'softmax_distance':
       res = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
     elif m == 'loss':
-	    res = F.cross_entropy(pred, target, ignore_index=-1) # correct 0 , incorrect high
+	    res = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
     else:
       raise Exception('Mode to fill buffer is not defined!')
-
-    return res, global_index
-    
+    return res.detach(), global_index.detach()
   
-  
+   
 import pytest
 class TestLightning:
   def  test_iout(self):
