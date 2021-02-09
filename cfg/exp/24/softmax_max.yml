@@ -1,5 +1,5 @@
-name: dev/uncertainty_integration
-offline_mode: true
+name: populating_buffer/softmax_max
+offline_mode: false
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -8,16 +8,12 @@ tramac_restore: false
 lr: 0.003
 tag_list:
   - mlhypersim
-  - replay
-  - soft_labels
-  - test_latent_replay
-
 # Experiment Settings
 start_at_task: 1
 max_tasks: 4
 task_specific_early_stopping:
-  patience: 10
-  timelimit_in_min: 10
+  patience: 20
+  timelimit_in_min: 70
   verbose: True
 
 teaching:
@@ -30,7 +26,7 @@ latent_replay:
   active: False
 buffer:
   fill_after_fit: True
-  mode: loss
+  mode: softmax_max
 replay_state_sync_back:
   active: true
   get_size_from_task_generator: true
@@ -64,7 +60,7 @@ loader:
   pin_memory: true
   batch_size: 16
   shuffle: true
-  num_workers: 8
+  num_workers: 16
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
@@ -78,7 +74,7 @@ model:
     num_classes: 40
     aux: false
     extraction:
-      active: true
+      active: false
       layer: 'learn_to_down'
   freeze:
     active: false
