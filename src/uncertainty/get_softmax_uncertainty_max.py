@@ -2,7 +2,7 @@ import torch
 
 __all__ = ['get_softmax_uncertainty_max']
 
-def get_softmax_uncertainty_max(pred):
+def get_softmax_uncertainty_max(pred, mask=None):
   """
   pred: BS,C,H,W before softmax is applied! 
   
@@ -12,6 +12,8 @@ def get_softmax_uncertainty_max(pred):
   # 0 if absolutly confident for all pixels
   """
   BS,C,H,W = pred.shape
+  if mask is None:
+    mask = torch.ones( (BS,H,W), device=pred.device, dtype=torch.bool)
   
   argm1 = torch.argmax(pred, 1)
   soft1 = torch.nn.functional.softmax(pred, dim=1)
@@ -22,7 +24,7 @@ def get_softmax_uncertainty_max(pred):
   
   res = []
   for b in range(BS):
-    res_ = soft1[b][onehot_argm1[b]]
+    res_ = soft1[b][mask[b]][onehot_argm1[b][mask[b]]]
     res.append( torch.mean(res_) )
   
   return torch.tensor(res, dtype=pred.dtype, device=pred.device)
