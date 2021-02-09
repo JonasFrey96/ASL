@@ -1,5 +1,5 @@
 name: dev/uncertainty_integration
-offline_mode: true
+offline_mode: false
 timestamp: false
 weights_restore: true
 checkpoint_restore: false

@@ -132,7 +132,7 @@ def image_functionality(func):
             # logger == neptuneai
             args[0].logger.log_image(
               log_name = tag, 
-              image = ds, 
+              image = np.float32( ds )/255 , 
               step=epoch)
           except:
             # logger == tensorboard
@@ -388,11 +388,10 @@ class Visualizer():
     img = np.zeros((H,W,3), dtype=np.uint8)
     for i, color in enumerate( col_map ) :
       img[ seg==i ] = color[:3]
-
-
     return img
   
-  def plot_bar(data, x_label='Sample', y_label='Value', title='Bar Plot', sort=True, reverse=True, *args,**kwargs):
+  @image_functionality
+  def plot_bar(self, data, x_label='Sample', y_label='Value', title='Bar Plot', sort=True, reverse=True, *args,**kwargs):
     def check_shape(data):
         if len(data.shape)>1:
             if data.shape[0] == 0:
@@ -417,7 +416,7 @@ class Visualizer():
     if sort:
         data.sort(reverse=reverse)
     
-    fig, ax = plt.subplots()
+    fig = plt.figure()
     plt.bar(list(range(len(data))), data, facecolor=COL_MAP(2) )
 
     plt.xlabel(x_label)
