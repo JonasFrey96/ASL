@@ -41,6 +41,7 @@ import copy
 import neptune
 import os
 import time
+from pathlib import Path
 print("Start neptune session")
 
 def _create_or_get_experiment2(self):
@@ -318,6 +319,9 @@ if __name__ == "__main__":
     t1 = 'leonhard'
   
   if local_rank == 0:
+    cwd = os.getcwd()
+    files = [str(p).replace(cwd+'/','') for p in Path(cwd).rglob('*.py') 
+             if str(p).find('vscode') == -1]
     if not exp.get('offline_mode', False):
       logger = NeptuneLogger(
         api_key=os.environ["NEPTUNE_API_TOKEN"],
@@ -326,10 +330,9 @@ if __name__ == "__main__":
         params=params, # Optional,
         tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1]] + exp["tag_list"], # Optional,
         close_after_fit = False,
-        offline_mode = exp.get('offline_mode', False)
+        offline_mode = exp.get('offline_mode', False),
+        upload_source_files=files
       )
-      # logger.experiment.
-      
       
     else:
       logger = TensorBoardLogger(

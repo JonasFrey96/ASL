@@ -475,6 +475,12 @@ class Network(LightningModule):
     return ret
   
   def fill_buffer(self):
+    # modify extraction settings to get uncertainty
+    extract_store = self.model.extract
+    extract_layer_store = self.model.extract_layer
+    self.model.extract = True
+    self.model.extract_layer = 'fusion' # if we use fusion we get a 128 feature
+    
     # how can we desig this
     # this function needs to be called the number of tasks -> its not so important that it is effiecent
     # load the sample with the datloader in a blocking way -> This might take 5 Minutes per task
@@ -490,19 +496,36 @@ class Network(LightningModule):
       drop_last = True)
     
     ret = torch.zeros( (int(BS*len(auxillary_dataloader)),3), device=self.device )
+    latent_feature_all = torch.zeros( (int(BS*len(auxillary_dataloader)),40,128), device=self.device, dtype=torch.float16 )
     # ret should be filles with globale index and measurment
-    
+    label_sum = torch.zeros( (self._exp['model']['cfg']['num_classes']),device=self.device )
     s = 0
     for batch_idx, batch in enumerate(auxillary_dataloader):
       for b in range(len(batch)):
         batch[b] = batch[b].to(self.device)
       
-      res, global_index = self.fill_step(batch, batch_idx)
+      indi, counts = torch.unique( batch[1] , return_counts = True)
+      for i,cou in zip( list(indi), list(counts) ):
+        if i != -1:
+          label_sum[int( i )] += int( cou )
+        
+      
+      res, global_index, latent_feature = self.fill_step(batch, batch_idx)
       
       for ba in range( res.shape[0] ):  
         ret[s,0] = res[ba]
         ret[s,1] = global_index[ba]
+        latent_feature_all[s] = latent_feature[ba]
         s += 1
+    
+    latent_feature_all.cpu()
+    torch.save(latent_feature_all.cpu(), self._exp['name'] + f'/latent_feature_tensor_{self._task_count}.pt')
+    label_sum = label_sum/label_sum.sum()
+    
+    self.visualizer.plot_bar(label_sum, x_label='Label', y_label='Count',
+                             title=f'Task-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
+                             tag=f'Pixelwise_Class_Count_Task-{self._task_count}')
+    
     
     _, indi = torch.topk( ret[:,0] , self._rssb.bins.shape[1] )
     self._rssb.bins[self._task_count,:] = ret[:,1][indi]
@@ -511,11 +534,23 @@ class Network(LightningModule):
     _, indi = torch.topk( ret[:,0] , 16 )
     images = []
     labels = []
+    label_sum_buffer = torch.zeros( (self._exp['model']['cfg']['num_classes']),device=self.device )
+    
     for ind in list( indi ):
       batch = self.trainer.train_dataloader.dataset[ind]
+      
+      indi, counts = torch.unique( batch[1] , return_counts = True)
+      for i,cou in zip( list(indi), list(counts) ):
+        if i != -1:
+          label_sum_buffer[int( i )] += int( cou )
+      
       images.append( batch[2]) # 3,H,W
       labels.append( batch[1][None].repeat(3,1,1)) # 3,H,W    
-
+    label_sum_buffer = label_sum_buffer/label_sum_buffer.sum()
+    self.visualizer.plot_bar(label_sum_buffer, x_label='Label', y_label='Count',
+                          title=f'Buffer-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
+                          tag=f'Pixelwise_Class_Count_Buffer-{self._task_count}')
+    
     grid_images = make_grid(images,nrow = 4,padding = 2,
             scale_each = False, pad_value = 0)
     grid_labels = make_grid(labels,nrow = 4,padding = 2,
@@ -528,13 +563,35 @@ class Network(LightningModule):
     self.visualizer.plot_bar(ret[:,0], x_label='Sample', y_label='Value '+m ,
                              title='Bar Plot', sort=True, reverse=True, tag=f'{self._task_count}_Buffer_Eval_Metric')
     rank_zero_info('Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
-      
+    
+    
+    
+    # restore the extraction settings
+    self.model.extract = extract_store
+    self.model.extract_layer = extract_layer_store
+    
+    
+    
   def fill_step(self, batch, batch_idx):
     BS = batch[0].shape[0]
     global_index =  batch[4]    
+    
     outputs = self(batch = batch[0]) 
     pred = outputs[0]
+    features = outputs[1]
+    label = batch[1]
+    _BS,_C,_H, _W = features.shape
+    label_features = F.interpolate(label[:,None].type(features.dtype), (_H,_W), mode='nearest')[:,0].type(label.dtype)
     
+    NC = self._exp['model']['cfg']['num_classes']
+    
+    latent_feature = torch.zeros( (_BS,NC,_C), device=self.device ) #10kB per Image if 16 bit
+    for b in range(BS): 
+      for n in range(NC):
+        m = label_features[b]==n
+        if m.sum() != 0:
+          latent_feature[b,n] = features[b][:,m].mean(dim=1)
+      
     m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
     if m == 'softmax_max':
       res = get_softmax_uncertainty_max(pred) # confident 0 , uncertain 1
@@ -544,7 +601,7 @@ class Network(LightningModule):
 	    res = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
     else:
       raise Exception('Mode to fill buffer is not defined!')
-    return res.detach(), global_index.detach()
+    return res.detach(), global_index.detach(), latent_feature.detach()
   
    
 import pytest
