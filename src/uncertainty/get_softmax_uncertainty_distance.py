@@ -19,7 +19,7 @@ def get_softmax_uncertainty_distance(pred,mask = None):
   res = torch.zeros( (BS), device=pred.device,dtype=pred.dtype)
   for b in range(BS):
     res[b] = dif[b][mask[b]].mean()
-  return res
+  return 1 - res
 
 
 def test():

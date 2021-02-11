@@ -14,7 +14,7 @@ import logging
 coloredlogs.install()
 
 import torch
-from pytorch_lightning import seed_everything,Trainer
+from pytorch_lightning import seed_everything, Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import LearningRateMonitor
