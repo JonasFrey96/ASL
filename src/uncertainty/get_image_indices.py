@@ -97,8 +97,10 @@ def test():
   # pytest -q -s src/uncertainty/get_image_indices.py
   
   p = "/media/scratch1/jonfrey/models/master_thesis/dev/uncertainty_integration/latent_feature_tensor_0.pt"
-  data = torch.load( p )
-  ret_gloable_indices = get_image_indices(data, torch.arange(0,data.shape[0]), pick_mode='class_balanced')
-  ret_gloable_indices = get_image_indices(data, torch.arange(0,data.shape[0]), pick_mode='most_hits')
-  
+  data = torch.load( p ).to('cuda:0')
+  print("START")
+  ret_gloable_indices = get_image_indices(data, torch.arange(0,data.shape[0],device=data.device), pick_mode='class_balanced')
+  ret_gloable_indices = get_image_indices(data, torch.arange(0,data.shape[0],device=data.device), pick_mode='most_hits')
+  print(data.device)
+  print(ret_gloable_indices)
   # TODO write some more sophisticated tests
