@@ -42,7 +42,7 @@ from math import ceil
 
 # Uncertainty
 from uncertainty import get_softmax_uncertainty_max, get_softmax_uncertainty_distance
-
+from uncertainty import get_image_indices
 
 __all__ = ['Network']
 def wrap(s,length, hard=False):
@@ -117,14 +117,15 @@ class Network(LightningModule):
     self._val_results = {} 
     # resetted on_train_end. filled in validation_epoch_end
     
+    self._buffer_elements = 0 
     if self._exp['replay_state_sync_back']['active']:
       self._rssb_active = True
       if self._exp['replay_state_sync_back']['get_size_from_task_generator']:
         bins = self._exp['task_generator']['cfg_replay']['bins']
-        elements = self._exp['task_generator']['cfg_replay']['elements']
+        self._buffer_elements = self._exp['task_generator']['cfg_replay']['elements']
       else:
         raise Exception('Not Implemented something else')
-      self._rssb = ReplayStateSyncBack(bins=bins, elements=elements)
+      self._rssb = ReplayStateSyncBack(bins=bins, elements=self._buffer_elements)
     else:
       self._rssb_active = False
   
@@ -167,17 +168,21 @@ class Network(LightningModule):
       rank_zero_info( 'When saving checkpoint also save buffer state')
       bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
       self._rssb.absorbe(bins,valids)
+      
+  def teardown(self, stage):
+    rank_zero_info('TEARDOWN CALLED')
+    if self._exp.get('buffer',{}).get('fill_after_fit', False):
+      self.fill_buffer()
     
-  def on_train_end(self):
     if self._rssb_active:
       bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
       self._rssb.absorbe(bins,valids)
     
-    if self._exp.get('buffer',{}).get('fill_after_fit', False):
-      self.fill_buffer()
-    
     rank_zero_info('Training end reset val_results.')
     self._val_results = {} # reset the buffer for the next task
+  
+  def on_train_end(self):
+    pass
     
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch
@@ -518,17 +523,21 @@ class Network(LightningModule):
         latent_feature_all[s] = latent_feature[ba]
         s += 1
     
-    latent_feature_all.cpu()
+    latent_feature_all
     torch.save(latent_feature_all.cpu(), self._exp['name'] + f'/latent_feature_tensor_{self._task_count}.pt')
-    label_sum = label_sum/label_sum.sum()
+    if self._exp['buffer'].get('latent_feat',{}).get('active',False):
+      # more complex evaluate according to latent feature space
+      ret_globale_indices = self.use_latent_features( latent_feature_all, ret[:,1] ) 
+    else:
+      # simple method use top-K  of the computed metric in fill_step
+      _, indi = torch.topk( ret[:,0] , self._rssb.bins.shape[1] )
+      self._rssb.bins[self._task_count,:] = ret[:,1][indi]
     
+    label_sum = label_sum/label_sum.sum()
     self.visualizer.plot_bar(label_sum, x_label='Label', y_label='Count',
                              title=f'Task-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
                              tag=f'Pixelwise_Class_Count_Task-{self._task_count}')
     
-    
-    _, indi = torch.topk( ret[:,0] , self._rssb.bins.shape[1] )
-    self._rssb.bins[self._task_count,:] = ret[:,1][indi]
     
     # use the top 16 images to create an buffer overview
     _, indi = torch.topk( ret[:,0] , 16 )
@@ -550,27 +559,31 @@ class Network(LightningModule):
     self.visualizer.plot_bar(label_sum_buffer, x_label='Label', y_label='Count',
                           title=f'Buffer-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
                           tag=f'Pixelwise_Class_Count_Buffer-{self._task_count}')
-    
     grid_images = make_grid(images,nrow = 4,padding = 2,
             scale_each = False, pad_value = 0)
     grid_labels = make_grid(labels,nrow = 4,padding = 2,
             scale_each = False, pad_value = -1)
-
-    self.visualizer.plot_image(grid_images, tag=f'{self._task_count}_Buffer_Sample_Images')
-    self.visualizer.plot_segmentation( seg = grid_labels[0], tag=f'{self._task_count}_Buffer_Sample_Labels')
+    self.visualizer.plot_image( img = grid_images, 
+                                tag = f'{self._task_count}_Buffer_Sample_Images', 
+                                method = 'left')
+    
+    self.visualizer.plot_segmentation( seg = grid_labels[0], 
+                                       tag = f'{self._task_count}_Buffer_Sample_Images_Labels',
+                                       method = 'right')
     m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
     
-    self.visualizer.plot_bar(ret[:,0], x_label='Sample', y_label='Value '+m ,
-                             title='Bar Plot', sort=True, reverse=True, tag=f'{self._task_count}_Buffer_Eval_Metric')
-    rank_zero_info('Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
+    self.visualizer.plot_bar(ret[:,0], x_label='Sample', y_label=m+'-Value' ,
+                             title=f'Samples Buffer sorted according to {m}', 
+                             sort=True, 
+                             reverse=True, 
+                             tag=f'{self._task_count}_Buffer_Eval_Metric')
     
+    rank_zero_info('Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
     
     
     # restore the extraction settings
     self.model.extract = extract_store
     self.model.extract_layer = extract_layer_store
-    
-    
     
   def fill_step(self, batch, batch_idx):
     BS = batch[0].shape[0]
@@ -603,7 +616,33 @@ class Network(LightningModule):
       raise Exception('Mode to fill buffer is not defined!')
     return res.detach(), global_index.detach(), latent_feature.detach()
   
-   
+  def use_latent_features(self, feat,global_indices,plot=True):
+    cfg = self._exp['buffer']['latent_feat']
+    
+    ret_globale_indices = get_image_indices(feat, global_indices,
+      **cfg.get('get_image_cfg',{}) , K_return=self._buffer_elements )
+    
+    if plot:
+      classes = torch.zeros( (feat.shape[1]), device=self.device )
+      for i in range(ret_globale_indices.shape[0]):
+          idx = int( torch.where( global_indices == ret_globale_indices[i] )[0])
+          for n in range( feat.shape[1] ):
+              if feat[idx,n,:].sum() != 0:
+                  classes[n] += 1
+      self.visualizer.plot_bar(classes.numpy(), sort=False, title=f'Buffer-{self._task_count}: Labels-Dist class_balanced cos',
+                               tag = f'Labels_class_balanced_cos_Buffer-{self._task_count}',y_label='Counts',x_label='Classes' )
+
+      classes = torch.zeros( (feat.shape[1]), device=self.device)
+      for i in range(feat.shape[0]):
+          idx = int(i)
+          for n in range( feat.shape[1] ):
+              if feat[idx,n,:].sum() != 0:
+                  classes[n] += 1
+      self.visualizer.plot_bar(classes.numpy(), sort=False, title=f'Task-{self._task_count}: Labels-Dist over full task',
+                               tag = f'Labels_Dist_over_full_task_Task-{self._task_count}',y_label='Counts',x_label='Classes' )
+      
+    return ret_globale_indices
+  
 import pytest
 class TestLightning:
   def  test_iout(self):
