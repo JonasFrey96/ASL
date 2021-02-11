@@ -18,6 +18,7 @@
 	- [1.8. Scaling performance](#18-scaling-performance)
 	- [1.9. Datasets](#19-datasets)
 	- [1.10 NeptuneAI Logger](#110-neptuneai-logger)
+	- [1.11 Uncertainty Estimation](#111-uncertainty-estimation)
 - [2. Acknowledgement](#2-acknowledgement)
 
 ## 1.1. Challenge
@@ -228,6 +229,10 @@ Rougly running at 1.8 it/s
 ```
 neptune tensorboard /PATH/TO/TensorBoard_logdir --project jonasfrey96/ASL
 ```
+
+## 1.11 Uncertainty Estimation
+[embed]https://github.com/JonasFrey96/ASL/tree/main/docs/handwritten_notes/Uncertainty.pdf[/embed]
+
 
 # 2. Acknowledgement  
 Special thanks to:  
