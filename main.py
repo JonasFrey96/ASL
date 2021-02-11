@@ -433,6 +433,9 @@ if __name__ == "__main__":
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
+    trainer.batch_idx = 0
+    trainer.current_epoch += 1
+    trainer.global_step += 1
     
     if exp['teaching']['active']:
       rank_zero_info( "Store current model as new teacher")
