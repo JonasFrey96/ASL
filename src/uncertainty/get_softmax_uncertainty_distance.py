@@ -1,5 +1,4 @@
 import torch
-
 __all__ = ['get_softmax_uncertainty_distance']
 
 def get_softmax_uncertainty_distance(pred,mask = None):
@@ -14,34 +13,24 @@ def get_softmax_uncertainty_distance(pred,mask = None):
   if mask is None:
     mask = torch.ones( (BS,H,W), device=pred.device, dtype=torch.bool)
   
-  argm1 = torch.argmax(pred, 1)
-  soft1 = torch.nn.functional.softmax(pred, dim=1)
-
-  onehot_argm1 = torch.nn.functional.one_hot(argm1, num_classes=C).permute(0,3,1,2).type(torch.bool)
-  ten2 = pred.clone()
-  ten2[ onehot_argm1 ] = 0
-
-  argm2 = torch.argmax(ten2, 1)
-  onehot_argm2 = torch.nn.functional.one_hot(argm2, num_classes=C).permute(0,3,1,2).type(torch.bool)
-  res = [] 
-
-  soft1 = soft1.permute(0,2,3,1)
-  onehot_argm1 = onehot_argm1.permute(0,2,3,1)
-  onehot_argm2 = onehot_argm2.permute(0,2,3,1)
-  
+  soft = torch.nn.functional.softmax(pred, dim=1)
+  best_values = torch.topk(soft, 2, dim=1, largest=True, sorted=True)
+  dif = best_values.values[:,0,:,:] - best_values.values[:,1,:,:]
+  res = torch.zeros( (BS), device=pred.device,dtype=pred.dtype)
   for b in range(BS):
-    res_ = soft1[b][mask[b]][onehot_argm1[b][mask[b]]] - soft1[b][mask[b]][onehot_argm2[b][mask[b]]]
-    res.append( res_.mean() )
-
-  return torch.tensor(res, dtype=pred.dtype, device=pred.device)
+    res[b] = dif[b][mask[b]].mean()
+  return res
 
 
 def test():
+  # pytest -q -s src/uncertainty/get_softmax_uncertainty_distance.py
+  import time
   BS,C,H,W = 16,40,300,320
   mask = torch.rand( ( BS,H,W) ) > 0.5
     
   pred = torch.rand( ( BS,C,H,W) )
   res = get_softmax_uncertainty_distance(pred)
+  
   print(res, "should be very low")
   
   pred = torch.rand( ( BS,C,H,W) ) /1000
@@ -50,5 +39,8 @@ def test():
   print(res, 'should be nearly 0')
   
   pred[:,1,:,:] = 8
+  pred = pred.cuda()
+  mask = mask.cuda()
+  st = time.time()
   res = get_softmax_uncertainty_distance(pred, mask)
-  print(res, 'should be betweem 0-1')
+  print(res, 'should be betweem 0-1', time.time()-st)

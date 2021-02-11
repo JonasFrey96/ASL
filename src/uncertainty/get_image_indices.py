@@ -1,6 +1,6 @@
 import torch 
 from torch.nn import functional as F
-
+import random
 __all__ = ['get_image_indices']
 
 def get_image_indices(feat, gloable_indices, dis_metric= 'cos',
@@ -71,7 +71,7 @@ def get_image_indices(feat, gloable_indices, dis_metric= 'cos',
             if i == NC-1:
                 _K = int(K_return-len(candidates))
             else:
-                _K = int( K_return*factor )
+                _K = round( K_return*factor )
                 
             if _K > 0:
                 max_ele = metric[m].shape[0]
@@ -84,10 +84,20 @@ def get_image_indices(feat, gloable_indices, dis_metric= 'cos',
                     if not ele in candidates and added < _K:
                         added += 1
                         candidates = candidates + [int(ele)]
-                
+        
+        random.shuffle(candidates)
         if len(candidates) > K_return:
             candidates = candidates[:K_return]
-        
+        if len(candidates) < K_return:
+            base = gloable_indices.type(torch.int64).tolist()
+            for c in candidates:
+                base.remove( c )
+            while len(candidates) < K_return:
+                ca = random.choice(base)
+                candidates.append(ca)
+                base.remove(ca)
+                print('Randomly added Image')   
+                
         # select the globale_image_indicies that are selected most
         ret_globale_indices = torch.tensor(candidates, device=feat.device)
         

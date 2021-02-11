@@ -158,7 +158,7 @@ class Network(LightningModule):
   
   def rssb_to_dataset(self):
     bins, valids = self._rssb.get()
-    rank_zero_info( 'RSSB_TO_DATASET: Reload saved buffer state')
+    rank_zero_info( 'RSSB_TO_DATASET: Reload saved buffer state to dataset')
     for i in range(self._task_count):
       s = 'Restored for task {i}: \n' + str(bins[i])
       rank_zero_info( 'RSSB_TO_DATASET: ' + s )
@@ -511,7 +511,14 @@ class Network(LightningModule):
       batch_size = BS, 
       drop_last = True)
     
-    ret = torch.zeros( (int(BS*len(auxillary_dataloader)),3), device=self.device )
+    if self._exp.get('buffer',{}).get('mode', 'softmax_max')  == 'all':
+      ret_metrices = 3
+      ret_name = ['softmax_max', 'softmax_distance', 'loss']
+    else:
+      ret_metrices = 1
+      ret_name = [self._exp.get('buffer',{}).get('mode', 'softmax_max')]
+      
+    ret = torch.zeros( (int(BS*len(auxillary_dataloader)),1+ret_metrices), device=self.device )
     latent_feature_all = torch.zeros( (int(BS*len(auxillary_dataloader)),40,128), device=self.device, dtype=torch.float16 )
     # ret should be filles with globale index and measurment
     label_sum = torch.zeros( (self._exp['model']['cfg']['num_classes']),device=self.device )
@@ -525,27 +532,21 @@ class Network(LightningModule):
         if i != -1:
           label_sum[int( i )] += int( cou )
         
-      
       res, global_index, latent_feature = self.fill_step(batch, batch_idx)
       
       for ba in range( res.shape[0] ):  
         if batch[4][ba] != -999:
-          print('add global index', global_index[ba], 'at pose', s)
-          ret[s,0] = res[ba]
-          ret[s,1] = global_index[ba]
+          ret[s,:ret_metrices] = res[ba]
+          ret[s,ret_metrices] = global_index[ba]
           latent_feature_all[s] = latent_feature[ba]
           s += 1
-        else:
-          print('Skipped global index', global_index[ba], 'because sample is declared invalid in dataset')
-    print("Lengt ret", ret.shape)
     ret = ret[:s]
-    print("Lengt ret modified", ret.shape)
     latent_feature_all = latent_feature_all[:s]
     
     torch.save(latent_feature_all.cpu(), self._exp['name'] + f'/latent_feature_tensor_{self._task_count}.pt')
     if self._exp['buffer'].get('latent_feat',{}).get('active',False):
       # more complex evaluate according to latent feature space
-      ret_globale_indices = self.use_latent_features( latent_feature_all, ret[:,1] )
+      ret_globale_indices = self.use_latent_features( latent_feature_all, ret[:,ret_metrices] )
       if self._exp['buffer'].get('sync_back', True):
         self._rssb.bins[self._task_count,:] =  ret_globale_indices
         self.rssb_to_dataset()
@@ -555,38 +556,51 @@ class Network(LightningModule):
       # simple method use top-K  of the computed metric in fill_step
       _, indi = torch.topk( ret[:,0] , self._rssb.bins.shape[1] )
       if self._exp['buffer'].get('sync_back', True):
-        self._rssb.bins[self._task_count,:] = ret[:,1][indi]
+        self._rssb.bins[self._task_count,:] = ret[:,ret_metrices][indi]
         self.rssb_to_dataset()
       else:
         rank_zero_warn('Fill Buffer: Did not sync back to RSSB')
-        
-      
     
     label_sum = label_sum/label_sum.sum()
-    self.visualizer.plot_bar(label_sum, x_label='Label', y_label='Count',
-                             title=f'Task-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
-                             tag=f'Pixelwise_Class_Count_Task-{self._task_count}')
     
-    # use the top 16 images to create an buffer overview
-    _, indi = torch.topk( ret[:,0] , 16 )
+    
+    if not self._exp['buffer'].get('latent_feat',{}).get('active',False):
+      _, indi = torch.topk( ret[:,0] , self._buffer_elements ) # indi contain the indices of the dataloader
+      globale_indices_selected = ret[:,ret_metrices][indi]
+    else:
+      globale_indices_selected = ret_globale_indices
+    
+    dataset_indices = globale_indices_selected.clone()
+    
+    gtli = torch.tensor( self.trainer.train_dataloader.dataset.global_to_local_idx , device=self.device)
+    for i in range( globale_indices_selected.shape[0] ):
+      dataset_indices[i] = torch.where( gtli == globale_indices_selected[i])[0]
+      
+    nr_images = 16  
     images = []
     labels = []
     label_sum_buffer = torch.zeros( (self._exp['model']['cfg']['num_classes']),device=self.device )
-    
-    for ind in list( indi ):
+    for images_added, ind in enumerate( list( dataset_indices )):
       batch = self.trainer.train_dataloader.dataset[ind]
       
       indi, counts = torch.unique( batch[1] , return_counts = True)
       for i,cou in zip( list(indi), list(counts) ):
         if i != -1:
           label_sum_buffer[int( i )] += int( cou )
-      
-      images.append( batch[2]) # 3,H,W
-      labels.append( batch[1][None].repeat(3,1,1)) # 3,H,W    
+      if images_added < nr_images:
+        images.append( batch[2]) # 3,H,W
+        labels.append( batch[1][None].repeat(3,1,1)) # 3,H,W 
+          
     label_sum_buffer = label_sum_buffer/label_sum_buffer.sum()
+    
+    self.visualizer.plot_bar(label_sum, x_label='Label', y_label='Count',
+                             title=f'Task-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
+                             tag=f'Pixelwise_Class_Count_Task', method='left')
     self.visualizer.plot_bar(label_sum_buffer, x_label='Label', y_label='Count',
                           title=f'Buffer-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
-                          tag=f'Pixelwise_Class_Count_Buffer-{self._task_count}')
+                          tag=f'Pixelwise_Class_Count_Buffer', method='right')
+    
+    
     grid_images = make_grid(images,nrow = 4,padding = 2,
             scale_each = False, pad_value = 0)
     grid_labels = make_grid(labels,nrow = 4,padding = 2,
@@ -596,15 +610,16 @@ class Network(LightningModule):
                                 method = 'left')
     
     self.visualizer.plot_segmentation( seg = grid_labels[0], 
-                                       tag = f'{self._task_count}_Buffer_Sample_Images_Labels',
+                                       tag = f'Buffer_Sample_Images_Labels_Task-{self._task_count}',
                                        method = 'right')
-    m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
-    
-    self.visualizer.plot_bar(ret[:,0], x_label='Sample', y_label=m+'-Value' ,
-                             title=f'Samples Buffer sorted according to {m}', 
-                             sort=True, 
-                             reverse=True, 
-                             tag=f'{self._task_count}_Buffer_Eval_Metric')
+
+    for i in range(ret_metrices):
+      m = ret_name[i]
+      self.visualizer.plot_bar(ret[:,i], x_label='Sample', y_label=m+'-Value' ,
+                              title=f'Task-{self._task_count}: Top-K direct selection metric {m}', 
+                              sort=True, 
+                              reverse=True, 
+                              tag=f'Buffer_Eval_Metric_{m}')
     
     rank_zero_info('FILL_BUFFER: Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
     
@@ -629,20 +644,30 @@ class Network(LightningModule):
     
     NC = self._exp['model']['cfg']['num_classes']
     
+    st = time.time()
     latent_feature = torch.zeros( (_BS,NC,_C), device=self.device ) #10kB per Image if 16 bit
     for b in range(BS): 
       for n in range(NC):
         m = label_features[b]==n
         if m.sum() != 0:
           latent_feature[b,n] = features[b][:,m].mean(dim=1)
-      
-    m = self._exp.get('buffer',{}).get('mode', 'softmax_max')
+    print('time latent feature', time.time()-st)  
+    
+    m = self._exp.get('buffer',{}).get('mode', 'softmax_max') 
     if m == 'softmax_max':
       res = get_softmax_uncertainty_max(pred) # confident 0 , uncertain 1
     elif m == 'softmax_distance':
       res = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
     elif m == 'loss':
 	    res = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
+    elif m == 'all':
+      st = time.time()
+      res1 = get_softmax_uncertainty_max(pred) # confident 0 , uncertain 1
+      print("time to get sofmatmax uncertainty", time.time()-st)
+      res2 = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
+      print("time to get sofmatmax distance", time.time()-st)
+      res3 = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
+      res = torch.stack([res1,res2,res3],dim=1)
     else:
       raise Exception('Mode to fill buffer is not defined!')
     return res.detach(), global_index.detach(), latent_feature.detach()
@@ -652,7 +677,6 @@ class Network(LightningModule):
     
     ret_globale_indices = get_image_indices(feat, global_indices,
       **cfg.get('get_image_cfg',{}) , K_return=self._buffer_elements )
-    print(ret_globale_indices)
     if plot:
       # self.trainer.train_dataloader.dataset[0][-1] 
       
@@ -668,18 +692,19 @@ class Network(LightningModule):
           for n in range( feat.shape[1] ):
               if feat[idx,n,:].sum() != 0:
                   classes[n] += 1
-      self.visualizer.plot_bar(classes.numpy(), sort=False, title=f'Buffer-{self._task_count}: Labels-Dist class_balanced cos',
-                               tag = f'Labels_class_balanced_cos_Buffer-{self._task_count}',y_label='Counts',x_label='Classes' )
-
+      
+      pm = cfg.get('get_image_cfg',{}).get('pick_mode', 'class_balanced')
+      self.visualizer.plot_bar(classes, sort=False, title=f'Buffer-{self._task_count}: Class occurrences latent features {pm}',
+                               tag = f'Labels_class_balanced_cos_Buffer-{self._task_count}',y_label='Counts',x_label='Classes', method='left' )
+      
       classes = torch.zeros( (feat.shape[1]), device=self.device)
       for i in range(feat.shape[0]):
           idx = int(i)
           for n in range( feat.shape[1] ):
               if feat[idx,n,:].sum() != 0:
                   classes[n] += 1
-      self.visualizer.plot_bar(classes.numpy(), sort=False, title=f'Task-{self._task_count}: Labels-Dist over full task',
-                               tag = f'Labels_Dist_over_full_task_Task-{self._task_count}',y_label='Counts',x_label='Classes' )
-      
+      self.visualizer.plot_bar(classes, sort=False, title=f'Task-{self._task_count}: Class occurrences in in full Task',
+                               tag = f'Class Occurrences per Image (Latent Features)',y_label='Counts',x_label='Classes', method='right' )
     return ret_globale_indices
   
 import pytest

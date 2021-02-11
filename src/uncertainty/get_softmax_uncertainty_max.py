@@ -15,21 +15,18 @@ def get_softmax_uncertainty_max(pred, mask=None):
   if mask is None:
     mask = torch.ones( (BS,H,W), device=pred.device, dtype=torch.bool)
   
-  argm1 = torch.argmax(pred, 1)
-  soft1 = torch.nn.functional.softmax(pred, dim=1)
-  onehot_argm1 = torch.nn.functional.one_hot(argm1, num_classes=C).permute(0,3,1,2).type(torch.bool)
-  
-  soft1 = soft1.permute(0,2,3,1)
-  onehot_argm1 = onehot_argm1.permute(0,2,3,1)
-  
-  res = []
+  soft = torch.nn.functional.softmax(pred, dim=1)
+  best_values = torch.topk(soft, 1, dim=1, largest=True, sorted=True)
+  dif = best_values.values[:,0,:,:]
+  res = torch.zeros( (BS), device=pred.device,dtype=pred.dtype)
   for b in range(BS):
-    res_ = soft1[b][mask[b]][onehot_argm1[b][mask[b]]]
-    res.append( torch.mean(res_) )
-  
-  return torch.tensor(res, dtype=pred.dtype, device=pred.device)
+    res[b] = dif[b][mask[b]].mean()
+  return res
+
 
 def test():
+  # pytest -q -s src/uncertainty/get_softmax_uncertainty_max.py
+  
   BS,C,H,W = 16,40,300,320
   pred = torch.rand( ( BS,C,H,W) )
   res = get_softmax_uncertainty_max(pred)
