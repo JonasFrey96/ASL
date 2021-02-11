@@ -120,6 +120,7 @@ class Network(LightningModule):
     self._buffer_elements = 0 
     if self._exp['replay_state_sync_back']['active']:
       self._rssb_active = True
+      self._rssb_last_epoch = -1
       if self._exp['replay_state_sync_back']['get_size_from_task_generator']:
         bins = self._exp['task_generator']['cfg_replay']['bins']
         self._buffer_elements = self._exp['task_generator']['cfg_replay']['elements']
@@ -149,36 +150,43 @@ class Network(LightningModule):
     if (self._task_count != 0 and
         self.model.extract):
       self.model.freeze_module(layer=self.model.extract_layer)
-      rank_zero_warn( 'Freezed the model given that we start to extract data from teacher')
-      rank_zero_warn( 'Therefore not training upper layers')
+      rank_zero_warn( 'ON_TRAIN_START: Freezed the model given that we start to extract data from teacher')
+      rank_zero_warn( 'ON_TRAIN_START: Therefore not training upper layers')
     
-    if self._rssb_active: 
-      bins, valids = self._rssb.get()
-      rank_zero_info( 'Reload saved buffer state')
-      for i in range(self._task_count):
-        s = 'Restored for task {i}: \n' + str(bins[i])
-        rank_zero_info( s )
-      self.trainer.train_dataloader.dataset.set_full_state(
-        bins=bins, 
-        valids=valids,
-        bin= self._task_count)
+    if self._rssb_active:
+      self.rssb_to_dataset()
+  
+  def rssb_to_dataset(self):
+    bins, valids = self._rssb.get()
+    rank_zero_info( 'RSSB_TO_DATASET: Reload saved buffer state')
+    for i in range(self._task_count):
+      s = 'Restored for task {i}: \n' + str(bins[i])
+      rank_zero_info( 'RSSB_TO_DATASET: ' + s )
+    self.trainer.train_dataloader.dataset.set_full_state(
+      bins=bins, 
+      valids=valids,
+      bin= self._task_count)
       
   def on_save_checkpoint(self, params):
     if self._rssb_active:
-      rank_zero_info( 'When saving checkpoint also save buffer state')
-      bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
-      self._rssb.absorbe(bins,valids)
+      if self.current_epoch != self._rssb_last_epoch:
+        self._rssb_last_epoch = self.current_epoch
+        rank_zero_info( 'ON_SAVE_CHECKPOINT: Before saving checkpoint sync-back buffer state')
+        bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
+        self._rssb.absorbe(bins,valids)
       
   def teardown(self, stage):
-    rank_zero_info('TEARDOWN CALLED')
+    rank_zero_info('TEARDOWN: Called')
+    
+    if self._rssb_active:
+      rank_zero_info( 'TEARDOWN: Before finishing training sync-back buffer state')
+      bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
+      self._rssb.absorbe(bins,valids)
+
     if self._exp.get('buffer',{}).get('fill_after_fit', False):
       self.fill_buffer()
     
-    if self._rssb_active:
-      bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
-      self._rssb.absorbe(bins,valids)
-    
-    rank_zero_info('Training end reset val_results.')
+    rank_zero_info('TEARDOWN: Training end reset val_results.')
     self._val_results = {} # reset the buffer for the next task
   
   def on_train_end(self):
@@ -190,7 +198,7 @@ class Network(LightningModule):
     if self._exp['model'].get('freeze',{}).get('active', False):
       mask = self._exp['model']['freeze']['mask']
       self.model.freeze_module(mask)
-      rank_zero_info(f'Model Freeze Following Layers {mask}') 
+      rank_zero_info(f'ON_EPOCH_START: Model Freeze Following Layers {mask}') 
        
     self.logged_images_train = 0
     self.logged_images_val = 0
@@ -204,7 +212,7 @@ class Network(LightningModule):
     for i in self.model.parameters():
       sum += i[0].sum()
     string += f'   CurrentModel: WeightSum == {sum}\n'
-    rank_zero_info(string)
+    rank_zero_info('ON_EPOCH_START:\n' + string)
       
   def compute_loss(self, pred, target, teacher_targets, images, replayed ):
     nr_replayed = (replayed != -1).sum()
@@ -398,7 +406,7 @@ class Network(LightningModule):
     t2 = time.time()- self._train_start_time
     t2 = str(datetime.timedelta(seconds=round(t2))) 
     if not self.trainer.running_sanity_check:
-      rank_zero_info('Time for a complete epoch: '+ t)
+      rank_zero_info('VALIDATION_EPOCH_END: Time for a complete epoch: '+ t)
       n = self._task_name
       n = wrap(n,20)
       t = wrap(t,10,True)
@@ -407,7 +415,7 @@ class Network(LightningModule):
       v_acc = wrap(v_acc,6)
       v_mIoU = wrap(v_mIoU,6)
       
-      rank_zero_info(
+      rank_zero_info('VALIDATION_EPOCH_END: '+ 
         f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
       )
     self._epoch_start_time = time.time()
@@ -485,13 +493,16 @@ class Network(LightningModule):
     extract_layer_store = self.model.extract_layer
     self.model.extract = True
     self.model.extract_layer = 'fusion' # if we use fusion we get a 128 feature
+    store_replay_state = self.trainer.train_dataloader.dataset.replay
+    self.trainer.train_dataloader.dataset.replay = False
+    self.trainer.train_dataloader.dataset.unique = True
     
     # how can we desig this
     # this function needs to be called the number of tasks -> its not so important that it is effiecent
     # load the sample with the datloader in a blocking way -> This might take 5 Minutes per task
-    rank_zero_info('Fill buffer')
-    
+    rank_zero_info('FILL_BUFFER: Called')
     BS = self._exp['loader']['batch_size']
+    
     auxillary_dataloader = torch.utils.data.DataLoader(
       self.trainer.train_dataloader.dataset,
       shuffle = False,
@@ -518,26 +529,43 @@ class Network(LightningModule):
       res, global_index, latent_feature = self.fill_step(batch, batch_idx)
       
       for ba in range( res.shape[0] ):  
-        ret[s,0] = res[ba]
-        ret[s,1] = global_index[ba]
-        latent_feature_all[s] = latent_feature[ba]
-        s += 1
+        if batch[4][ba] != -999:
+          print('add global index', global_index[ba], 'at pose', s)
+          ret[s,0] = res[ba]
+          ret[s,1] = global_index[ba]
+          latent_feature_all[s] = latent_feature[ba]
+          s += 1
+        else:
+          print('Skipped global index', global_index[ba], 'because sample is declared invalid in dataset')
+    print("Lengt ret", ret.shape)
+    ret = ret[:s]
+    print("Lengt ret modified", ret.shape)
+    latent_feature_all = latent_feature_all[:s]
     
-    latent_feature_all
     torch.save(latent_feature_all.cpu(), self._exp['name'] + f'/latent_feature_tensor_{self._task_count}.pt')
     if self._exp['buffer'].get('latent_feat',{}).get('active',False):
       # more complex evaluate according to latent feature space
-      ret_globale_indices = self.use_latent_features( latent_feature_all, ret[:,1] ) 
+      ret_globale_indices = self.use_latent_features( latent_feature_all, ret[:,1] )
+      if self._exp['buffer'].get('sync_back', True):
+        self._rssb.bins[self._task_count,:] =  ret_globale_indices
+        self.rssb_to_dataset()
+      else:
+        rank_zero_warn('Fill Buffer: Did not sync back to RSSB')
     else:
       # simple method use top-K  of the computed metric in fill_step
       _, indi = torch.topk( ret[:,0] , self._rssb.bins.shape[1] )
-      self._rssb.bins[self._task_count,:] = ret[:,1][indi]
+      if self._exp['buffer'].get('sync_back', True):
+        self._rssb.bins[self._task_count,:] = ret[:,1][indi]
+        self.rssb_to_dataset()
+      else:
+        rank_zero_warn('Fill Buffer: Did not sync back to RSSB')
+        
+      
     
     label_sum = label_sum/label_sum.sum()
     self.visualizer.plot_bar(label_sum, x_label='Label', y_label='Count',
                              title=f'Task-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
                              tag=f'Pixelwise_Class_Count_Task-{self._task_count}')
-    
     
     # use the top 16 images to create an buffer overview
     _, indi = torch.topk( ret[:,0] , 16 )
@@ -578,12 +606,15 @@ class Network(LightningModule):
                              reverse=True, 
                              tag=f'{self._task_count}_Buffer_Eval_Metric')
     
-    rank_zero_info('Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
+    rank_zero_info('FILL_BUFFER: Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
     
     
     # restore the extraction settings
     self.model.extract = extract_store
     self.model.extract_layer = extract_layer_store
+    # restore replay state
+    self.trainer.train_dataloader.dataset.replay = store_replay_state
+    self.trainer.train_dataloader.dataset.unique = False
     
   def fill_step(self, batch, batch_idx):
     BS = batch[0].shape[0]
@@ -621,8 +652,16 @@ class Network(LightningModule):
     
     ret_globale_indices = get_image_indices(feat, global_indices,
       **cfg.get('get_image_cfg',{}) , K_return=self._buffer_elements )
-    
+    print(ret_globale_indices)
     if plot:
+      # self.trainer.train_dataloader.dataset[0][-1] 
+      
+      # common sense checking
+      val, counts = torch.unique( global_indices, return_counts=True )
+      if counts.max() > 1:
+        raise Exception('USE_LATENT_FEATURES: Something is wrong the global_indices are repeated! ')
+      
+      
       classes = torch.zeros( (feat.shape[1]), device=self.device )
       for i in range(ret_globale_indices.shape[0]):
           idx = int( torch.where( global_indices == ret_globale_indices[i] )[0])

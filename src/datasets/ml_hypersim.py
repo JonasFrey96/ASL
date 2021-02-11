@@ -54,12 +54,12 @@ class ReplayDataset(data.Dataset):
         self.v = np.zeros(elements)
         self._elements = elements
        
-        self._replay_p = replay_p
+        self.replay_p = replay_p
         self._add_p = add_p
 
     def idx(self, index):
         bin = -1
-        if random.random() < self._replay_p and self._current_bin.value != 0:
+        if random.random() < self.replay_p and self._current_bin.value != 0:
             index, bin = self.get_element(index)
 
         elif random.random() < self._add_p:
@@ -218,9 +218,11 @@ class MLHypersim(ReplayDataset):
                                        jitter_bcsh)
 
         self._output_trafo = output_trafo
-        self._replay = replay
+        self.replay = replay
         self._data_augmentation = data_augmentation
         self._data_augmentation_for_replay = data_augmentation_for_replay
+        
+        self.unique = False
         # full training dataset with all objects
         # TODO
         #self._weights = pd.read_csv(f'cfg/dataset/ml-hypersim/test_dataset_pixelwise_weights.csv').to_numpy()[:,0]
@@ -237,7 +239,7 @@ class MLHypersim(ReplayDataset):
         """
         replayed = torch.tensor( [-1] , dtype=torch.int32)
         idx = -1
-        if self._replay:
+        if self.replay:
             if self._mode == 'train':
                 idx, bin = self.idx(self.global_to_local_idx[index])
                 if idx != -1:
@@ -273,13 +275,18 @@ class MLHypersim(ReplayDataset):
         if (label != -1).sum() < 10:
             # reject this example
             idx = random.randint(0, len(self) - 1)
-            return self[idx]
-
+            
+            if not self.unique:
+                return self[idx]
+            else:
+                replayed[0] = -999
+                
         img_ori = img.clone()
         if self._output_trafo is not None:
             img = self._output_trafo(img)
 
         label[label > 0] = label[label > 0] - 1
+        
         return img, label.type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
 
     def __len__(self):
@@ -293,7 +300,7 @@ class MLHypersim(ReplayDataset):
         l = len(self.sceneTypes)
         string += f"    {l} \n"
         return string
-
+        
     def _load(self, root, mode, train_val_split=0.2):
         self.image_pths = np.load(
             'cfg/dataset/mlhypersim/image_pths.npy').tolist()

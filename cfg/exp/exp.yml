@@ -31,6 +31,7 @@ latent_replay:
   active: False
 buffer:
   fill_after_fit: True
+  mode: loss
   latent_feat:
     active: True
     get_image_cfg:
@@ -38,7 +39,7 @@ buffer:
       K_aggregate: 50
       most_dissimilar: True
       pick_mode: class_balanced
-  mode: loss
+  sync_back: True # if this is not ture the actual bins are not updated
 replay_state_sync_back:
   active: true
   get_size_from_task_generator: true
