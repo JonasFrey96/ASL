@@ -231,8 +231,7 @@ neptune tensorboard /PATH/TO/TensorBoard_logdir --project jonasfrey96/ASL
 ```
 
 ## 1.11 Uncertainty Estimation
-[embed]https://github.com/JonasFrey96/ASL/blob/main/docs/handwritten_notes/Uncertainty.pdf[/embed]
-
+![Uncertainty](https://github.com/JonasFrey96/ASL/blob/main/docs/handwritten_notes/Uncertainty.pdf)
 
 # 2. Acknowledgement  
 Special thanks to:  
