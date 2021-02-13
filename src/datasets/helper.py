@@ -24,25 +24,29 @@ class Augmentation():
     self._crop_center = tf.CenterCrop(self._output_size)
         
   def apply(self, img, label, only_crop=False):
+    if img.shape[0] >= 2*self._output_size:  
+        img = torch.nn.functional.interpolate(img[None] ,scale_factor=(0.6,0.6), mode='bilinear')[0]
+        label = torch.nn.functional.interpolate(label[None] ,scale_factor=(0.6,0.6), mode='nearest')[0]
     if not only_crop:
       # Color Jitter
       img = self._jitter(img)
+      
+      # Rotate
+      angle = random.uniform(-self._degrees, self._degrees)
+      img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=None)
+      label = F.rotate(label, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
       
       # Crop
       i, j, h, w = self._crop.get_params( img, (self._output_size, self._output_size) )
       img = F.crop(img, i, j, h, w)
       label = F.crop(label, i, j, h, w)
-      # Rotate
-      angle = random.uniform(-self._degrees, self._degrees)
-      img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=None)
-      label = F.rotate(label, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
       
       # Flip
       if torch.rand(1) < self._flip_p:
         img = F.hflip(img)
         label = F.hflip(label)
 
-    # Performes center crop 
+    # Performes center crop
     img = self._crop_center( img )
     label = self._crop_center( label )
     

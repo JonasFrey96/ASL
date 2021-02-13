@@ -40,10 +40,6 @@ from lightning import meanIoUTorchCorrect
 import datetime
 from math import ceil
 
-# Uncertainty
-from uncertainty import get_softmax_uncertainty_max, get_softmax_uncertainty_distance
-from uncertainty import get_image_indices
-
 __all__ = ['Network']
 def wrap(s,length, hard=False):
   if len(s) < length:
@@ -145,6 +141,7 @@ class Network(LightningModule):
     self._mode = 'train'
      
   def on_train_start(self):
+    print('Start')
     self.visualizer.logger= self.logger
       
     if (self._task_count != 0 and
@@ -153,8 +150,8 @@ class Network(LightningModule):
       rank_zero_warn( 'ON_TRAIN_START: Freezed the model given that we start to extract data from teacher')
       rank_zero_warn( 'ON_TRAIN_START: Therefore not training upper layers')
     
-    if self._rssb_active:
-      self.rssb_to_dataset()
+    # if self._rssb_active:
+    #   self.rssb_to_dataset()
   
   def rssb_to_dataset(self):
     bins, valids = self._rssb.get()
@@ -177,18 +174,18 @@ class Network(LightningModule):
       
   def teardown(self, stage):
     rank_zero_info('TEARDOWN: Called')
-    
-    if self._rssb_active:
-      rank_zero_info( 'TEARDOWN: Before finishing training sync-back buffer state')
-      bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
-      self._rssb.absorbe(bins,valids)
-
-    if self._exp.get('buffer',{}).get('fill_after_fit', False):
-      self.fill_buffer()
-    
-    rank_zero_info('TEARDOWN: Training end reset val_results.')
-    self._val_results = {} # reset the buffer for the next task
   
+  def on_fit_end(self):
+    if self._mode != 'test':
+      rank_zero_info('ON_FIT_END: Called')
+      if self._rssb_active:
+        rank_zero_info( 'ON_FIT_END: Before finishing training sync-back buffer state')
+        bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
+        self._rssb.absorbe(bins,valids)
+        
+      rank_zero_info('ON_FIT_END: Training end reset val_results.')
+      self._val_results = {} # reset the buffer for the next task
+    
   def on_train_end(self):
     pass
     
@@ -419,88 +416,20 @@ class Network(LightningModule):
         f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
       )
     self._epoch_start_time = time.time()
-
-  def test_step(self, batch, batch_idx):
-    images = batch[0]
-    target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
-    outputs = self(images) 
-    pred = torch.argmax(outputs[0], 1)
-    return {'pred': pred, 'target': target, 'ori_img': batch[2]}
-
-  def test_step_end( self, outputs):
-    # Logging + Visu
-    pred, target = outputs['pred'],outputs['target']
-    self.test_mIoU(pred,target)
-    # calculates acc only for valid labels
-
-    m  =  target > -1
-    self.test_acc(pred[m], target[m])
-    self.log('test_acc', self.test_acc, on_epoch=True, prog_bar=True)
-    self.log('test_mIoU', self.test_mIoU, on_epoch=True, prog_bar=True)
     
-    if ( self._exp['visu'].get('test_images',0) > self.logged_images_test):
-      self.logged_images_test += 1
-      pred_c = pred.clone().detach()
-      target_c = target.clone().detach()
-      pred_c[0][ target_c[0] == -1 ] = -1
-      pred_c[0] = pred_c[0]+1
-      target_c[0] = target_c[0] +1
-      self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self._task_name}_{self.logged_images_test}', seg=target_c[0], method='left')
+    # if self.current_epoch == self.trainer.max_epochs:
+      
+    # if ( self.trainer.should_stop and
+    #  
+    print( "SELF TRAINER SHOULD STOP", self.trainer.should_stop, self.device )
 
-  def test_epoch_end( self, outputs):
-    metrics = self.trainer.logger_connector.callback_metrics
-    me = copy.deepcopy( metrics ) 
-    new_dict = {}
-    for k in me.keys():
-      if k.find('test') != -1 and k.find('epoch') != -1:  
-        try:
-          new_dict[k] = "{:10.4f}".format( me[k])
-        except:
-          pass
-    rank_zero_info(
-      f"Test Epoch Results: "+ str(new_dict)
-    )
-    self.logged_images_test = 0
-
-  def configure_optimizers(self):
-    if self._exp['optimizer']['name'] == 'ADAM':
-      optimizer = torch.optim.Adam(
-          [{'params': self.model.parameters()}], lr=self.hparams['lr'])
-    elif self._exp['optimizer']['name'] == 'SGD':
-      optimizer = torch.optim.SGD(
-          [{'params': self.model.parameters()}], lr=self.hparams['lr'],
-          **self._exp['optimizer']['sgd_cfg'] )
-    else:
-      raise Exception
-
-    if self._exp.get('lr_scheduler',{}).get('active', False):
-      #polynomial lr-scheduler
-      init_lr = self.hparams['lr']
-      max_epochs = self._exp['lr_scheduler']['cfg']['max_epochs'] 
-      target_lr = self._exp['lr_scheduler']['cfg']['target_lr'] 
-      power = self._exp['lr_scheduler']['cfg']['power'] 
-      lambda_lr= lambda epoch: (((max_epochs-min(max_epochs,epoch) )/max_epochs)**(power) ) + (1-(((max_epochs -min(max_epochs,epoch))/max_epochs)**(power)))*target_lr/init_lr
-      scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr, last_epoch=-1, verbose=True)
-      ret = [optimizer], [scheduler]
-    else:
-      ret = [optimizer]
-    return ret
-  
-  def fill_buffer(self):
-    root_gpu = 0
-    torch.cuda.set_device(root_gpu)
-    self.cuda(root_gpu)
-        
-    
+  def on_test_epoch_start(self):
+    self._mode = 'test'
     # modify extraction settings to get uncertainty
-    extract_store = self.model.extract
-    extract_layer_store = self.model.extract_layer
+    self._extract_store = self.model.extract
+    self._extract_layer_store = self.model.extract_layer
     self.model.extract = True
     self.model.extract_layer = 'fusion' # if we use fusion we get a 128 feature
-    store_replay_state = self.trainer.train_dataloader.dataset.replay
-    self.trainer.train_dataloader.dataset.replay = False
-    self.trainer.train_dataloader.dataset.unique = True
     
     # how can we desig this
     # this function needs to be called the number of tasks -> its not so important that it is effiecent
@@ -508,89 +437,99 @@ class Network(LightningModule):
     rank_zero_info('FILL_BUFFER: Called')
     BS = self._exp['loader']['batch_size']
     
-    auxillary_dataloader = torch.utils.data.DataLoader(
-      self.trainer.train_dataloader.dataset,
-      shuffle = False,
-      num_workers = ceil(self._exp['loader']['num_workers']/torch.cuda.device_count()),
-      pin_memory = self._exp['loader']['pin_memory'],
-      batch_size = BS, 
-      drop_last = True)
-    
     if self._exp.get('buffer',{}).get('mode', 'softmax_max')  == 'all':
-      ret_metrices = 3
-      ret_name = ['softmax_max', 'softmax_distance', 'loss']
+      self._t_ret_metrices = 3
+      self._t_ret_name = ['softmax_max', 'softmax_distance', 'loss']
     else:
-      ret_metrices = 1
-      ret_name = [self._exp.get('buffer',{}).get('mode', 'softmax_max')]
-      
-    ret = torch.zeros( (int(BS*len(auxillary_dataloader)),1+ret_metrices), device=self.device )
-    latent_feature_all = torch.zeros( (int(BS*len(auxillary_dataloader)),40,128), device=self.device, dtype=torch.float16 )
-    # ret should be filles with globale index and measurment
-    label_sum = torch.zeros( (self._exp['model']['cfg']['num_classes']),device=self.device )
-    s = 0
-    for batch_idx, batch in enumerate(auxillary_dataloader):
-      for b in range(len(batch)):
-        batch[b] = batch[b].to(self.device)
-      
-      indi, counts = torch.unique( batch[1] , return_counts = True)
-      for i,cou in zip( list(indi), list(counts) ):
+      self._t_ret_metrices = 1
+      self._t_ret_name = [self._exp.get('buffer',{}).get('mode', 'softmax_max')]
+
+    dataloader_buffer = self.trainer.test_dataloaders[0]
+    
+    self._t_ret = torch.zeros( (int(BS*len(dataloader_buffer)),1+self._t_ret_metrices), device=self.device )
+    self._t_latent_feature_all = torch.zeros( (int(BS*len(dataloader_buffer)),40,128), device=self.device, dtype=torch.float16 )
+    self._t_label_sum = torch.zeros( (self._exp['model']['cfg']['num_classes']),device=self.device )
+    self._t_s = 0
+    
+    # calculation of: 
+    #                 - pixelwise labels full dataset
+    #                 - return metric full dataset
+    #                 - latent features
+    self._t_st = time.time()
+    self._t_l = len(dataloader_buffer)
+    
+  
+  def test_step(self, batch, batch_idx):
+    s = self._t_s
+    
+    if batch_idx % int(self.trainer.log_every_n_steps/5) == 0:
+      info = f'FILL_BUFFER: Analyzed Dataset {batch_idx}/{self._t_l} Time: {time.time()-self._t_st }'
+      rank_zero_info(info)
+    
+    indi, counts = torch.unique( batch[1] , return_counts = True)
+    for i,cou in zip( list(indi), list(counts) ):
         if i != -1:
-          label_sum[int( i )] += int( cou )
-        
-      res, global_index, latent_feature = self.fill_step(batch, batch_idx)
-      
-      for ba in range( res.shape[0] ):  
-        if batch[4][ba] != -999:
-          ret[s,:ret_metrices] = res[ba]
-          ret[s,ret_metrices] = global_index[ba]
-          latent_feature_all[s] = latent_feature[ba]
-          s += 1
-    ret = ret[:s]
-    latent_feature_all = latent_feature_all[:s]
+          self._t_label_sum[int( i )] += int( cou )
+
+    res, global_index, latent_feature = self.fill_step( batch, batch_idx)
     
+    for ba in range( res.shape[0] ):  
+      if batch[4][ba] != -999:
+        self._t_ret[s,:self._t_ret_metrices] = res[ba]
+        self._t_ret[s,self._t_ret_metrices] = global_index[ba]
+        self._t_latent_feature_all[s] = latent_feature[ba]
+        self._t_s += 1
     
+  def on_test_epoch_end(self):
+    s = self._t_s
+    self._t_ret = self._t_ret[:s]
+    self._t_latent_feature_all = self._t_latent_feature_all[:self._t_s]
+    torch.save(self._t_latent_feature_all.cpu(),self._exp['name'] + f'/latent_feature_tensor_{self._task_count}.pt')
+    self._t_label_sum = self._t_label_sum/self._t_label_sum.sum()
     
-    torch.save(latent_feature_all.cpu(), self._exp['name'] + f'/latent_feature_tensor_{self._task_count}.pt')
+    # write results to the rssb
     if self._exp['buffer'].get('latent_feat',{}).get('active',False):
       # more complex evaluate according to latent feature space
-      ret_globale_indices = self.use_latent_features( latent_feature_all, ret[:,ret_metrices] )
+      ret_globale_indices = self.use_latent_features( self._t_latent_feature_all, 
+                                                     self._t_ret[:,self._t_ret_metrices] )
       if self._exp['buffer'].get('sync_back', True):
-        self._rssb.bins[self._task_count,:] =  ret_globale_indices
-        self.rssb_to_dataset()
+       self._rssb.bins[self._task_count,:] =  ret_globale_indices
+      #  self.rssb_to_dataset()
       else:
         rank_zero_warn('Fill Buffer: Did not sync back to RSSB')
     else:
       # simple method use top-K  of the computed metric in fill_step
-      _, indi = torch.topk( input = ret[:,0],
-                            k = self._rssb.bins.shape[1],
-                            largest = self._exp['buffer'].get('use_highest_uncertainty',True))
+      _, indi = torch.topk( input = self._t_ret[:,0],
+                            k =self._rssb.bins.shape[1],
+                            largest =self._exp['buffer'].get('use_highest_uncertainty',True))
       if self._exp['buffer'].get('sync_back', True):
-        self._rssb.bins[self._task_count,:] = ret[:,ret_metrices][indi]
-        self.rssb_to_dataset()
+       self._rssb.bins[self._task_count,:] = self._t_ret[:,self._t_ret_metrices][indi]
+      #  self.rssb_to_dataset()
       else:
         rank_zero_warn('Fill Buffer: Did not sync back to RSSB')
     
-    label_sum = label_sum/label_sum.sum()
-    
-    
+    # calculate indices of dataloader to get pixelwise classes for images in buffer
     if not self._exp['buffer'].get('latent_feat',{}).get('active',False):
-      _, indi = torch.topk( ret[:,0] , self._buffer_elements ) # indi contain the indices of the dataloader
-      globale_indices_selected = ret[:,ret_metrices][indi]
+      _, indi = torch.topk( self._t_ret[:,0] , self._buffer_elements )
+      globale_indices_selected = self._t_ret[:,self._t_ret_metrices][indi]
     else:
       globale_indices_selected = ret_globale_indices
-    
     dataset_indices = globale_indices_selected.clone()
     
-    gtli = torch.tensor( self.trainer.train_dataloader.dataset.global_to_local_idx , device=self.device)
+    # converte global to locale indices of task dataloader
+    gtli = torch.tensor( self.trainer.test_dataloaders[0].dataset.global_to_local_idx , device=self.device)
     for i in range( globale_indices_selected.shape[0] ):
       dataset_indices[i] = torch.where( gtli == globale_indices_selected[i])[0]
       
+    # extract data from buffer samples:
+    #              - pixelwise labels
+    #              - image, label picture
     nr_images = 16  
     images = []
     labels = []
     label_sum_buffer = torch.zeros( (self._exp['model']['cfg']['num_classes']),device=self.device )
     for images_added, ind in enumerate( list( dataset_indices )):
-      batch = self.trainer.train_dataloader.dataset[int( ind )]
+      batch = self.trainer.test_dataloaders[0].dataset[int( ind )]
       
       indi, counts = torch.unique( batch[1] , return_counts = True)
       for i,cou in zip( list(indi), list(counts) ):
@@ -600,16 +539,18 @@ class Network(LightningModule):
         images.append( batch[2]) # 3,H,W
         labels.append( batch[1][None].repeat(3,1,1)) # 3,H,W 
           
-    label_sum_buffer = label_sum_buffer/label_sum_buffer.sum()
+    label_sum_buffer = label_sum_buffer / label_sum_buffer.sum()
     
-    self.visualizer.plot_bar(label_sum, x_label='Label', y_label='Count',
-                             title=f'Task-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
-                             tag=f'Pixelwise_Class_Count_Task', method='left')
+    
+    # Plot Pixelwise
+    self.visualizer.plot_bar(self._t_label_sum, x_label='Label', y_label='Count',
+                              title=f'Task-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
+                              tag=f'Pixelwise_Class_Count_Task', method='left')
     self.visualizer.plot_bar(label_sum_buffer, x_label='Label', y_label='Count',
                           title=f'Buffer-{self._task_count} Pixelwise Class Count', sort=False, reverse=True, 
                           tag=f'Buffer_Pixelwise_Class_Count', method='right')
     
-    
+    # Plot Images
     grid_images = make_grid(images,nrow = 4,padding = 2,
             scale_each = False, pad_value = 0)
     grid_labels = make_grid(labels,nrow = 4,padding = 2,
@@ -617,14 +558,14 @@ class Network(LightningModule):
     self.visualizer.plot_image( img = grid_images, 
                                 tag = f'{self._task_count}_Buffer_Sample_Images', 
                                 method = 'left')
-    
     self.visualizer.plot_segmentation( seg = grid_labels[0], 
-                                       tag = f'Buffer_Sample_Images_Labels_Task-{self._task_count}',
-                                       method = 'right')
+                                        tag = f'Buffer_Sample_Images_Labels_Task-{self._task_count}',
+                                        method = 'right')
 
-    for i in range(ret_metrices):
-      m = ret_name[i]
-      self.visualizer.plot_bar(ret[:,i], x_label='Sample', y_label=m+'-Value' ,
+    # Plot return metric statistics
+    for i in range(self._t_ret_metrices):
+      m = self._t_ret_name[i]
+      self.visualizer.plot_bar(self._t_ret[:,i], x_label='Sample', y_label=m+'-Value' ,
                               title=f'Task-{self._task_count}: Top-K direct selection metric {m}', 
                               sort=True, 
                               reverse=True, 
@@ -632,16 +573,12 @@ class Network(LightningModule):
     
     rank_zero_info('FILL_BUFFER: Set bin selected the following values: \n'+ str( self._rssb.bins[self._task_count,:]) )
     
-    
     # restore the extraction settings
-    self.model.extract = extract_store
-    self.model.extract_layer = extract_layer_store
+    self.model.extract = self._extract_store
+    self.model.extract_layer = self._extract_layer_store
     # restore replay state
-    self.trainer.train_dataloader.dataset.replay = store_replay_state
-    self.trainer.train_dataloader.dataset.unique = False
     
-    self.to('cpu')
-    
+   
   def fill_step(self, batch, batch_idx):
     BS = batch[0].shape[0]
     global_index =  batch[4]    
@@ -668,7 +605,7 @@ class Network(LightningModule):
     elif m == 'softmax_distance':
       res = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
     elif m == 'loss':
-	    res = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
+      res = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
     elif m == 'all':
       res1 = get_softmax_uncertainty_max(pred) # confident 0 , uncertain 1
       res2 = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
@@ -678,40 +615,73 @@ class Network(LightningModule):
       raise Exception('Mode to fill buffer is not defined!')
     return res.detach(), global_index.detach(), latent_feature.detach()
   
-  def use_latent_features(self, feat,global_indices,plot=True):
-    cfg = self._exp['buffer']['latent_feat']
+  
+  # def test_step_end( self, outputs):
+  #   # Logging + Visu
+  #   pred, target = outputs['pred'],outputs['target']
+  #   self.test_mIoU(pred,target)
+  #   # calculates acc only for valid labels
+
+  #   m  =  target > -1
+  #   self.test_acc(pred[m], target[m])
+  #   self.log('test_acc', self.test_acc, on_epoch=True, prog_bar=True)
+  #   self.log('test_mIoU', self.test_mIoU, on_epoch=True, prog_bar=True)
     
-    ret_globale_indices = get_image_indices(feat, global_indices,
-      **cfg.get('get_image_cfg',{}) , K_return=self._buffer_elements )
-    if plot:
-      # self.trainer.train_dataloader.dataset[0][-1] 
-      
-      # common sense checking
-      val, counts = torch.unique( global_indices, return_counts=True )
-      if counts.max() > 1:
-        raise Exception('USE_LATENT_FEATURES: Something is wrong the global_indices are repeated! ')
-      
-      
-      classes = torch.zeros( (feat.shape[1]), device=self.device )
-      for i in range(ret_globale_indices.shape[0]):
-          idx = int( torch.where( global_indices == ret_globale_indices[i] )[0])
-          for n in range( feat.shape[1] ):
-              if feat[idx,n,:].sum() != 0:
-                  classes[n] += 1
-      
-      pm = cfg.get('get_image_cfg',{}).get('pick_mode', 'class_balanced')
-      self.visualizer.plot_bar(classes, sort=False, title=f'Buffer-{self._task_count}: Class occurrences latent features {pm}',
-                               tag = f'Labels_class_balanced_cos_Buffer-{self._task_count}',y_label='Counts',x_label='Classes', method='left' )
-      
-      classes = torch.zeros( (feat.shape[1]), device=self.device)
-      for i in range(feat.shape[0]):
-          idx = int(i)
-          for n in range( feat.shape[1] ):
-              if feat[idx,n,:].sum() != 0:
-                  classes[n] += 1
-      self.visualizer.plot_bar(classes, sort=False, title=f'Task-{self._task_count}: Class occurrences in in full Task',
-                               tag = f'Buffer_Class Occurrences per Image (Latent Features)',y_label='Counts',x_label='Classes', method='right' )
-    return ret_globale_indices
+  #   if ( self._exp['visu'].get('test_images',0) > self.logged_images_test):
+  #     self.logged_images_test += 1
+  #     pred_c = pred.clone().detach()
+  #     target_c = target.clone().detach()
+  #     pred_c[0][ target_c[0] == -1 ] = -1
+  #     pred_c[0] = pred_c[0]+1
+  #     target_c[0] = target_c[0] +1
+  #     self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
+  #     self.visualizer.plot_segmentation(tag=f'test_gt_left_pred_right_{self._task_name}_{self.logged_images_test}', seg=target_c[0], method='left')
+
+  # def test_epoch_end( self, outputs):
+  #   metrics = self.trainer.logger_connector.callback_metrics
+  #   me = copy.deepcopy( metrics ) 
+  #   new_dict = {}
+  #   for k in me.keys():
+  #     if k.find('test') != -1 and k.find('epoch') != -1:  
+  #       try:
+  #         new_dict[k] = "{:10.4f}".format( me[k])
+  #       except:
+  #         pass
+  #   rank_zero_info(
+  #     f"Test Epoch Results: "+ str(new_dict)
+  #   )
+  #   self.logged_images_test = 0
+
+  def configure_optimizers(self):
+    if self._exp['optimizer']['name'] == 'ADAM':
+      optimizer = torch.optim.Adam(
+          [{'params': self.model.parameters()}], lr=self.hparams['lr'])
+    elif self._exp['optimizer']['name'] == 'SGD':
+      optimizer = torch.optim.SGD(
+          [{'params': self.model.parameters()}], lr=self.hparams['lr'],
+          **self._exp['optimizer']['sgd_cfg'] )
+    else:
+      raise Exception
+
+    if self._exp.get('lr_scheduler',{}).get('active', False):
+      #polynomial lr-scheduler
+      init_lr = self.hparams['lr']
+      max_epochs = self._exp['lr_scheduler']['cfg']['max_epochs'] 
+      target_lr = self._exp['lr_scheduler']['cfg']['target_lr'] 
+      power = self._exp['lr_scheduler']['cfg']['power'] 
+      lambda_lr= lambda epoch: (((max_epochs-min(max_epochs,epoch) )/max_epochs)**(power) ) + (1-(((max_epochs -min(max_epochs,epoch))/max_epochs)**(power)))*target_lr/init_lr
+      scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr, last_epoch=-1, verbose=True)
+      ret = [optimizer], [scheduler]
+    else:
+      ret = [optimizer]
+    return ret
+  def print_process(self):
+    import psutil
+
+    current_process = psutil.Process()
+    children = current_process.children(recursive=True)
+    for child in children:
+        print('Child pid is {}'.format(child.pid))
   
 import pytest
 class TestLightning:

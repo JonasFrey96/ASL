@@ -28,7 +28,7 @@ latent_replay:
   # currently latent replay is the same as freezing the layers
   active: False
 buffer:
-  fill_after_fit: False
+  fill_after_fit: True
   mode: loss
   use_highest_uncertainty: True
   latent_feat:
