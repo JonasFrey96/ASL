@@ -34,10 +34,10 @@ def get_image_indices(feat, gloable_indices, dis_metric= 'cos',
             expanded_centroids.type(torch.float32),
             dim=1, eps=1e-6) 
     elif dis_metric == 'pairwise':
+        # TODO verify pairwise metric
         metric = F.pairwise_distance(
             feat.type(torch.float32), 
-            expanded_centroids.type(torch.float32),
-            dim=1, eps=1e-6)
+            expanded_centroids.type(torch.float32) , eps=1e-6)
     else:
         raise Exception(f'In get_image_indices dis_metric {dis_metric} not implemented')
     

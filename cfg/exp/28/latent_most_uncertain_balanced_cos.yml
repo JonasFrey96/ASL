@@ -1,4 +1,4 @@
-name: debug/latent_most_uncertain_balanced_cos
+name: fill_buffer_exp/latent_most_uncertain_balanced_cos_on_cpu
 offline_mode: false
 timestamp: false
 weights_restore: true
@@ -71,7 +71,7 @@ trainer:
   num_sanity_val_steps: 0
   check_val_every_n_epoch: 1
 loader:
-  pin_memory: true
+  pin_memory: false
   batch_size: 16
   shuffle: true
   num_workers: 16

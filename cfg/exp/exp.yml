@@ -137,5 +137,6 @@ lr_monitor:
     logging_interval: step
 
 move_datasets:
+  - env_var: 'none'
   # - env_var: coco
-  - env_var: mlhypersim
+  # - env_var: mlhypersim

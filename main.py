@@ -12,66 +12,36 @@ import coloredlogs
 import yaml
 import logging
 coloredlogs.install()
+from math import ceil
+import copy
+from pathlib import Path
+
+# Frameworks
+import neptune
 
 import torch
+from torchvision import transforms
+from torch.utils.tensorboard import SummaryWriter
+
 from pytorch_lightning import seed_everything, Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import LearningRateMonitor
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.profiler import AdvancedProfiler
-from torch.utils.tensorboard import SummaryWriter
+
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
 from pytorch_lightning.loggers import TensorBoardLogger
+from pytorch_lightning.loggers.neptune import NeptuneLogger
 
-from lightning import Network
+# Costume Modules
+from lightning import Network, fill_buffer
 from task import TaskCreator
 from visu import MainVisualizer
 import numpy as np
 from callbacks import TaskSpecificEarlyStopping
-
-from pytorch_lightning.loggers.neptune import NeptuneLogger
-import datetime
-import time
 from datasets import get_dataset
-from torchvision import transforms
-from math import ceil
-import copy 
-
-import neptune
-import os
-import time
-from pathlib import Path
-print("Start neptune session")
-
-def _create_or_get_experiment2(self):
-  """
-  Super bad !!! Dont do this
-  """
-  proxies = {
-  'http': 'http://proxy.ethz.ch:3128',
-  'https': 'http://proxy.ethz.ch:3128',
-  }
-  if self.offline_mode:
-      project = neptune.Session(backend=neptune.OfflineBackend()).get_project('dry-run/project')
-  else:
-      #project_qualified_name='jonasfrey96/ASL', api_token=os.environ["NEPTUNE_API_TOKEN"], proxies=proxies
-      session = neptune.init(project_qualified_name='jonasfrey96/ASL', api_token=self.api_key,proxies=proxies) # add your credential
-      print(type(session))
-      session = neptune.Session(api_token=self.api_key,proxies=proxies)
-      project = session.get_project(self.project_name)
-
-  if self.experiment_id is None:
-      e = project.create_experiment(name=self.experiment_name, **self._kwargs)
-      self.experiment_id = e.id
-  else:
-      e = project.get_experiments(id=self.experiment_id)[0]
-      self.experiment_name = e.get_system_properties()['name']
-      self.params = e.get_parameters()
-      self.properties = e.get_properties()
-      self.tags = e.get_tags()
-  return e
-
+from log import _create_or_get_experiment2
 
 def file_path(string):
   if os.path.isfile(string):
@@ -138,10 +108,26 @@ def get_dataloader_train_val(d_train, d_val, env):
     shuffle = False,
     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
     pin_memory = exp['loader']['pin_memory'],
-    batch_size = exp['loader']['batch_size'], 
+    batch_size = max(1,ceil(exp['loader']['batch_size']/4)), 
+    drop_last = True)
+  
+  # dataset and dataloader
+  dataset_buffer = get_dataset(
+    **d_train,
+    env = env,
+    output_trafo = output_transform,
+  )
+  dataset_buffer.replay = False
+  dataset_buffer.unique = True
+  
+  dataloader_buffer= torch.utils.data.DataLoader(dataset_buffer,
+    shuffle = exp['loader']['shuffle'],
+    num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
+    pin_memory = exp['loader']['pin_memory'],
+    batch_size = max(1,ceil(exp['loader']['batch_size']/2)), 
     drop_last = True)
     
-  return dataloader_train, dataloader_val
+  return dataloader_train, dataloader_val, dataloader_buffer
     
 def log_important_params( exp ):
   dic = {}
@@ -155,6 +141,7 @@ def log_important_params( exp ):
   dic['model_finetune'] = exp['model']['freeze']['active']
   
   return dic
+
 if __name__ == "__main__":
   seed_everything(42)
   def signal_handler(signal, frame):
@@ -244,31 +231,35 @@ if __name__ == "__main__":
     NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
 
     # move data to ssd
-    for dataset in exp['move_datasets']:
-      scratchdir = os.getenv('TMPDIR')
-      print( 'scratchdir:', scratchdir, 'dataset:', dataset['env_var'])
-      env_var = dataset['env_var']
-      tar = os.path.join( env[env_var],f'{env_var}.tar')
-      name = (tar.split('/')[-1]).split('.')[0]
-        
-      if not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ):
-        
-        try:  
-          cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
-          st =time.time()
-          rank_zero_info( f'Start moveing dataset-{env_var}: {cmd}')
-          os.system(cmd)
-          env[env_var] = str(os.path.join(scratchdir, name))
-          rank_zero_info( f'Finished moveing dataset-{env_var} in {time.time()-st}s')
+    if exp['move_datasets'][0]['env_var'] != 'none':
+      for dataset in exp['move_datasets']:
+        scratchdir = os.getenv('TMPDIR')
+        print( 'scratchdir:', scratchdir, 'dataset:', dataset['env_var'])
+        env_var = dataset['env_var']
+        tar = os.path.join( env[env_var],f'{env_var}.tar')
+        name = (tar.split('/')[-1]).split('.')[0]
           
-        except:
-            rank_zero_warn( 'ENV Var'+ env_var )
+        if not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ):
+          
+          try:  
+            cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
+            st =time.time()
+            rank_zero_info( f'Start moveing dataset-{env_var}: {cmd}')
+            os.system(cmd)
             env[env_var] = str(os.path.join(scratchdir, name))
-            rank_zero_warn('Copying data failed')
-      else:
-        env[env_var] = str(os.path.join(scratchdir, name))
-        print('Path already exists. Updated ENV')
-  
+            rank_zero_info( f'Finished moveing dataset-{env_var} in {time.time()-st}s')
+            
+          except:
+              rank_zero_warn( 'ENV Var'+ env_var )
+              env[env_var] = str(os.path.join(scratchdir, name))
+              rank_zero_warn('Copying data failed')
+        else:
+          env[env_var] = str(os.path.join(scratchdir, name))
+          print('Path already exists. Updated ENV')
+    else:
+      env['mlhypersim'] = str(os.path.join(env['mlhypersim'], 'mlhypersim'))
+      
+      
   if ( exp['trainer'] ).get('gpus', -1):
     nr = torch.cuda.device_count()
     exp['trainer']['gpus'] = nr
@@ -408,10 +399,11 @@ if __name__ == "__main__":
 
     model._task_name = task.name
     model._task_count = idx
-    dataloader_train, dataloader_val = get_dataloader_train_val(d_train= task.dataset_train_cfg,
+    dataloader_train, dataloader_val, dataloader_buffer= get_dataloader_train_val(d_train= task.dataset_train_cfg,
                                                                 d_val= task.dataset_val_cfg,
                                                                 env=env)
-    dataloader_list_test = eval_lists_into_dataloaders( eval_lists, env)
+    dataloader_list_test = eval_lists_into_dataloaders(eval_lists, env)
+    rank_zero_info( f'<<<<<<<<<<<< All Datasets are loaded and set up >>>>>>>>>>>>>' )
     #Training the model
     trainer.should_stop = False
     # print("GLOBAL STEP ", model.global_step)
@@ -433,6 +425,14 @@ if __name__ == "__main__":
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
+    
+    rank_zero_info( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
+    rank_zero_info( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
+    
+    trainer.test(model=model,
+                 test_dataloaders= dataloader_buffer)
+    print('FINISHED WITH FITTING FOR THIS TASK!')
+      
     trainer.batch_idx = 0
     trainer.current_epoch += 1
     trainer.global_step += 1

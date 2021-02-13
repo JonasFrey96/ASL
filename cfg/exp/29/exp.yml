@@ -1,6 +1,6 @@
-name: fill_buffer_exp/random
+name: dev/uncertainty_fixed_short_call_fill_buffer
 offline_mode: false
-timestamp: false
+timestamp: true
 weights_restore: true
 checkpoint_restore: false
 checkpoint_load: template/hypersim/task0-epoch=46.ckpt
@@ -9,6 +9,8 @@ lr: 0.003
 tag_list:
   - mlhypersim
   - replay
+  - soft_labels
+  - test_latent_replay
 
 # Experiment Settings
 start_at_task: 1
@@ -38,8 +40,9 @@ buffer:
       K_aggregate: 50
       most_dissimilar: True
       pick_mode: class_balanced
-  sync_back: False # if this is not ture the actual bins are not updated
+  sync_back: True # if this is not ture the actual bins are not updated
   
+
 replay_state_sync_back:
   active: true
   get_size_from_task_generator: true
@@ -68,7 +71,7 @@ trainer:
   gpus: -1
   accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 5
 loader:
   pin_memory: true
   batch_size: 16
@@ -134,5 +137,6 @@ lr_monitor:
     logging_interval: step
 
 move_datasets:
+  - env_var: 'none'
   # - env_var: coco
-  - env_var: mlhypersim
+  # - env_var: mlhypersim

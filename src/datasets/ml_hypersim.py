@@ -171,6 +171,15 @@ class ReplayDataset(data.Dataset):
 
         return False
 
+    # Deleting (Calling destructor) 
+    # def __del__(self): 
+    #     for i in self._bins:
+    #         del i
+    #     for j in self._valid:
+    #         del j
+    #     del self._bins
+    #     del self._valid
+
 
 class MLHypersim(ReplayDataset):
     def __init__(
