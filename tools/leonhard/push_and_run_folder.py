@@ -73,7 +73,7 @@ for j,e in enumerate(exps):
     logging.warning('   Error: Either set ignore_workers flag true or change config')
     exps.remove(e)
   # Validate if config trainer settings fits with job.
-  elif gpus > 1 and doc['trainer']['accelerator'] != 'ddp':
+  elif gpus > 1 and doc['trainer']['accelerator'].find('ddp') == -1:
     logging.warning('   Error: Mutiple GPUs but not using ddp')
     exps.remove(e)
   elif doc['trainer']['gpus'] != gpus and doc['trainer']['gpus'] != -1:
