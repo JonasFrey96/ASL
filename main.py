@@ -73,14 +73,15 @@ def get_dataloader_test(d_test, env):
   )
   dataloader_test = torch.utils.data.DataLoader(dataset_test,
     shuffle = False,
-    num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
+    num_workers = max(1, ceil(exp['loader']['num_workers']/torch.cuda.device_count()/4) ),
     pin_memory = exp['loader']['pin_memory'],
     batch_size = exp['loader']['batch_size'], 
     drop_last = True)
   return dataloader_test
   
-def get_dataloader_train_val(d_train, d_val, env):
-
+def get_dataloader_train(d_train, env):
+  print( 'Number CUDA Devices: ', torch.cuda.device_count() )
+  
   output_transform = transforms.Compose([
           transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
   ])
@@ -99,18 +100,6 @@ def get_dataloader_train_val(d_train, d_val, env):
     batch_size = exp['loader']['batch_size'], 
     drop_last = True)
   
-  dataset_val = get_dataset(
-    **d_val,
-    env = env,
-    output_trafo = output_transform,
-  )
-  dataloader_val = torch.utils.data.DataLoader(dataset_val,
-    shuffle = False,
-    num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
-    pin_memory = exp['loader']['pin_memory'],
-    batch_size = max(1,ceil(exp['loader']['batch_size']/4)), 
-    drop_last = True)
-  
   # dataset and dataloader
   dataset_buffer = get_dataset(
     **d_train,
@@ -121,13 +110,13 @@ def get_dataloader_train_val(d_train, d_val, env):
   dataset_buffer.unique = True
   
   dataloader_buffer= torch.utils.data.DataLoader(dataset_buffer,
-    shuffle = exp['loader']['shuffle'],
+    shuffle = False,
     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
     pin_memory = exp['loader']['pin_memory'],
     batch_size = max(1,ceil(exp['loader']['batch_size']/2)), 
     drop_last = True)
     
-  return dataloader_train, dataloader_val, dataloader_buffer
+  return dataloader_train, dataloader_buffer
     
 def log_important_params( exp ):
   dic = {}
@@ -156,7 +145,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/exp.yml',
+  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/2/test12.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -313,6 +302,9 @@ if __name__ == "__main__":
     cwd = os.getcwd()
     files = [str(p).replace(cwd+'/','') for p in Path(cwd).rglob('*.py') 
              if str(p).find('vscode') == -1]
+    files.append( exp_cfg_path )
+    files.append( env_cfg_path )
+    
     if not exp.get('offline_mode', False):
       logger = NeptuneLogger(
         api_key=os.environ["NEPTUNE_API_TOKEN"],
@@ -399,8 +391,7 @@ if __name__ == "__main__":
 
     model._task_name = task.name
     model._task_count = idx
-    dataloader_train, dataloader_val, dataloader_buffer= get_dataloader_train_val(d_train= task.dataset_train_cfg,
-                                                                d_val= task.dataset_val_cfg,
+    dataloader_train, dataloader_buffer= get_dataloader_train(d_train= task.dataset_train_cfg,
                                                                 env=env)
     dataloader_list_test = eval_lists_into_dataloaders(eval_lists, env)
     rank_zero_info( f'<<<<<<<<<<<< All Datasets are loaded and set up >>>>>>>>>>>>>' )
@@ -416,7 +407,7 @@ if __name__ == "__main__":
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
-      # model.on_train_end()
+      
       trainer.max_epochs = exp['trainer']['max_epochs']
       trainer.check_val_every_n_epoch =  exp['trainer']['check_val_every_n_epoch']
       trainer.limit_val_batches = exp['trainer']['limit_val_batches']
@@ -426,17 +417,20 @@ if __name__ == "__main__":
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
     
-    rank_zero_info( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
-    rank_zero_info( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
+    rank_zero_info( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' Trained >>>>>>>>>>>>>' )
+
     
-    trainer.test(model=model,
-                 test_dataloaders= dataloader_buffer)
-    print('FINISHED WITH FITTING FOR THIS TASK!')
-      
-    trainer.batch_idx = 0
-    trainer.current_epoch += 1
-    trainer.global_step += 1
+    if exp.get('buffer',{}).get('fill_after_fit', False):
+      rank_zero_info( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
+      trainer.test(model=model,
+                   test_dataloaders= dataloader_buffer)
+      rank_zero_info( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
     
+    number_validation_dataloaders = len( dataloader_list_test ) 
+    del dataloader_train
+    del dataloader_list_test
+    del dataloader_buffer
+   
     if exp['teaching']['active']:
       rank_zero_info( "Store current model as new teacher")
       model.teacher.absorbe_model( model.model, model._task_count, exp['name'])
@@ -445,9 +439,9 @@ if __name__ == "__main__":
     mds = trainer.optimizers[0].state_dict()['state']
     
     for met in ['val_loss/dataloader_idx_', 'val_acc/dataloader_idx_', 'val_mIoU/dataloader_idx_']:
-      data_matrix  = np.zeros( (len(training_results),len(dataloader_list_test) ) )
+      data_matrix  = np.zeros( (len(training_results),number_validation_dataloaders  ) )
       for _i, res in enumerate( training_results  ):
-        for _j in range( len(dataloader_list_test) ):
+        for _j in range( number_validation_dataloaders  ):
           data_matrix [_i,_j] = res[met+str(_j)] * 100
       
       data_matrix = np.round( data_matrix, decimals=1)

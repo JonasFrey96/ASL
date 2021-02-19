@@ -89,12 +89,16 @@ def image_functionality(func):
               image = np.float32( ds )/255 , 
               step=epoch)
           except:
-            # logger == tensorboard
-            args[0].logger.experiment.add_image(
-              tag = tag, 
-              img_tensor = ds, 
-              global_step=epoch,
-              dataformats='HWC')
+            try:
+              # logger == tensorboard
+              args[0].logger.experiment.add_image(
+                tag = tag, 
+                img_tensor = ds, 
+                global_step=epoch,
+                dataformats='HWC')
+            except:
+              print('Tensorboard Logging and Neptune Logging failed !!!')
+              pass 
         
       if jupyter:
           display( Image.fromarray(img))  

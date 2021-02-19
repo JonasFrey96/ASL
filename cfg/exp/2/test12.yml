@@ -1,23 +1,60 @@
-name: Experiment_HARD_SOFT_GT/soft_labels
+name: debug/12_datalaoder
+offline_mode: false
 timestamp: true
 weights_restore: true
 checkpoint_restore: false
 checkpoint_load: template/hypersim/task0-epoch=46.ckpt
 tramac_restore: false
 lr: 0.003
+tag_list:
+  - mlhypersim
+  - replay
+  - cos-distance
 
+# Experiment Settings
 start_at_task: 1
 max_tasks: 4
+task_specific_early_stopping:
+  patience: 20
+  timelimit_in_min: 30
+  verbose: True
 
+teaching:
+  active: False
+  soft_labels: False
+  soft_labels_weight: 10
+  loss_function: MSE
+
+latent_replay:
+  # currently latent replay is the same as freezing the layers
+  active: False
+buffer:
+  fill_after_fit: False
+  
+  mode: distribution_matching # 'softmax_max', 'softmax_distance', 'loss'
+    # 'latent_feat', 'distribution_matching' 
+
+  distribution_matching_cfg:
+    iterations: 1000
+    early_stopping: 0.00001
+
+  metric_cfg:
+    use_highest_uncertainty: True
+  
+  latent_feat:
+    get_image_cfg:
+      dis_metric: cos
+      K_aggregate: 50
+      most_dissimilar: True
+      pick_mode: class_balanced
+
+  sync_back: True # if this is not ture the actual bins are not updated
+  
 replay_state_sync_back:
   active: true
   get_size_from_task_generator: true
 
-task_specific_early_stopping:
-  patience: 20
-  timelimit_in_min: 70
-  verbose: True
-
+# Standard Setting
 lr_scheduler:
   active: true
   cfg:
@@ -29,20 +66,6 @@ optimizer:
   sgd_cfg:
     momentum: 0.9
     weight_decay: 4.0e-05
-latent_replay_buffer:
-  active: False
-  cfg:
-    elements: 100
-    bins: 4
-    injection_rate: 1
-    mode: 'LIFO'
-  extraction_level: input
-  fill_sample_from_batch_ratio: 0.5
-teaching:
-  active: True
-  soft_labels: True
-  soft_labels_weight: 1
-  loss_function: MSE
 trainer:
   precision: 16
   accumulate_grad_batches: 1
@@ -60,7 +83,7 @@ loader:
   pin_memory: true
   batch_size: 16
   shuffle: true
-  num_workers: 16
+  num_workers: 12
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
@@ -73,6 +96,9 @@ model:
   cfg:
     num_classes: 40
     aux: false
+    extraction:
+      active: false
+      layer: 'learn_to_down'
   freeze:
     active: false
     mask:
@@ -80,6 +106,7 @@ model:
       - true
       - false 
       - false
+
 task_generator:
   total_tasks: 4
   mode: mlhypersim_random4_tests

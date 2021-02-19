@@ -99,6 +99,9 @@ class ReplayDataset(data.Dataset):
         return bins, valid
     
     def set_full_state(self, bins,valids, bin):
+        if self.replay == False:
+            return
+    
         assert bins.shape[0] == valids.shape[0]
         assert valids.shape[0] == len(self._bins)
         assert bins.shape[1] == valids.shape[1]
@@ -181,7 +184,77 @@ class ReplayDataset(data.Dataset):
     #     del self._valid
 
 
-class MLHypersim(ReplayDataset):
+class StaticReplayDataset(data.Dataset):
+    def __init__(self, bins, elements, add_p=0.5, replay_p=0.5, current_bin=0, replay=False):
+        if replay == False:
+            return
+           
+        self._bins = np.zeros( (bins,elements) ).astype(np.int32) 
+        self._valid = np.zeros( (bins,elements) ).astype(np.int32) 
+        self._current_bin = 0 
+        
+        self._elements = elements
+       
+        self.replay_p = replay_p
+
+    def idx(self, index):
+        bin = -1
+        if random.random() < self.replay_p and self._current_bin != 0:
+            index, bin = self.get_element(index)
+        return index, bin
+
+    def get_replay_state(self):
+        string = 'get_replay_state not implemented yet'
+        return string
+
+    def set_current_bin(self, bin):       
+        if bin <  self._bins.shape[0]:
+            self._current_bin= bin
+        else:
+            raise Exception(
+                "Invalid bin selected. Bin must be element 0-" +
+                self._bins.shape[0])
+            
+    def get_full_state(self):
+        return self._bins, self._valid
+    
+    def set_full_state(self, bins,valids, bin):
+        if self.replay == False:
+            return
+        assert bins.shape[0] == valids.shape[0]
+        assert valids.shape[0] == self._bins.shape[0]
+        assert bins.shape[1] == valids.shape[1]
+        assert valids.shape[1] == self._elements
+        assert bin >= 0 and bin < bins.shape[0]
+        
+        self._bin = bins.astype(np.int32) 
+        self._valid = valids.astype(np.int32)
+        self._current_bin = bin
+         
+
+    def get_element(self, index):
+        v = self._current_bin
+        if v > 0:
+            if v > 1:
+                b = int(np.random.randint(0, v - 1, (1,)))
+            else:
+                b = 0
+            
+            indi = np.nonzero(self._valid[b])[0]
+            if indi.shape[0] == 0:
+                sel_ele = 0
+            else:
+                sel_ele = np.random.randint(0, indi.shape[0], (1,))
+            
+            # print(self._bins.shape, b, int(indi[sel_ele]))
+            try:
+                return int( self._bins[b, int(indi[sel_ele]) ] ), int(b)
+            except:
+                return -1,-1
+        return -1, -1
+
+
+class MLHypersim(StaticReplayDataset):
     def __init__(
             self,
             root='/media/scratch2/jonfrey/datasets/mlhypersim/',
