@@ -55,7 +55,6 @@ def wrap(s,length, hard=False):
 class Network(LightningModule):
   def __init__(self, exp, env):
     super().__init__()
-    
     self._epoch_start_time = time.time()
     self._exp = exp
     self._env = env
@@ -164,14 +163,14 @@ class Network(LightningModule):
       for i in range(self._task_count):
         s = f'Restored for task {i}: \n' + str(bins[i])
         print( 'RSSB_TO_DATASET: ' + s )
-      self.trainer.train_dataloader.dataset.set_full_state(
+      self.trainer.train_dataloader.dataset.set_full_state( 
         bins=bins, 
         valids=valids,
         bin= self._task_count)
       
   def on_save_checkpoint(self, params):
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    if local_rank == 0:
+    if local_rank == 0: 
       if self._rssb_active:
         if self.current_epoch != self._rssb_last_epoch and self.trainer.train_dataloader.dataset.replay:
           self._rssb_last_epoch = self.current_epoch

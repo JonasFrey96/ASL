@@ -73,7 +73,7 @@ def get_dataloader_test(d_test, env):
   )
   dataloader_test = torch.utils.data.DataLoader(dataset_test,
     shuffle = False,
-    num_workers = max(1, ceil(exp['loader']['num_workers']/torch.cuda.device_count()/4) ),
+    num_workers = max(1, ceil(exp['loader']['num_workers']/torch.cuda.device_count()) ),
     pin_memory = exp['loader']['pin_memory'],
     batch_size = exp['loader']['batch_size'], 
     drop_last = True)
@@ -136,7 +136,6 @@ if __name__ == "__main__":
   def signal_handler(signal, frame):
     print('exiting on CRTL-C')
     logger.experiment.stop()
-    
     sys.exit(0)
 
   # this is needed for leonhard to use interactive session and dont freeze on
@@ -145,7 +144,7 @@ if __name__ == "__main__":
   signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/2/test12.yml',
+  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/2/dist_match.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -427,10 +426,7 @@ if __name__ == "__main__":
       rank_zero_info( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
     
     number_validation_dataloaders = len( dataloader_list_test ) 
-    del dataloader_train
-    del dataloader_list_test
-    del dataloader_buffer
-   
+    
     if exp['teaching']['active']:
       rank_zero_info( "Store current model as new teacher")
       model.teacher.absorbe_model( model.model, model._task_count, exp['name'])

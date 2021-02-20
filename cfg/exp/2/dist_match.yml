@@ -1,4 +1,4 @@
-name: debug/4_dataloader
+name: uncertainty/dist_match
 offline_mode: false
 timestamp: true
 weights_restore: true
@@ -9,14 +9,14 @@ lr: 0.003
 tag_list:
   - mlhypersim
   - replay
-  - cos-distance
+  - single_gpu
 
 # Experiment Settings
 start_at_task: 1
 max_tasks: 4
 task_specific_early_stopping:
   patience: 20
-  timelimit_in_min: 30
+  timelimit_in_min: 120
   verbose: True
 
 teaching:
@@ -29,18 +29,14 @@ latent_replay:
   # currently latent replay is the same as freezing the layers
   active: False
 buffer:
-  fill_after_fit: False
-  
+  fill_after_fit: True
   mode: distribution_matching # 'softmax_max', 'softmax_distance', 'loss'
     # 'latent_feat', 'distribution_matching' 
-
   distribution_matching_cfg:
     iterations: 1000
     early_stopping: 0.00001
-
   metric_cfg:
     use_highest_uncertainty: True
-  
   latent_feat:
     get_image_cfg:
       dis_metric: cos
@@ -75,15 +71,16 @@ trainer:
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
   max_epochs: 1000
-  gpus: -1
-  accelerator: ddp
+  gpus: 1
+  profiler: True
+  # accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 5
 loader:
   pin_memory: true
   batch_size: 16
   shuffle: true
-  num_workers: 4
+  num_workers: 8
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
