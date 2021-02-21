@@ -192,7 +192,6 @@ if __name__ == "__main__":
     if not os.path.exists(model_path):
       try:
         os.makedirs(model_path)
-        print("Generating network run folder")
       except:
         print("Failed generating network run folder")
     else:
@@ -208,7 +207,6 @@ if __name__ == "__main__":
     exp['name'] = model_path
   else:
     # the correct model path has already been written to the yaml file.
-    
     model_path = os.path.join( exp['name'], f'rank_{local_rank}_{task_nr}')
     # Create the directory
     if not os.path.exists(model_path):
@@ -233,7 +231,6 @@ if __name__ == "__main__":
     if exp['move_datasets'][0]['env_var'] != 'none':
       for dataset in exp['move_datasets']:
         scratchdir = os.getenv('TMPDIR')
-        print( 'scratchdir:', scratchdir, 'dataset:', dataset['env_var'])
         env_var = dataset['env_var']
         tar = os.path.join( env[env_var],f'{env_var}.tar')
         name = (tar.split('/')[-1]).split('.')[0]
@@ -254,7 +251,6 @@ if __name__ == "__main__":
               rank_zero_warn('Copying data failed')
         else:
           env[env_var] = str(os.path.join(scratchdir, name))
-          print('Path already exists. Updated ENV')
     else:
       env['mlhypersim'] = str(os.path.join(env['mlhypersim'], 'mlhypersim'))
       
@@ -283,23 +279,27 @@ if __name__ == "__main__":
     **exp['task_specific_early_stopping']
   )
   cb_ls.append(tses)
-  for i in range(exp['task_generator']['total_tasks']):
-    filepath = os.path.join(model_path, 'task'+str(i)+'-{epoch:02d}--{step:06d}') #{task_count/dataloader_idx_0:02d}
-    dic = copy.deepcopy( exp['cb_checkpoint']['cfg'])
-    try:
-      if len(exp['cb_checkpoint'].get('nameing',[])) > 0:
-        #filepath += '-{task_name:10s}'
-        for m in exp['cb_checkpoint']['nameing']: 
-          filepath += '-{'+ m + ':.2f}'
-    except:
-      pass
-    dic['monitor'] += str(i)
-    print(filepath)
-    checkpoint_callback = ModelCheckpoint(
-      filepath=filepath,
-      **dic
-    )
-    cb_ls.append( checkpoint_callback )
+  if local_rank == 0:
+    for i in range(exp['task_generator']['total_tasks']):
+      m = '/'.join( [a for a in model_path.split('/') if a.find('rank') == -1])
+      
+      filepath = os.path.join(m, 'task'+str(i)+'-{epoch:02d}--{step:06d}') #{task_count/dataloader_idx_0:02d}
+      
+      dic = copy.deepcopy( exp['cb_checkpoint']['cfg'])
+      # try:
+      #   if len(exp['cb_checkpoint'].get('nameing',[])) > 0:
+      #     #filepath += '-{task_name:10s}'
+      #     for m in exp['cb_checkpoint']['nameing']: 
+      #       filepath += '-{'+ m + ':.2f}'
+      # except:
+      #   pass
+      dic['monitor'] += str(i)
+      checkpoint_callback = ModelCheckpoint(
+        filepath=filepath,
+        **dic
+      )
+      
+      cb_ls.append( checkpoint_callback )
       
   params = log_important_params( exp )
      
@@ -356,15 +356,16 @@ if __name__ == "__main__":
   
   if local_rank == 0 and init:
     # write back the exp file with the correct name set to the model_path!
-    # other ddp-task dont need to care about timestamps.
+    # other ddp-task dont need to care about timestamps
+    # also storeing the path to the latest.ckpt that downstream tasks can restore the model state
     exp['weights_restore_2'] = False
     exp['checkpoint_restore_2'] = True
     exp['checkpoint_load_2'] = os.path.join( model_path,'last.ckpt')
-    
     with open(exp_cfg_path[:-4]+'_tmp.yml', 'w+') as f:
       yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
   
   if not init:
+    # restore model state from previous task.
     exp['checkpoint_restore'] = exp['checkpoint_restore_2']
     exp['checkpoint_load'] = exp['checkpoint_load_2']
     exp['weights_restore'] = exp['weights_restore_2']

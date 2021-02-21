@@ -3,4 +3,4 @@ source ~/.bashrc
 conda activate track3
 cd $HOME/ASL
 module load eth_proxy
-$HOME/miniconda3/envs/track3/bin/python supervisior.py $@
+$HOME/miniconda3/envs/track3/bin/python supervisor.py $@
