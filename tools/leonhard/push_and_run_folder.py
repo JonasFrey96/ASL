@@ -33,6 +33,8 @@ parser.add_argument('--env', default='cfg/env/leonhard.yml')
 parser.add_argument('--scratch', default=0, help="Total Scratch space in GB")
 parser.add_argument('--fake', default=False, help="Not schedule")
 parser.add_argument('--ignore_workers', default=False, help="Ignore workers")
+parser.add_argument('--script', default='main', choices=['main', 'supervisor'], help="Select script to start")
+
 
 args = parser.parse_args()
 w = int(args.workers)
@@ -59,7 +61,7 @@ ign = args.ignore_workers
 # Get all model_paths
 home = expanduser("~")
 p = f'{home}/ASL/cfg/exp/{args.exp}/'
-exps = [str(p) for p in Path(p).rglob('*.yml')]
+exps = [str(p) for p in Path(p).rglob('*.yml') if str(p).find('_tmp.yml') == -1]
 model_paths = []
 logging.info('')
 logging.info('Found Config Files in directory:')
@@ -129,7 +131,13 @@ else:
       cmd = f"""{export_cmd} cd $HOME/ASL && {bsub_cmd}{o}-n {w} -W {s1} -R "rusage[mem={ram},ngpus_excl_p={gpus}]" -R "select[gpu_mtotal0>={mem}]" """ 
       if scratch > 0:
         cmd += f"""-R "rusage[scratch={scratch}]" """
-      cmd += f"""./tools/leonhard/submit.sh --env={env} --exp={e}"""  
+        
+      if args.script == 'main':
+        subscr = 'submit'
+      elif args.script == 'supervisor':
+        subscr = 'submit_supervisor'
+          
+      cmd += f"""./tools/leonhard/{subscr}.sh --env={env} --exp={e}"""  
       
       cmd = cmd.replace('\n', '')
       logging.info(f'   {j}-Command: {cmd}')
