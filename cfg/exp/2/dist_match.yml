@@ -1,4 +1,4 @@
-name: uncertainty/dist_match_ddp_spawn
+name: uncertainty_supervisor/dist_matching
 offline_mode: false
 timestamp: true
 weights_restore: false
@@ -9,7 +9,7 @@ lr: 0.003
 tag_list:
   - mlhypersim
   - replay
-  - ddp_spawn
+  - supervisor
 
 # Experiment Settings
 start_at_task: 1
@@ -66,8 +66,8 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 0.1
-  limit_val_batches: 0.1
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 10
   max_epochs: 1000

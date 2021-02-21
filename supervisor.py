@@ -20,12 +20,15 @@ if __name__ == "__main__":
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
   args = parser.parse_args()
-  exp = load_yaml(args.env)
-  env = load_yaml(args.exp)
+  exp = load_yaml(args.exp)
+  env = load_yaml(args.env)
+  if exp['max_tasks'] > exp['task_generator']['total_tasks']:
+    print('Max Tasks largen then total tasks -> Setting max_tasks to total_tasks')
+    exp['max_tasks'] = exp['task_generator']['total_tasks']
   
-  for i in range(4):
+  for i in range( exp['max_tasks'] ):
     init = int(bool(i==0))
-    close = int(bool(i==4))
+    close = int(bool(i==exp['task_generator']['total_tasks']))
     cmd = 'cd $HOME/ASL && $HOME/miniconda3/envs/track3/bin/python main.py' 
     cmd += f' --exp={args.exp} --env={args.env} --init={init} --task_nr={i} --close={close}'
     print(cmd)

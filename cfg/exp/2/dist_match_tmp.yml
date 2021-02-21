@@ -1,4 +1,4 @@
-name: /media/scratch1/jonfrey/models/master_thesis/uncertainty/2021-02-21T12:59:37_dist_match_ddp_spawn
+name: /media/scratch1/jonfrey/models/master_thesis/uncertainty/2021-02-21T14:23:16_dist_match_ddp_spawn
 offline_mode: false
 timestamp: true
 weights_restore: false
@@ -123,13 +123,13 @@ cb_checkpoint:
     mode: min
     prefix: ''
     save_last: true
-    save_top_k: 1
+    save_top_k: 2
 lr_monitor:
   cfg:
     logging_interval: step
 move_datasets:
-- env_var: none
-experiment_id: ASL-397
+- env_var: mlhypersim
+experiment_id: ASL-400
 weights_restore_2: false
 checkpoint_restore_2: true
-checkpoint_load_2: /media/scratch1/jonfrey/models/master_thesis/uncertainty/2021-02-21T12:59:37_dist_match_ddp_spawn/last.ckpt
+checkpoint_load_2: /media/scratch1/jonfrey/models/master_thesis/uncertainty/2021-02-21T14:23:16_dist_match_ddp_spawn/last.ckpt
