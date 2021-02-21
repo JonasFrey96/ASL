@@ -135,7 +135,6 @@ if __name__ == "__main__":
   seed_everything(42)
   def signal_handler(signal, frame):
     print('exiting on CRTL-C')
-    logger.experiment.stop()
     sys.exit(0)
 
   # this is needed for leonhard to use interactive session and dont freeze on
@@ -148,16 +147,34 @@ if __name__ == "__main__":
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
+  parser.add_argument('--task_nr', type=int, default=0,
+                      help='Task nr.')
+  parser.add_argument('--init', type=int, default=0,
+                      help='Task nr.')
+  parser.add_argument('--close', type=int, default=0,
+                      help='Task nr.')
 
   args = parser.parse_args()
+  args.init = bool(args.init)
+  args.close = bool(args.close)
+  init = args.init
+  close = args.close
+  print('Called with the following arguments: '+ str(args))
+  
   exp_cfg_path = args.exp
+  local_rank = int(os.environ.get('LOCAL_RANK', 0))
+  if local_rank != 0 or not init:
+    exp_cfg_path  = exp_cfg_path[:-4]+'_tmp.yml'
+  
   env_cfg_path = args.env
+  
+  task_nr = args.task_nr
 
   exp = load_yaml(exp_cfg_path)
   env = load_yaml(env_cfg_path)
+
   
-  local_rank = int(os.environ.get('LOCAL_RANK', 0))
-  if local_rank == 0:
+  if local_rank == 0 and init:
     # Set in name the correct model path
     if exp.get('timestamp',True):
       timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
@@ -189,16 +206,10 @@ if __name__ == "__main__":
     shutil.copy(exp_cfg_path, f'{model_path}/{exp_cfg_fn}')
     shutil.copy(env_cfg_path, f'{model_path}/{env_cfg_fn}')
     exp['name'] = model_path
-    
-    # write back the exp file with the correct name set to the model_path!
-    # other ddp-task dont need to care about timestamps.
-    if not env['workstation']: 
-      with open(exp_cfg_path, 'w+') as f:
-        yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
   else:
     # the correct model path has already been written to the yaml file.
     
-    model_path = os.path.join( exp['name'], f'rank_{local_rank}')
+    model_path = os.path.join( exp['name'], f'rank_{local_rank}_{task_nr}')
     # Create the directory
     if not os.path.exists(model_path):
       try:
@@ -209,7 +220,7 @@ if __name__ == "__main__":
   # Setup logger for each ddp-task 
   logging.getLogger("lightning").setLevel(logging.DEBUG)
   logger = logging.getLogger("lightning")
-  fh = logging.FileHandler( os.path.join(model_path, f'info{local_rank}.log'), 'a')
+  fh = logging.FileHandler( os.path.join(model_path, f'info{local_rank}_{task_nr}.log'), 'a')
   logger.addHandler(fh)
       
   # Copy Dataset from Scratch to Nodes SSD
@@ -305,17 +316,29 @@ if __name__ == "__main__":
     files.append( env_cfg_path )
     
     if not exp.get('offline_mode', False):
-      logger = NeptuneLogger(
-        api_key=os.environ["NEPTUNE_API_TOKEN"],
-        project_name="jonasfrey96/asl",
-        experiment_name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
-        params=params, # Optional,
-        tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1]] + exp["tag_list"], # Optional,
-        close_after_fit = False,
-        offline_mode = exp.get('offline_mode', False),
-        upload_source_files=files
-      )
-      
+      if exp.get('experiment_id',-1) == -1:
+        #create new experiment_id and write back
+        logger = NeptuneLogger(
+          api_key=os.environ["NEPTUNE_API_TOKEN"],
+          project_name="jonasfrey96/asl",
+          experiment_name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
+          params=params, # Optional,
+          tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1]] + exp["tag_list"], # Optional,
+          close_after_fit = False,
+          offline_mode = exp.get('offline_mode', False),
+          upload_source_files=files
+        )
+        exp['experiment_id'] = logger.experiment.id
+        rank_zero_info('created experiment id' +  str( exp['experiment_id']))
+      else:
+        rank_zero_info('loaded experiment id' +  str( exp['experiment_id']))
+        logger = NeptuneLogger(
+          api_key=os.environ["NEPTUNE_API_TOKEN"],
+          project_name="jonasfrey96/asl",
+          experiment_id=exp.get('experiment_id',-1),
+          close_after_fit = False,
+        )
+      rank_zero_info('Neptune Experiment ID: '+ str( logger.experiment.id)+" TASK NR "+str( task_nr ) )
     else:
       logger = TensorBoardLogger(
         save_dir=model_path,
@@ -327,8 +350,25 @@ if __name__ == "__main__":
         save_dir=model_path+'/rank/'+str(local_rank),
         name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
     )
+  
+  weight_restore = exp.get('weights_restore', False) 
+  checkpoint_load = exp['checkpoint_load']
+  
+  if local_rank == 0 and init:
+    # write back the exp file with the correct name set to the model_path!
+    # other ddp-task dont need to care about timestamps.
+    exp['weights_restore_2'] = False
+    exp['checkpoint_restore_2'] = True
+    exp['checkpoint_load_2'] = os.path.join( model_path,'last.ckpt')
     
-
+    with open(exp_cfg_path[:-4]+'_tmp.yml', 'w+') as f:
+      yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
+  
+  if not init:
+    exp['checkpoint_restore'] = exp['checkpoint_restore_2']
+    exp['checkpoint_load'] = exp['checkpoint_load_2']
+    exp['weights_restore'] = exp['weights_restore_2']
+  
   # Always use advanced profiler
   if exp['trainer'].get('profiler', False):
     exp['trainer']['profiler'] = AdvancedProfiler(output_filename=os.path.join(model_path, 'profile.out'))
@@ -349,18 +389,16 @@ if __name__ == "__main__":
       logger=logger)   
     
 
-  if exp.get('weights_restore', False):
+  if exp['weights_restore'] :
     # it is not strict since the latent replay buffer is not always available
-    p = os.path.join( env['base'], exp['checkpoint_load'])
+    p = os.path.join( env['base'], )
     if os.path.isfile( p ):
-      res = model.load_state_dict( torch.load(p, 
+      res = model.load_state_dict( torch.load(p, exp['checkpoint_load'],
         map_location=lambda storage, loc: storage)['state_dict'], 
         strict=False)
       rank_zero_info('Restoring weights: ' + str(res))
     else:
       raise Exception('Checkpoint not a file')
-    
-  
   
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             logger=logger, epoch=0, store=True, num_classes=22 )
@@ -372,8 +410,11 @@ if __name__ == "__main__":
   _task_start_training = time.time()
   _task_start_time = time.time()
   
-  for idx, out in enumerate(tc) :  
-    
+  for idx, out in enumerate(tc):
+    if idx == task_nr:
+      break 
+  if True:
+  #for idx, out in enumerate(tc) :  
     if idx != 0:
       t = time.time() - _task_start_time
       t = str(datetime.timedelta(seconds=t))
@@ -451,7 +492,9 @@ if __name__ == "__main__":
           data_matrix = data_matrix,
           higher_is_better= higher_is_better,
           title=str( met.split('/')[0]))
+
 try:
-  logger.experiment.stop()
+  if args.close:
+    logger.experiment.stop()
 except:
   pass
