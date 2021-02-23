@@ -45,7 +45,7 @@ class ReplayDataset(data.Dataset):
         self._bins = [
             multiprocessing.Array(
                 'I', (elements)) for i in range(bins)]
-        self._valid = [
+        self._valids = [
             multiprocessing.Array(
                 'I', (elements)) for i in range(bins)]
         self._current_bin = multiprocessing.Value('I', 0)
@@ -69,7 +69,7 @@ class ReplayDataset(data.Dataset):
 
     def get_replay_state(self):
         v_el = []
-        for i in self._valid:
+        for i in self._valids:
             with i.get_lock(): 
                 self.v = np.frombuffer(i.get_obj(),dtype=np.uint32) # no data copying
                 v_el.append( int( self.v.sum() ) )
@@ -90,13 +90,13 @@ class ReplayDataset(data.Dataset):
             
     def get_full_state(self):
         bins = np.zeros( ( len(self._bins),self._elements))
-        valid = np.zeros( ( len(self._valid),self._elements))
+        valids = np.zeros( ( len(self._valids),self._elements))
         
         for b in range( len(self._bins) ):
             bins[b,:] = self._bins[b][:]
-            valid[b,:] = self._valid[b][:]
+            valids[b,:] = self._valids[b][:]
         
-        return bins, valid
+        return bins, valids
     
     def set_full_state(self, bins,valids, bin):
         if self.replay == False:
@@ -112,8 +112,8 @@ class ReplayDataset(data.Dataset):
             with self._bins[b].get_lock(): 
                 self.b = np.frombuffer(self._bins[b].get_obj(),dtype=np.uint32) # no data copying
                 self.b[:] = bins[b,:].astype(np.uint32) 
-            with self._valid[b].get_lock(): 
-                self.v = np.frombuffer(self._valid[b].get_obj(),dtype=np.uint32) # no data copying
+            with self._valids[b].get_lock(): 
+                self.v = np.frombuffer(self._valids[b].get_obj(),dtype=np.uint32) # no data copying
                 self.v[:] = valids[b,:].astype(np.uint32)
                 
         self._current_bin.value = bin
@@ -129,10 +129,10 @@ class ReplayDataset(data.Dataset):
                 b = 0
             # we assume that all previous bins are filled. 
             # Therefore contain more values 
-            with self._valid[b].get_lock(): # synchronize access
+            with self._valids[b].get_lock(): # synchronize access
                 with self._bins[b].get_lock(): 
                     
-                    self.v = np.frombuffer(self._valid[b].get_obj(),dtype=np.uint32) # no data copying
+                    self.v = np.frombuffer(self._valids[b].get_obj(),dtype=np.uint32) # no data copying
                     self.b = np.frombuffer(self._bins[b].get_obj(),dtype=np.uint32) # no data copying
                     
                     indi = np.nonzero(self.v)[0]
@@ -148,10 +148,10 @@ class ReplayDataset(data.Dataset):
     def add_element(self, index):
         v = self._current_bin.value
         
-        with self._valid[v].get_lock(): # synchronize access
+        with self._valids[v].get_lock(): # synchronize access
             with self._bins[v].get_lock(): 
                 
-                self.v = np.frombuffer(self._valid[v].get_obj(),dtype=np.uint32) # no data copying
+                self.v = np.frombuffer(self._valids[v].get_obj(),dtype=np.uint32) # no data copying
                 self.b = np.frombuffer(self._bins[v].get_obj(),dtype=np.uint32) # no data copying
                     
                 if (index == self.b).sum() == 0:
@@ -178,10 +178,10 @@ class ReplayDataset(data.Dataset):
     # def __del__(self): 
     #     for i in self._bins:
     #         del i
-    #     for j in self._valid:
+    #     for j in self._valids:
     #         del j
     #     del self._bins
-    #     del self._valid
+    #     del self._valids
 
 
 class StaticReplayDataset(data.Dataset):
@@ -190,7 +190,7 @@ class StaticReplayDataset(data.Dataset):
             return
            
         self._bins = np.zeros( (bins,elements) ).astype(np.int32) 
-        self._valid = np.zeros( (bins,elements) ).astype(np.int32) 
+        self._valids = np.zeros( (bins,elements) ).astype(np.int32) 
         self._current_bin = 0 
         
         self._elements = elements
@@ -216,7 +216,7 @@ class StaticReplayDataset(data.Dataset):
                 self._bins.shape[0])
             
     def get_full_state(self):
-        return self._bins, self._valid
+        return self._bins, self._valids
     
     def set_full_state(self, bins,valids, bin):
         if self.replay == False:
@@ -227,8 +227,8 @@ class StaticReplayDataset(data.Dataset):
         assert valids.shape[1] == self._elements
         assert bin >= 0 and bin < bins.shape[0]
         
-        self._bin = bins.astype(np.int32) 
-        self._valid = valids.astype(np.int32)
+        self._bins = bins.astype(np.int32) 
+        self._valids = valids.astype(np.int32)
         self._current_bin = bin
          
 
@@ -240,7 +240,7 @@ class StaticReplayDataset(data.Dataset):
             else:
                 b = 0
             
-            indi = np.nonzero(self._valid[b])[0]
+            indi = np.nonzero(self._valids[b])[0]
             if indi.shape[0] == 0:
                 sel_ele = 0
             else:
@@ -375,12 +375,23 @@ class MLHypersim(StaticReplayDataset):
         return self.length
 
     def __str__(self):
-        string = "HyperSim Dataset: \n"
-        string += f"   Mode: {self._mode}"
-        string += "Sequences active: \n"
-        string += "Total Examples: \n"
-        l = len(self.sceneTypes)
-        string += f"    {l} \n"
+        string = "="*90
+        string += "\nML-HyperSim Dataset: \n"
+        l = len(self)
+        string += f"    Total Samples: {l}"
+        string += f"  »  Mode: {self._mode} \n"
+        string += f"    Replay: {self.replay}"
+        string += f"  »  DataAug: {self._data_augmentation}"
+        string += f"  »  DataAug Replay: {self._data_augmentation_for_replay}\n"
+        string += f"    Replay P: {self.replay_p}"
+        string += f"  »  Unique: {self.unique}"
+        string += f"  »  Current_bin: {self._current_bin}"
+        string += f"  »  Shape: {self._bins.shape}\n"
+        filled_b = (self._bins != 0).sum(axis=1)
+        filled_v = (self._valids != 0).sum(axis=1)
+        string += f"    Bins not 0: {filled_b}"
+        string += f"  »  Vals not 0: {filled_v} \n"
+        string += "="*90
         return string
         
     def _load(self, root, mode, train_val_split=0.2):

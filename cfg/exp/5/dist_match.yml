@@ -1,5 +1,5 @@
-name: uncertainty_7/metric_loss
-offline_mode: false
+name: uncertainty_8/dist_match
+offline_mode: true
 timestamp: true
 weights_restore: true
 checkpoint_restore: false
@@ -30,7 +30,7 @@ latent_replay:
   active: False
 buffer:
   fill_after_fit: True
-  mode: latent_feat # 'softmax_max', 'softmax_distance', 'loss'
+  mode: distribution_matching # 'softmax_max', 'softmax_distance', 'loss'
     # 'latent_feat', 'distribution_matching' 
   distribution_matching_cfg:
     iterations: 1000
@@ -79,7 +79,7 @@ loader:
   pin_memory: true
   batch_size: 16
   shuffle: true
-  num_workers: 16
+  num_workers: 10
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
