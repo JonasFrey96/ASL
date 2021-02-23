@@ -1,4 +1,4 @@
-name: uncertainty_7/metric_loss
+name: /media/scratch1/jonfrey/models/master_thesis/uncertainty_7/2021-02-22T21:16:38_metric_soft_max_distance
 offline_mode: false
 timestamp: true
 weights_restore: true
@@ -7,56 +7,46 @@ checkpoint_load: template/hypersim/task0-epoch=46.ckpt
 tramac_restore: false
 lr: 0.003
 tag_list:
-  - mlhypersim
-  - replay
-  - single_gpu
-
-# Experiment Settings
+- mlhypersim
+- replay
+- single_gpu
 start_at_task: 1
 max_tasks: 4
 task_specific_early_stopping:
   patience: 20
   timelimit_in_min: 70
-  verbose: True
-
+  verbose: true
 teaching:
-  active: False
-  soft_labels: False
+  active: false
+  soft_labels: false
   soft_labels_weight: 10
   loss_function: MSE
-
 latent_replay:
-  # currently latent replay is the same as freezing the layers
-  active: False
+  active: false
 buffer:
-  fill_after_fit: True
-  mode: latent_feat # 'softmax_max', 'softmax_distance', 'loss'
-    # 'latent_feat', 'distribution_matching' 
+  fill_after_fit: true
+  mode: softmax_distance
   distribution_matching_cfg:
     iterations: 1000
-    early_stopping: 0.00001
+    early_stopping: 1.0e-05
   metric_cfg:
-    use_highest_uncertainty: True
+    use_highest_uncertainty: true
   latent_feat:
     get_image_cfg:
       dis_metric: cos
       K_aggregate: 50
-      most_dissimilar: True
+      most_dissimilar: true
       pick_mode: class_balanced
-
-  sync_back: True # if this is not ture the actual bins are not updated
-  
+  sync_back: true
 replay_state_sync_back:
   active: true
   get_size_from_task_generator: true
-
-# Standard Setting
 lr_scheduler:
   active: true
   cfg:
     power: 0.9
     max_epochs: 1000
-    target_lr: 1.0e-04
+    target_lr: 0.0001
 optimizer:
   name: ADAM
   sgd_cfg:
@@ -71,7 +61,7 @@ trainer:
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
   max_epochs: 1000
-  gpus: -1
+  gpus: 1
   num_sanity_val_steps: 0
   check_val_every_n_epoch: 5
   accelerator: ddp
@@ -94,15 +84,14 @@ model:
     aux: false
     extraction:
       active: false
-      layer: 'learn_to_down'
+      layer: learn_to_down
   freeze:
     active: false
     mask:
-      - true
-      - true
-      - false 
-      - false
-
+    - true
+    - true
+    - false
+    - false
 task_generator:
   total_tasks: 4
   mode: mlhypersim_random4_tests
@@ -112,11 +101,10 @@ task_generator:
     add_p: 0.5
     replay_p: 0.5
     current_bin: 0
-  replay_adaptive_add_p: True
-  replay: True
-  data_augmentation: True
-  data_augmentation_for_replay: True
-
+  replay_adaptive_add_p: true
+  replay: true
+  data_augmentation: true
+  data_augmentation_for_replay: true
 cb_early_stopping:
   active: false
   cfg:
@@ -138,7 +126,9 @@ cb_checkpoint:
 lr_monitor:
   cfg:
     logging_interval: step
-
 move_datasets:
-  # - env_var: coco
-  - env_var: mlhypersim
+- env_var: mlhypersim
+experiment_id: ASL-492
+weights_restore_2: false
+checkpoint_restore_2: true
+checkpoint_load_2: /media/scratch1/jonfrey/models/master_thesis/uncertainty_7/2021-02-22T21:16:38_metric_soft_max_distance/last.ckpt

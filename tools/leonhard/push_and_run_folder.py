@@ -27,13 +27,13 @@ parser.add_argument('--time', default=24, required=True,
                     help='Runtime.')
 parser.add_argument('--mem', default=10240, help='Min GPU Memory')
 parser.add_argument('--gpus', default=1)
-parser.add_argument('--workers', default=20)
+parser.add_argument('--workers', default=16)
 parser.add_argument('--ram', default=60)
 parser.add_argument('--env', default='cfg/env/leonhard.yml')
 parser.add_argument('--scratch', default=0, help="Total Scratch space in GB")
 parser.add_argument('--fake', default=False, help="Not schedule")
 parser.add_argument('--ignore_workers', default=False, help="Ignore workers")
-parser.add_argument('--script', default='main', choices=['main', 'supervisor'], help="Select script to start")
+parser.add_argument('--script', default='supervisor', choices=['main', 'supervisor'], help="Select script to start")
 
 
 args = parser.parse_args()
@@ -99,7 +99,7 @@ else:
   model_paths = [os.path.join(base,i) for i in model_paths] 
 
   # Push to cluster 
-  cmd = f"""rsync -a --delete {home}/ASL/* jonfrey@login.leonhard.ethz.ch:/cluster/home/jonfrey/ASL"""
+  cmd = f"""rsync -a --delete --exclude='.git/' --exclude='cfg/exp/tmp/*' {home}/ASL/* jonfrey@login.leonhard.ethz.ch:/cluster/home/jonfrey/ASL"""
   os.system(cmd)
 
   # Executue commands on cluster

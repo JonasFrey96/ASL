@@ -1,6 +1,6 @@
-module load python_gpu/3.7.4 gcc/6.3.0 eth_proxy
 source ~/.bashrc
+conda deactivate
+conda deactivate
 conda activate track3
 cd $HOME/ASL
-module load eth_proxy
-$HOME/miniconda3/envs/track3/bin/python main.py $@
+/cluster/home/jonfrey/miniconda3/envs/track4/bin/python main.py $@

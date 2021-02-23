@@ -290,6 +290,42 @@ class MainVisualizer():
     plt.close()
     return np.uint8(arr)
   
+  @image_functionality
+  def plot_bar(self, data, x_label='Sample', y_label='Value', title='Bar Plot', sort=True, reverse=True, *args,**kwargs):
+    def check_shape(data):
+        if len(data.shape)>1:
+            if data.shape[0] == 0:
+                data = data[0,:]
+            elif data.shape[1] == 0:
+                data = data[:,0]
+            else:
+                raise Exception('plot_hist: Invalid Data Shape')
+        return data
+    
+    if type(data) == list:
+        pass
+    elif type(data) == torch.Tensor:
+        data = check_shape(data)
+        data = list( data.clone().cpu())
+    elif type(data) == np.ndarray:
+        data = check_shape(data)
+        data = list(data)
+    else:
+        raise Exception("plot_hist: Unknown Input Type"+str(type(data)))
+    
+    if sort:
+        data.sort(reverse=reverse)
+    
+    fig = plt.figure()
+    plt.bar(list(range(len(data))), data, facecolor=COL_MAP(2) )
+
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.title(title)
+    plt.grid(True)
+    arr = get_img_from_fig(fig, dpi=300)
+    plt.close()
+    return np.uint8(arr)
 class Visualizer():
   def __init__(self, p_visu, logger=None, epoch=0, store=True, num_classes=22):
     self.p_visu = p_visu

@@ -1,7 +1,7 @@
-name: debug/16_datalaoder
+name: test_functions2/dist_match_200
 offline_mode: false
 timestamp: true
-weights_restore: true
+weights_restore: false
 checkpoint_restore: false
 checkpoint_load: template/hypersim/task0-epoch=46.ckpt
 tramac_restore: false
@@ -9,14 +9,14 @@ lr: 0.003
 tag_list:
   - mlhypersim
   - replay
-  - cos-distance
+  - single_gpu
 
 # Experiment Settings
-start_at_task: 1
+start_at_task: 0
 max_tasks: 4
 task_specific_early_stopping:
   patience: 20
-  timelimit_in_min: 30
+  timelimit_in_min: 50
   verbose: True
 
 teaching:
@@ -29,18 +29,14 @@ latent_replay:
   # currently latent replay is the same as freezing the layers
   active: False
 buffer:
-  fill_after_fit: False
-  
+  fill_after_fit: True
   mode: distribution_matching # 'softmax_max', 'softmax_distance', 'loss'
     # 'latent_feat', 'distribution_matching' 
-
   distribution_matching_cfg:
     iterations: 1000
     early_stopping: 0.00001
-
   metric_cfg:
     use_highest_uncertainty: True
-  
   latent_feat:
     get_image_cfg:
       dis_metric: cos
@@ -70,15 +66,14 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 5
-  limit_val_batches: 5
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
   max_epochs: 1000
   gpus: -1
-  accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 2
 loader:
   pin_memory: true
   batch_size: 16
@@ -112,7 +107,7 @@ task_generator:
   mode: mlhypersim_random4_tests
   cfg_replay:
     bins: 4
-    elements: 50
+    elements: 200
     add_p: 0.5
     replay_p: 0.5
     current_bin: 0
@@ -134,7 +129,7 @@ cb_checkpoint:
   nameing: 1
   cfg:
     verbose: true
-    monitor: val_loss/dataloader_idx_
+    monitor: train_loss
     mode: min
     prefix: ''
     save_last: true
@@ -145,4 +140,4 @@ lr_monitor:
 
 move_datasets:
   # - env_var: coco
-  - env_var: none #mlhypersim
+  - env_var: mlhypersim

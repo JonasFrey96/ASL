@@ -1,4 +1,4 @@
-name: uncertainty/metric_soft_max_distance
+name: uncertainty_7/metric_soft_max_distance
 offline_mode: false
 timestamp: true
 weights_restore: true
@@ -72,9 +72,9 @@ trainer:
   progress_bar_refresh_rate: 1
   max_epochs: 1000
   gpus: -1
-  accelerator: ddp
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 1
+  check_val_every_n_epoch: 5
+  accelerator: ddp
 loader:
   pin_memory: true
   batch_size: 16
@@ -130,7 +130,7 @@ cb_checkpoint:
   nameing: 1
   cfg:
     verbose: true
-    monitor: val_loss/dataloader_idx_
+    monitor: train_loss
     mode: min
     prefix: ''
     save_last: true

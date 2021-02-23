@@ -1,9 +1,9 @@
-name: uncertainty_7/metric_loss
+name: test_functions2/dist_match_adaptive
 offline_mode: false
 timestamp: true
 weights_restore: true
 checkpoint_restore: false
-checkpoint_load: template/hypersim/task0-epoch=46.ckpt
+checkpoint_load: base_models/ml_hypersim_4_tasks/task0-epoch=99--step=012399.ckpt
 tramac_restore: false
 lr: 0.003
 tag_list:
@@ -16,7 +16,7 @@ start_at_task: 1
 max_tasks: 4
 task_specific_early_stopping:
   patience: 20
-  timelimit_in_min: 70
+  timelimit_in_min: 50
   verbose: True
 
 teaching:
@@ -30,13 +30,13 @@ latent_replay:
   active: False
 buffer:
   fill_after_fit: True
-  mode: latent_feat # 'softmax_max', 'softmax_distance', 'loss'
+  mode: loss # 'softmax_max', 'softmax_distance', 'loss'
     # 'latent_feat', 'distribution_matching' 
   distribution_matching_cfg:
     iterations: 1000
     early_stopping: 0.00001
   metric_cfg:
-    use_highest_uncertainty: True
+    use_highest_uncertainty: False
   latent_feat:
     get_image_cfg:
       dis_metric: cos
@@ -73,8 +73,7 @@ trainer:
   max_epochs: 1000
   gpus: -1
   num_sanity_val_steps: 0
-  check_val_every_n_epoch: 5
-  accelerator: ddp
+  check_val_every_n_epoch: 2
 loader:
   pin_memory: true
   batch_size: 16

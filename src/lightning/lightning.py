@@ -155,6 +155,7 @@ class Network(LightningModule):
     
     if self._rssb_active:
       self.rssb_to_dataset()
+      bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
   
   def rssb_to_dataset(self):
     if self._rssb_active:
@@ -163,7 +164,8 @@ class Network(LightningModule):
       for i in range(self._task_count):
         s = f'Restored for task {i}: \n' + str(bins[i])
         print( 'RSSB_TO_DATASET: ' + s )
-      self.trainer.train_dataloader.dataset.set_full_state( 
+        
+      self.trainer.train_dataloader.dataset.datasets.set_full_state( 
         bins=bins, 
         valids=valids,
         bin= self._task_count)
@@ -172,11 +174,13 @@ class Network(LightningModule):
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     if local_rank == 0: 
       if self._rssb_active:
-        if self.current_epoch != self._rssb_last_epoch and self.trainer.train_dataloader.dataset.replay:
+        if self.current_epoch != self._rssb_last_epoch and self.trainer.train_dataloader.dataset.datasets.replay:
           self._rssb_last_epoch = self.current_epoch
           print( 'ON_SAVE_CHECKPOINT: Before saving checkpoint sync-back buffer state')
-          bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
-          self._rssb.absorbe(bins,valids)
+          bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
+          if self._mode != 'test':
+            pass
+            # self._rssb.absorbe(bins,valids)
       
   def teardown(self, stage):
     print('TEARDOWN: Called')
@@ -184,17 +188,17 @@ class Network(LightningModule):
   def on_fit_end(self):
     if self._mode != 'test':
       print('ON_FIT_END: Called')
-      if self._rssb_active and self.trainer.train_dataloader.dataset.replay:
+      if self._rssb_active and self.trainer.train_dataloader.dataset.datasets.replay:
         self._rssb_last_epoch = self.current_epoch
         print( 'ON_FIT_END: Before finishing training sync-back buffer state')
-        bins, valids = self.trainer.train_dataloader.dataset.get_full_state()
-        self._rssb.absorbe(bins,valids)
+        bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
+        # self._rssb.absorbe(bins,valids)
         
       print('ON_FIT_END: Training end reset val_results.')
       self._val_results = {} # reset the buffer for the next task
     
   def on_train_end(self):
-    pass
+    bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
     
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch
@@ -331,9 +335,9 @@ class Network(LightningModule):
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
     pred = torch.argmax(outputs[0], 1)
 
-    self.log('val_loss', loss, on_epoch=True)
+    
 
-    return {'pred': pred, 'target': target, 'ori_img': batch[2], 'dataloader_idx': dataloader_idx}
+    return {'pred': pred, 'target': target, 'ori_img': batch[2], 'dataloader_idx': dataloader_idx, 'loss_ret': loss }
 
   def validation_step_end( self, outputs ):
     # Logging + Visu
@@ -355,12 +359,17 @@ class Network(LightningModule):
       
     self.val_mIoU[dataloader_idx] (pred,target)
     # calculates acc only for valid labels
-
     m  =  target > -1
     self.val_acc[dataloader_idx] (pred[m], target[m])
     self.log(f'val_acc', self.val_acc[dataloader_idx] , on_epoch=True, prog_bar=False)
     self.log(f'val_mIoU', self.val_mIoU[dataloader_idx] , on_epoch=True, prog_bar=False)
     self.log(f'task_count', self._task_count, on_epoch=True, prog_bar=False)
+    self.log('val_loss', outputs['loss_ret'], on_epoch=True)
+    # self.log(f'val_acc/dataloader_idx_{dataloader_idx}', self.val_acc[dataloader_idx] , on_epoch=True, prog_bar=False)
+    # self.log(f'val_mIoU/dataloader_idx_{dataloader_idx}', self.val_mIoU[dataloader_idx] , on_epoch=True, prog_bar=False)
+    # self.log(f'task_count/dataloader_idx_{dataloader_idx}', self._task_count, on_epoch=True, prog_bar=False)
+    # self.log(f'val_loss/dataloader_idx_{dataloader_idx}', outputs['loss_ret'], on_epoch=True)
+    
     # self.log('task_name', self._task_name, on_epoch=True)
   
   def on_validation_epoch_start(self):
@@ -530,7 +539,9 @@ class Network(LightningModule):
                               K_return=self._rssb.bins.shape[1], 
                               **self._exp['buffer']['distribution_matching_cfg'])
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
-            
+      elif m == 'random':
+        selected = torch.randperm( self._t_ret.shape[0], device=self.device)[:self._rssb.bins.shape[1]]
+        ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
       else:
         raise Exception('Undefined mode on_test_epoch_end')
       
@@ -538,7 +549,8 @@ class Network(LightningModule):
       # Writes to RSSB
       if self._exp['buffer'].get('sync_back', True):
           if self._rssb_active:
-            self._rssb.bins[self._task_count,:] = ret_globale_indices  
+            self._rssb.bins[self._task_count,:] = ret_globale_indices
+            self._rssb.valid[self._task_count,:] = True
         
       
       ### THIS IS ONLY FOR VISUALIZATION
