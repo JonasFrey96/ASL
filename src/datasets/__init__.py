@@ -1,4 +1,5 @@
 from .helper import Augmentation
+from .replay_base import *
 from .cityscapes import *
 from .nyu_v2 import *
 from .ml_hypersim import MLHypersim
