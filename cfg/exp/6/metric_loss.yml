@@ -30,7 +30,7 @@ latent_replay:
   active: False
 buffer:
   fill_after_fit: True
-  mode: loss # 'softmax_max', 'softmax_distance', 'loss'
+  mode: latent_feat # 'softmax_max', 'softmax_distance', 'loss'
     # 'latent_feat', 'distribution_matching' 
   distribution_matching_cfg:
     iterations: 1000

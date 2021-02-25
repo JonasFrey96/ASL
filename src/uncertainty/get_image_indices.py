@@ -41,7 +41,7 @@ def get_image_indices(feat, gloable_indices, dis_metric= 'cos',
     else:
         raise Exception(f'In get_image_indices dis_metric {dis_metric} not implemented')
     
-    if pick_mode== 'most_hits':
+    if pick_mode == 'most_hits':
 
         # select K best for each class
         candidates = []
