@@ -240,7 +240,58 @@ class MainVisualizer():
     plt.close()
     return np.uint8(arr)
   
-  
+  @image_functionality
+  def plot_lines_with_bachground(self, x,y, count=None, x_label='x', y_label='y', title='Title', task_names=None, *args,**kwargs):
+    # y = list of K  np.arrays with len N  . first tasks goes first
+    # x : np.array N
+    # both x and y might be just an array
+    # optional x might be given for each y as a list
+    # task_names: list of K: str 
+    # count: list of K points when next task started
+    
+    fig, ax = plt.subplots()
+    plt.xlabel(x_label)
+    plt.ylabel(y_label)
+    plt.title(title)
+    plt.grid(True)
+    
+    if type(y) is not list:
+      y = [y]
+    
+    keys = list( col.keys()) 
+    for j, y_ in enumerate( y ): 
+      if type(x) is list:
+        if len(x) == len(y):
+          x_ = x[j]
+        else:
+          x_ = x[0]
+      else:
+        x_ = x
+      
+      ax.plot(x_,y_, color=np.array( col[keys[j]])/255)
+    if task_names is not None:
+      plt.legend(task_names) 
+      
+    length= x.max() - x.min()
+    
+    nr_tasks = len(y)
+    if count is None:
+      for i in range(0, nr_tasks):
+          print("Plotting")
+          print((i)*length/nr_tasks)
+          plt.axvspan((i)*length/nr_tasks, (i+1)*length/nr_tasks, facecolor=np.array( col[keys[i]])/255, alpha=0.2)
+    else:
+      start = x.min()
+      for i in range(0, nr_tasks):
+        stop = count[i]
+        plt.axvspan( max(start,x.min()) , min(stop,x.max()) , facecolor=np.array( col[keys[i]])/255, alpha=0.2)
+        start = stop
+      
+    arr = get_img_from_fig(fig, dpi=300)
+    plt.close()
+    return np.uint8(arr)
+        
+        
   @image_functionality  
   def plot_cont_validation_eval(self, task_data, *args,**kwargs):
     """
@@ -437,3 +488,14 @@ class Visualizer():
       img = img*255
     img = np.uint8(img)
     return img
+  
+def test():
+  # pytest -q -s src/visu/visualizer.py
+  vis = MainVisualizer( p_visu='/home/jonfrey/tmp', logger=None, epoch=0, store=True, num_classes=41)
+  x = np.arange(100)
+  y = [ np.random.normal(0, 1, 100), np.random.normal(0.5, 0.2, 100), np.random.normal(-0.5, 0.1, 100), np.random.normal(0.2, 1, 100)]
+  vis.plot_lines_with_bachground(x,y, count=[5,55,60,100], task_names=['a', 'b', 'c', 'd'])
+  
+if __name__ == "__main__":
+  
+  test()

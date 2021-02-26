@@ -15,7 +15,7 @@ def compute_metric(selected, features):
     number = F.mse_loss( selected_dist, target_dist)
     return number
 
-def distribution_matching(features, K_return=50, iterations= 1000, early_stopping = 0.00001):
+def distribution_matching(features, K_return=50, iterations= 1000, early_stopping = 0.00001, sub_selection=None):
     """ returns k indices from globale_indices such that the returned indexed match the total feature distribution
 				fully sampling based !
     
@@ -24,13 +24,20 @@ def distribution_matching(features, K_return=50, iterations= 1000, early_stoppin
     features : torch.tensor NRxC
     K_return : int, optional
             number of returned indices, by default 50
+    sub_selection: torch.tensor X  containtg indices X.shape[0]> K_return
     """
-    indices = torch.arange( 0, features.shape[0] )
-    start_indices = torch.randperm( indices.shape[0] )[:K_return]
-    selected = torch.zeros( (indices.shape[0]), dtype=torch.bool)
-    for i in range(start_indices.shape[0]):
-        selected[start_indices[i]] = True
+    selected = torch.zeros( (features.shape[0]), dtype=torch.bool)
+    
+    if sub_selection is not None:
+        indices = sub_selection
+    else:
+        indices = torch.arange( 0, features.shape[0] )
         
+    start_indices = torch.randperm( indices.shape[0] )[:K_return]
+    sel = indices[start_indices]
+    selected[sel] = True
+   
+            
     
     old_metric = compute_metric( selected, features)
     for i in range(iterations):
@@ -43,8 +50,12 @@ def distribution_matching(features, K_return=50, iterations= 1000, early_stoppin
         # get a new candidate sample
         while True:
             sample = randint(0,selected.shape[0]-1)
-            if sample not in current_selection:
-                break
+            if sub_selection is not None:
+                if sample not in current_selection and sample in sub_selection:
+                    break
+            else:
+                if sample not in current_selection:
+                    break
 
         selected[ candidate ] = False
         selected[ sample ] = True

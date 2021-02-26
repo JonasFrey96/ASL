@@ -43,6 +43,7 @@ from math import ceil
 from uncertainty import get_softmax_uncertainty_max, get_softmax_uncertainty_distance
 from uncertainty import get_image_indices
 from uncertainty import distribution_matching
+from uncertainty import get_kMeans_indices
 
 __all__ = ['Network']
 def wrap(s,length, hard=False):
@@ -542,6 +543,22 @@ class Network(LightningModule):
       elif m == 'random':
         selected = torch.randperm( self._t_ret.shape[0], device=self.device)[:self._rssb.bins.shape[1]]
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
+      elif m == 'kmeans':
+        flag = m = self._exp['buffer']['kmeans']['perform_distribution_matching_based_on_subset']
+        if flag:
+          start_can = 4
+        else:
+          start_can = 2
+        selected = get_kMeans_indices( self._t_latent_feature_all, self._rssb.bins.shape[1], flag, start_can )
+        
+        if flag: 
+          # perfrom dist matching
+          selected, metric = distribution_matching(self._t_feature_labels, 
+                              K_return=self._rssb.bins.shape[1], 
+                              **self._exp['buffer']['distribution_matching_cfg'],
+                              sub_selection = selected)
+          
+        ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]        
       else:
         raise Exception('Undefined mode on_test_epoch_end')
       

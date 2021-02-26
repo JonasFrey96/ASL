@@ -1,4 +1,4 @@
-name: loss_exp/lowest
+name: metrices_exp/kmeans_pixelwise_machted
 offline_mode: false
 timestamp: true
 weights_restore: true
@@ -24,14 +24,13 @@ teaching:
   soft_labels: False
   soft_labels_weight: 10
   loss_function: MSE
-
 latent_replay:
   # currently latent replay is the same as freezing the layers
   active: False
 buffer:
   fill_after_fit: True
-  mode: loss # 'softmax_max', 'softmax_distance', 'loss'
-    # 'latent_feat', 'distribution_matching' 
+  mode: kmeans # 'softmax_max', 'softmax_distance', 'loss'
+    # 'latent_feat', 'distribution_matching', 'kmeans' 
   distribution_matching_cfg:
     iterations: 1000
     early_stopping: 0.00001
@@ -43,7 +42,8 @@ buffer:
       K_aggregate: 50
       most_dissimilar: True
       pick_mode: class_balanced
-
+  kmeans:
+    perform_distribution_matching_based_on_subset: True
   sync_back: True # if this is not ture the actual bins are not updated
   
 replay_state_sync_back:
