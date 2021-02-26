@@ -172,6 +172,8 @@ def log_important_params( exp ):
   dic = flatten_dict(exp)
   
   return dic
+
+
 def plot_from_pkl(main_visu, base_path, task_nr):
   with open(f"{base_path}/res0.pkl",'rb') as f:
     res = pickle.load(f)
@@ -198,7 +200,29 @@ def plot_from_pkl(main_visu, base_path, task_nr):
       data_matrix = data_matrix,
       higher_is_better= higher_is_better,
       title= m)
-       
+
+def validation_acc_plot(main_visu, logger):
+  try:
+    df_acc = logger.experiment.get_numeric_channels_values('val_acc/dataloader_idx_0','val_acc/dataloader_idx_1','val_acc/dataloader_idx_2','val_acc/dataloader_idx_3','task_count/dataloader_idx_0')
+    x = np.array(df_acc['task_count/dataloader_idx_0'])
+    
+    
+    task_nrs, where = np.unique( x, return_index=True )
+    task_nrs = task_nrs.astype(np.uint8).tolist()
+    where = where.tolist()[1:]
+    where = [w-1 for w in where]
+    where += [x.shape[0]-1]*int(4-len(where))
+    
+    names = [f'val_acc_{idx}' for idx in range(4)]
+    x =  np.arange(x.shape[0])
+    y = [np.array(df_acc[f'val_acc/dataloader_idx_{idx}']  ) for idx in range(4)]
+    arr = main_visu.plot_lines_with_bachground(
+        x, y, count=where,
+        x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
+        task_names=names, tag='Validation_Accuracy_Summary')
+  except:
+    pass
+  
 def plot_from_neptune(main_visu,logger):
   try: 
     idxs = logger.experiment.get_numeric_channels_values('task_count/dataloader_idx_0')['x']
@@ -638,6 +662,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     
     plot_from_pkl(main_visu, base_path, task_nr)
     
+    validation_acc_plot(main_visu, logger)
+  
   try:
     if close:
       logger.experiment.stop()
