@@ -24,14 +24,24 @@ class Augmentation():
     self._crop_center = tf.CenterCrop(self._output_size)
         
   def apply(self, img, label, only_crop=False):
-    if img.shape[1] >= 2*self._output_size:  
+    scale = False
+    if img.shape[1] >= 2*self._output_size :  
+        sf = float(self._output_size/img.shape[1])*1.2
+        scale = True
+    elif img.shape[1] < self._output_size or img.shape[2] < self._output_size:
+        sf1 = float(self._output_size/img.shape[1])*1.2
+        sf2 = float(self._output_size/img.shape[2])*1.2
+        sf = max(sf1,sf2)
+        scale = True
+        
+    if scale:
         img = torch.nn.functional.interpolate(img[None] ,
-                                              scale_factor=(0.6,0.6), 
+                                              scale_factor=(sf,sf), 
                                               mode='bilinear', 
                                               recompute_scale_factor=False, 
                                               align_corners=False)[0]
         label = torch.nn.functional.interpolate(label[None],
-                                                scale_factor=(0.6,0.6), 
+                                                scale_factor=(sf,sf), 
                                                 mode='nearest', 
                                                 recompute_scale_factor=False)[0]
     if not only_crop:

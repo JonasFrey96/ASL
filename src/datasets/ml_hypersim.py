@@ -44,17 +44,6 @@ class MLHypersim(StaticReplayDataset):
             replay = False,
             cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
             data_augmentation= True, data_augmentation_for_replay=True):
-        """
-        Each dataloader loads the full .mat file into memory.
-        For the small dataset size this is perfect.
-        Both should work when file is located on SSD!
-
-        Parameters
-        ----------
-        root : str, path to the ML-Hypersim folder
-        mode : str, option ['train','val]
-        """
-        # super.__init__( )
         super(
             MLHypersim,
             self).__init__(
@@ -115,7 +104,7 @@ class MLHypersim(StaticReplayDataset):
         with h5py.File(self.label_pths[global_idx], 'r') as f:
             label = np.array(f['dataset'])
         label = torch.from_numpy(label).type(
-            torch.float32)[None, :, :]  # C H W
+            torch.float32)[None, :, :]  # C H W    # label_max = 40 invalid = -1 0 is not used as an index
 
         if (self._mode == 'train' and 
             ( ( self._data_augmentation and idx == -1) or 
@@ -141,6 +130,7 @@ class MLHypersim(StaticReplayDataset):
 
         label[label > 0] = label[label > 0] - 1
         
+        #shifts label to -1 = invalid, 0 = wall, 39 = otherprop 
         return img, label.type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
 
     def __len__(self):

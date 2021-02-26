@@ -45,6 +45,7 @@ coco_template_dict = {
     'mode': 'train', 
     'output_size': 384,
     'scenes': [],
+    'replay': True,
     'squeeze_80_labels_to_40': True,
 }
 
@@ -110,6 +111,8 @@ class TaskCreator():
       self._mlhypersim_all()
     elif mode == 'mlhypersim_random4_tests':
       self._mlhypersim_random4_tests()
+    elif mode == 'mlhypersim_random4_seeded':
+      self._mlhypersim_random4_seeded(seed=kwargs['seed'])
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
@@ -211,6 +214,45 @@ class TaskCreator():
           dataset_test_cfg=test)
         eval_tasks.append( eval_task )
       self._eval_lists.append( eval_tasks )
+      
+      
+  def _mlhypersim_random4_seeded(self, seed):
+    spt = int( len(mlhypersim_scene_names)/30 ) # scenes_per_task spt
+
+     
+    for i in range(seed,seed+4):
+      train = copy.deepcopy( mlhypersim_template_dict )
+      val = copy.deepcopy( mlhypersim_template_dict )
+      train['mode'] = 'train'
+      val['mode'] = 'val'
+      train['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
+      val['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
+      
+      if self.replay_adaptive_add_p:
+        if i == 0:
+          train['cfg_replay']['replay_p'] = 0.0
+        else:
+          train['cfg_replay']['replay_p'] = float(i)/float(i+1)
+      
+      task_idx = str(i).zfill(2)
+      t = Task(name = f'Task_{task_idx}_mlhyper_random4_test_all',
+                dataset_train_cfg= train,
+                dataset_val_cfg= val)
+      self._task_list.append(t)
+      # Get eval tasks
+      eval_tasks = []
+      for j in range(seed,seed+4):
+        test = copy.deepcopy( mlhypersim_template_dict )
+        test['mode'] = 'val'
+        test['scenes'] = mlhypersim_scene_names[j*spt:(j+1)*spt]
+        eval_idx = str(j).zfill(2)
+        sc = f'{j*spt}-{(j+1)*spt}'
+        eval_task = EvalTask(
+          name = f'Eval_{eval_idx}_Scene_{sc}',
+          dataset_test_cfg=test)
+        eval_tasks.append( eval_task )
+      self._eval_lists.append( eval_tasks )
+      
   
   def _mlhypersim_all(self):
     spt = int( len(mlhypersim_scene_names)/30 ) # scenes_per_task spt

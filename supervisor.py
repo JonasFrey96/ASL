@@ -56,7 +56,7 @@ from log import _create_or_get_experiment2
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/11/kmeans.yml',
+  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/coco/coco.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
