@@ -626,6 +626,9 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     else:
       print('Train', dataloader_train)
       print('Val', dataloader_list_test)
+      
+      if len(dataloader_list_test) == 1:
+        dataloader_list_test = [dataloader_list_test[0],dataloader_list_test[0]]
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)

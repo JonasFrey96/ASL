@@ -1,5 +1,5 @@
-name: /media/scratch1/jonfrey/models/master_thesis/metrices_exp/kmeans
-offline_mode: false
+name: /media/scratch1/jonfrey/models/master_thesis/metrices_exp/kmeans_pixelwise_machted
+offline_mode: true
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -14,7 +14,7 @@ start_at_task: 1
 max_tasks: 4
 task_specific_early_stopping:
   patience: 20
-  timelimit_in_min: 5
+  timelimit_in_min: 50
   verbose: true
 teaching:
   active: false
@@ -58,8 +58,8 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 10
-  limit_val_batches: 10
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
   limit_test_batches: 1.0
   progress_bar_refresh_rate: 1
   max_epochs: 1000
@@ -131,4 +131,4 @@ move_datasets:
 - env_var: mlhypersim
 weights_restore_2: false
 checkpoint_restore_2: true
-checkpoint_load_2: /media/scratch1/jonfrey/models/master_thesis/metrices_exp/kmeans/last.ckpt
+checkpoint_load_2: /media/scratch1/jonfrey/models/master_thesis/metrices_exp/kmeans_pixelwise_machted/last.ckpt
