@@ -323,8 +323,9 @@ class Network(LightningModule):
       self.log('val_acc_epoch',val_acc_epoch)
       self.log('val_mIoU_epoch',val_mIoU_epoch,)
       self.log('val_loss',val_loss)
+  
     
-  def validation_step(self, batch, batch_idx, dataloader_idx):
+  def validation_step(self, batch, batch_idx, dataloader_idx=0):
     if self._dataloader_index_store != dataloader_idx:
       self._dataloader_index_store = dataloader_idx
       self.logged_images_val = 0
@@ -389,29 +390,33 @@ class Network(LightningModule):
     v_acc = me.get('val_acc', 'NotDef')
     v_mIoU = me.get('val_mIoU', 'NotDef')  
     
-    if len( self._val_results ) == 0:
-      for i in range(self._exp['max_tasks']):
-        self._val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
-    else:
-      val_results = {}
-      for i in range(self._exp['max_tasks']):
-        val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
-        res = (self._val_results[f'val_acc/dataloader_idx_{i}'] -
-          val_results[f'val_acc/dataloader_idx_{i}'])
-        self.log(f'forgetting/acc_idx_{i}', res, on_epoch=True, prog_bar=False)
-      
-      if self._task_count > 0:
-        res = 0
-        for i in range(self._task_count):
-          res += (self._val_results[f'val_acc/dataloader_idx_{i}'] -
+    try:
+      # only works when multiple val-dataloader are set!
+      if len( self._val_results ) == 0:
+        for i in range(self._exp['max_tasks']):
+          self._val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
+      else:
+        val_results = {}
+        for i in range(self._exp['max_tasks']):
+          val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
+          res = (self._val_results[f'val_acc/dataloader_idx_{i}'] -
             val_results[f'val_acc/dataloader_idx_{i}'])
+          self.log(f'forgetting/acc_idx_{i}', res, on_epoch=True, prog_bar=False)
         
-        res /= self._task_count
-        self.log(f'forgetting/acc_avg_pervious', res, on_epoch=True, prog_bar=False)
-      
-      res = ( val_results[f'val_acc/dataloader_idx_{self._task_count}']-
-        self._val_results[f'val_acc/dataloader_idx_{self._task_count}'] )
-      self.log(f'learning/acc_current', res, on_epoch=True, prog_bar=False)
+        if self._task_count > 0:
+          res = 0
+          for i in range(self._task_count):
+            res += (self._val_results[f'val_acc/dataloader_idx_{i}'] -
+              val_results[f'val_acc/dataloader_idx_{i}'])
+          
+          res /= self._task_count
+          self.log(f'forgetting/acc_avg_pervious', res, on_epoch=True, prog_bar=False)
+        
+        res = ( val_results[f'val_acc/dataloader_idx_{self._task_count}']-
+          self._val_results[f'val_acc/dataloader_idx_{self._task_count}'] )
+        self.log(f'learning/acc_current', res, on_epoch=True, prog_bar=False)
+    except:
+      pass
       
     epoch = str(self.current_epoch)
     
@@ -548,7 +553,7 @@ class Network(LightningModule):
         if flag:
           start_can = 4
         else:
-          start_can = 2
+          start_can = 2 
         selected = get_kMeans_indices( self._t_latent_feature_all, self._rssb.bins.shape[1], flag, start_can )
         
         if flag: 

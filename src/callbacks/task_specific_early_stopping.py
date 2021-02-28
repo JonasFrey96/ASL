@@ -34,7 +34,7 @@ class TaskSpecificEarlyStopping(Callback):
     self._run_early_stopping_check(trainer, pl_module)
 
   def on_validation_epoch_end(self, trainer, pl_module):
-    trainer.callback_metrics['task_count/dataloader_idx_0']
+    # trainer.callback_metrics['task_count/dataloader_idx_0']
     if trainer.running_sanity_check:
       return
 
@@ -55,9 +55,11 @@ class TaskSpecificEarlyStopping(Callback):
         # time limit reached
         should_stop = True
         rank_zero_info('STOPPED due to timelimit reached!')
-
-      metric = trainer.callback_metrics[f'val_acc/dataloader_idx_{nr}']
-      
+      try:
+        metric = trainer.callback_metrics[f'val_acc/dataloader_idx_{nr}']
+      except:
+        metric = trainer.callback_metrics[f'val_acc']
+        
       if metric > self.best_metric_buffer[nr] + self.minimal_increase:
         self.best_metric_buffer[nr] = metric
         self.k_not_in_best_buffer[nr] = 0

@@ -119,7 +119,8 @@ class LabData(StaticReplayDataset):
         
     def _load(self, root, mode, train_val_split=0.2):
         sp = Path(os.path.join(root, '2'))
-        self.image_pths =  [str(p) for p in sp.rglob('*.png')]
+        self.image_pths =  [str(p) for p in sp.rglob('*.png') if str(p).find('undistorted') != -1]
+        self.image_pths.sort()
         self.global_to_local_idx = list( range( len(self.image_pths) ) )
         self.length = len(self.global_to_local_idx)
 

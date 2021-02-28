@@ -188,7 +188,10 @@ def plot_from_pkl(main_visu, base_path, task_nr):
       with open(f"{base_path}/res{i}.pkl",'rb') as f:
         res = pickle.load(f)
       for j in range(nr_val_tasks):
-        v = res[f'{m}/dataloader_idx_{j}']
+        try:
+          v = res[f'{m}/dataloader_idx_{j}']
+        except:
+          v = res[f'{m}']
         data_matrix[i,j] = v*100
     data_matrix = np.round( data_matrix, decimals=1) 
     if m.find('loss') != -1:
@@ -380,6 +383,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     if exp['move_datasets'][0]['env_var'] != 'none':
       for dataset in exp['move_datasets']:
         scratchdir = os.getenv('TMPDIR')
+        
+        print( 'TMPDIR directory: ', scratchdir )
         env_var = dataset['env_var']
         tar = os.path.join( env[env_var],f'{env_var}.tar')
         name = (tar.split('/')[-1]).split('.')[0]
@@ -392,7 +397,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
             print( f'Start moveing dataset-{env_var}: {cmd}')
             os.system(cmd)
             env[env_var] = str(os.path.join(scratchdir, name))
-            print( f'Finished moveing dataset-{env_var} in {time.time()-st}s')
+            new_env_var = env[env_var]
+            print( f'Finished moveing dataset-{new_env_var} in {time.time()-st}s')
             
           except:
               rank_zero_warn( 'ENV Var'+ env_var )
@@ -627,8 +633,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       print('Train', dataloader_train)
       print('Val', dataloader_list_test)
       
-      if len(dataloader_list_test) == 1:
-        dataloader_list_test = [dataloader_list_test[0],dataloader_list_test[0]]
       train_res = trainer.fit(model = model,
                               train_dataloader= dataloader_train,
                               val_dataloaders= dataloader_list_test)
