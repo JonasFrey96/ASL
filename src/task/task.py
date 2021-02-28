@@ -61,6 +61,17 @@ mlhypersim_template_dict = {
 }
 mlhypersim_scene_names = MLHypersim.get_classes()
 
+scannet_template_dict = { 
+    'name': 'scannet',
+    'mode': 'train', 
+    'output_size': 384,
+    'scenes': [],
+    'replay': True,
+    'cfg_replay':{'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
+    'data_augmentation': True,
+    'data_augmentation_for_replay': True
+}
+
 nyu_scene_names, nyu_class_counts = NYUv2.get_classes('train')
 
 class TaskCreator():
@@ -113,9 +124,30 @@ class TaskCreator():
       self._mlhypersim_random4_tests()
     elif mode == 'mlhypersim_random4_seeded':
       self._mlhypersim_random4_seeded(seed=kwargs['seed'])
+    elif mode == 'scannet':
+      self._scannet()
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
+  
+  def _scannet(self):
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    train['mode'] = 'train'
+    val['mode'] = 'val'      
+    train['scenes'] = []
+    val['scenes'] = []
+    t = Task(name = f'Scannet_Task_Train_All',
+              dataset_train_cfg= train,
+              dataset_val_cfg= val)
+    self._task_list.append(t)
+    eval_tasks = []
+    eval_task = EvalTask(
+      name = f'Scannet_Eval_All',
+      dataset_test_cfg=val)
+    eval_tasks.append( eval_task )
+    self._eval_lists.append( eval_tasks )
+    
   
   def _mlhypersim_random10(self):
     spt = int( len(mlhypersim_scene_names)/10 ) # scenes_per_task spt
@@ -229,10 +261,10 @@ class TaskCreator():
       val['scenes'] = mlhypersim_scene_names[i*spt:(i+1)*spt]
       
       if self.replay_adaptive_add_p:
-        if i == 0:
+        if i == seed:
           train['cfg_replay']['replay_p'] = 0.0
         else:
-          train['cfg_replay']['replay_p'] = float(i)/float(i+1)
+          train['cfg_replay']['replay_p'] = float(i-seed)/float(i+1-seed)
       
       task_idx = str(i).zfill(2)
       t = Task(name = f'Task_{task_idx}_mlhyper_random4_test_all',

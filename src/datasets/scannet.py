@@ -20,18 +20,19 @@ except Exception:  # ImportError
     from replay_base import StaticReplayDataset
 import imageio
 import pandas
-import numpy_indexed as npi
+
+import pickle
 __all__ = ['ScanNet']
 def loop_translate(a,d):
-  n = np.ndarray(a.shape)
+  n = np.zeros(a.shape, dtype=np.int64)
   for k in d:
       n[a == k] = d[k]
   return n
 
-class ScanNet(data.Dataset):
+class ScanNet(StaticReplayDataset):
     def __init__(
             self,
-            root='/media/dataserver/jonfrey/datasets/scannet_test/',
+            root='/media/scratch2/jonfrey/datasets/scannet/',
             mode='train',
             scenes=[],
             output_trafo=None,
@@ -52,11 +53,14 @@ class ScanNet(data.Dataset):
         root : str, path to the ML-Hypersim folder
         mode : str, option ['train','val]
         """
-        # super.__init__( )
         super(
             ScanNet,
-            self).__init__()
-
+            self).__init__(
+            ** cfg_replay, replay=replay)
+            
+        if mode == 'val':
+            mode = 'test'
+            
         self._output_size = output_size
         self._mode = mode
 
@@ -90,22 +94,18 @@ class ScanNet(data.Dataset):
         idx = -1
         replayed = torch.zeros( [1] )
         
-        
         global_idx = self.global_to_local_idx[index]
         
         # Read Image and Label
-        label = imageio.imread(self.label_pths[global_idx])
-        
+        label = imageio.imread(self.label_pths[global_idx])        
         #170 ms
         label = loop_translate(label,self.d) # 0 = invalid 40 max number 
         label = torch.from_numpy(label.astype(np.uint8)).type(
             torch.float32)[None, :, :]  # C H W
-        
         img = imageio.imread(self.image_pths[global_idx])
         img = torch.from_numpy(img).type(
             torch.float32).permute(
             2, 0, 1)/255  # C H W range 0-1
-
 
         if (self._mode == 'train' and 
             ( ( self._data_augmentation and idx == -1) or 
@@ -128,9 +128,7 @@ class ScanNet(data.Dataset):
         if self._output_trafo is not None:
             img = self._output_trafo(img)
 
-        label = label - 1  # I need to check this for ML HYPERSIM !!!!!
-        
-        print(label.max(), label.min())
+        label = label - 1  # 0 == chairs 39 other prop  -1 invalid
         return img, label.type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
 
     def __len__(self):
@@ -151,57 +149,97 @@ class ScanNet(data.Dataset):
     def _load(self, root, mode, train_val_split=0.2):
         tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
         df = pandas.read_csv(tsv, sep='\t')
-        
-        print( df.keys() )
-        print( df["nyuClass"] )
+        self.df =df
         mapping_source = np.array( df['id'] ).tolist()
         mapping_target = np.array( df['nyu40id'] ).tolist()
         self.d = {mapping_source[i]:mapping_target[i] for i in range(len(mapping_target))}
         
+        self.train_test, self.scenes, self.image_pths, self.label_pths = self._load_cfg(root, train_val_split)
+        self.image_pths = [ os.path.join(root,i) for i in self.image_pths]
+        self.label_pths = [ os.path.join(root,i) for i in self.label_pths]
         
+        self.valid_mode = np.array(self.train_test) == mode
+        
+        sub = 10
+        sub_mask = np.zeros( self.valid_mode.shape )
+        sub_mask[::sub] = 1
+        self.valid_mode = self.valid_mode * (sub_mask == 1)
+        
+        self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )
+        self.global_to_local_idx = (self.global_to_local_idx[self.valid_mode]).tolist()
+        self.length = len(self.global_to_local_idx)
+
+    @staticmethod
+    def get_classes():
+        _, scenes, _, _ = self._load_cfg()
+        
+        
+        return np.unique(scenes).tolist()
+    
+    def _load_cfg( self, root='not_def', train_val_split=0.2 ):
+        # if pkl file already created no root is needed. used in get_classes
+        try:
+            data = pickle.load( open( f"cfg/dataset/scannet/scannet_trainval_{train_val_split}.pkl", "rb" ) )
+            return data['train_test'], data['scenes'], data['image_pths'], data['label_pths']
+        except:
+            pass
+        return self._create_cfg( root, train_val_split)
+    
+    def _create_cfg( self, root, train_val_split=0.2 ):
+        """Creates a pickle file containing all releveant information. 
+        For each train_val split a new pkl file is created
+        """
         r = os.path.join( root,'scans')
         ls = [os.path.join(r,s[:9]) for s in os.listdir(r)]
         all_s = [os.path.join(r,s) for s in os.listdir(r)]
 
         scenes = np.unique( np.array(ls) ).tolist()
-        sub_scene = {s: [ a[-3:] for a in all_s if a.find(s) != -1]  for s in scenes}
+        scenes = [s for s in scenes if int(s[-4:]) <= 100] # limit to 100 scenes
+        
+        sub_scene = {s: [ a for a in all_s if a.find(s) != -1]  for s in scenes }
         for s in sub_scene.keys():
           sub_scene[s].sort()
         key = scenes[0] + sub_scene[scenes[0]][1] 
 
-        self.image_pths = []
-        self.label_pths = []
-        self.train_test = []
-        self.scenes = []
+        image_pths = []
+        label_pths = []
+        train_test = []
+        scenes_out = []
         for s in scenes:
           for sub in sub_scene[s]:
-            print(s)
-            colors = [str(p) for p in Path(s+sub).rglob('*color/*.jpg')]
-            labels = [str(p) for p in Path(s+sub).rglob('*label-filt/*.png')]
+            # print(s)
+            colors = [str(p) for p in Path(sub).rglob('*color/*.jpg')]
+            labels = [str(p) for p in Path(sub).rglob('*label-filt/*.png')]
+            fun = lambda x : int( x.split('/')[-1][:-4]) 
+            colors.sort(key=fun)
+            labels.sort(key=fun)
+            
+            for i,j  in zip(colors, labels):
+              assert int( i.split('/')[-1][:-4]) == int( j.split('/')[-1][:-4]) 
+            
             if len(colors) > 0:
+              assert len(colors) == len(labels)
+            
               nr_train = int(  len(colors)* (1-train_val_split)  )
               nr_test = int( len(colors)-nr_train)
-              print(nr_train, nr_test)
-              self.train_test += ['train'] * nr_train
-              self.train_test += ['test'] * nr_test
-              self.scenes += [s.split('/')[-1]]*len(colors)
-              self.image_pths += colors
-              self.label_pths += labels
+              train_test += ['train'] * nr_train
+              train_test += ['test'] * nr_test
+              scenes_out += [s.split('/')[-1]]*len(colors)
+              image_pths += colors
+              label_pths += labels
+            else:
+                print( sub ,"Color not found" )
+        image_pths = [ i.replace(root,'') for i in image_pths]
+        label_pths = [ i.replace(root,'') for i in label_pths]
+        data = {
+           'train_test': train_test,
+           'scenes': scenes_out,
+           'image_pths': image_pths,
+           'label_pths': label_pths,
+        }
+        pickle.dump( data, open( f"cfg/dataset/scannet/scannet_trainval_{train_val_split}.pkl", "wb" ) )
+        return train_test, scenes_out, image_pths, label_pths
         
-        self.valid_mode = np.array(self.train_test) == mode
-        
-        self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )
-        self.global_to_local_idx = (self.global_to_local_idx[self.valid_mode]).tolist()
-        self.length = len(self.global_to_local_idx)
-        
-        print("Done")
-
-    # @staticmethod
-    # def get_classes():
-    #     scenes = np.load('cfg/dataset/mlhypersim/scenes.npy').tolist()
-    #     sceneTypes = sorted(set(scenes))
-    #     return sceneTypes
-
     def _filter_scene(self, scenes):
         self.valid_scene = copy.deepcopy( self.valid_mode )
         if len(scenes) != 0:
@@ -242,14 +280,13 @@ def test():
                                              shuffle=False,
                                              num_workers=1,
                                              pin_memory=False,
-                                             batch_size=2)
+                                             batch_size=1)
     
     import time
     st = time.time()
     print("Start")
     for j, data in enumerate(dataloader):
         t = data
-        print(j)
 
     print('Total time', time.time()-st)
         #print(j)

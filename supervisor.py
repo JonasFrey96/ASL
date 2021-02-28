@@ -56,7 +56,7 @@ from log import _create_or_get_experiment2
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/coco/coco.yml',
+  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/scannet/scannet.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
                       help='The environment yaml file.')
@@ -87,12 +87,13 @@ if __name__ == "__main__":
   else:
     t1 = 'leonhard'
 
+  gpus = 'gpus_'+str(torch.cuda.device_count())
   logger = NeptuneLogger(
     api_key=os.environ["NEPTUNE_API_TOKEN"],
     project_name="jonasfrey96/asl",
     experiment_name= exp['name'].split('/')[-2] +"_"+ exp['name'].split('/')[-1], # Optional,
     params=params, # Optional,
-    tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1]] + exp["tag_list"], # Optional,
+    tags=[t1, exp['name'].split('/')[-2], exp['name'].split('/')[-1], gpus] + exp["tag_list"], # Optional,
     close_after_fit = False,
     offline_mode = exp.get('offline_mode', False),
     upload_source_files=files,
