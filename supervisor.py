@@ -42,7 +42,8 @@ if __name__ == "__main__":
   exp = load_yaml(args.exp)
   env = load_yaml(args.env)
   if args.mode != 'sell':
-    from src import train_task
+    sys.path.append(os.path.join(os.getcwd() + '/train_task.py'))
+    from train_task import train_task
     from utils import get_neptune_logger
     logger = get_neptune_logger(exp,env, args.exp, args.env)
     
@@ -55,7 +56,7 @@ if __name__ == "__main__":
         mc = '/home/jonfrey/miniconda3/envs/track4'
       else:
         mc = '/cluster/home/jonfrey/miniconda3/envs/track4'
-      cmd = f'cd $HOME/ASL && {mc}/bin/python src/train_task.py' 
+      cmd = f'cd $HOME/ASL && {mc}/bin/python train_task.py' 
       cmd += f' --exp={args.exp} --env={args.env} --init={init} --task_nr={i} --close={close}'
       print("Execute script: " , cmd)
       os.system(cmd)
