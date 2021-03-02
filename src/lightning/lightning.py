@@ -199,7 +199,8 @@ class Network(LightningModule):
       self._val_results = {} # reset the buffer for the next task
     
   def on_train_end(self):
-    bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
+    pass
+    # bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
     
   def on_epoch_start(self):
     self.visualizer.epoch = self.current_epoch

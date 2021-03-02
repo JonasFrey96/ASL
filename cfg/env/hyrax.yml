@@ -1,0 +1,8 @@
+workstation: True
+base: /home/jonfrey/results
+cityscapes: /media/scratch1/jonfrey/datasets/cityscapes
+nyuv2: /media/scratch1/jonfrey/datasets/nyuv2
+coco: /media/scratch2/jonfrey/datasets/coco
+tramac_weights: /media/scratch1/jonfrey/models/master_thesis/fast_scnn/fast_scnn_citys.pth
+mlhypersim: /media/scratch2/jonfrey/datasets/mlhypersim
+scannet: /home/jonfrey/datasets/scannet
