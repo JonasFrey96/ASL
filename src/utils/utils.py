@@ -2,7 +2,7 @@ import torch
 from pytorch_lightning.metrics.functional.classification import iou as pl_iou
 from pytorch_lightning.metrics.functional.classification import stat_scores_multiple_classes
 
-__all__ = ['iou']
+__all__ = ['iIoU_class', 'IoU_SCNN', 'IoU_class']
 def iIoU_class(pred, target, num_classes, verbose=False):
 	"""[summary]
 	It is well-known that the global IoU measure is biased toward object instances that cover a large image area. 

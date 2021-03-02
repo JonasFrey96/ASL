@@ -48,6 +48,8 @@ class ScanNet(StaticReplayDataset):
             cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
             data_augmentation= True, data_augmentation_for_replay=True):
         """
+        Some images are stored in 640x480 other ins 1296x968
+
         Parameters
         ----------
         root : str, path to the ML-Hypersim folder
@@ -115,6 +117,14 @@ class ScanNet(StaticReplayDataset):
         else:
             img, label = self._augmenter.apply(img, label, only_crop=True)
 
+                
+        img_ori = img.clone()
+        if self._output_trafo is not None:
+            img = self._output_trafo(img)
+
+        label = label - 1  # 0 == chairs 39 other prop  -1 invalid
+
+
         # check if reject
         if (label != -1).sum() < 10:
             # reject this example
@@ -123,12 +133,7 @@ class ScanNet(StaticReplayDataset):
                 return self[idx]
             else:
                 replayed[0] = -999
-                
-        img_ori = img.clone()
-        if self._output_trafo is not None:
-            img = self._output_trafo(img)
 
-        label = label - 1  # 0 == chairs 39 other prop  -1 invalid
         return img, label.type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
 
     def __len__(self):
@@ -136,7 +141,7 @@ class ScanNet(StaticReplayDataset):
 
     def __str__(self):
         string = "="*90
-        string += "\nML-HyperSim Dataset: \n"
+        string += "\nScannet Dataset: \n"
         l = len(self)
         string += f"    Total Samples: {l}"
         string += f"  »  Mode: {self._mode} \n"
@@ -262,7 +267,8 @@ def test():
 
     # create new dataset 
     dataset = ScanNet(
-        mode='train',
+        root='/scratch/14456366.tmpdir/scannet',
+        mode='val',
         scenes=[],
         output_trafo=output_transform,
         output_size=400,
@@ -274,20 +280,27 @@ def test():
             0.3,
             0.05],
         replay=True)
-    
     dataset[0]
     dataloader = torch.utils.data.DataLoader(dataset,
                                              shuffle=False,
-                                             num_workers=1,
+                                             num_workers=8,
                                              pin_memory=False,
-                                             batch_size=1)
-    
+                                             batch_size=4)
+    print(dataset)
     import time
     st = time.time()
     print("Start")
     for j, data in enumerate(dataloader):
-        t = data
-
+        img = data[0]
+        label = data[1]
+        assert type(label) == torch.Tensor
+        assert (label != -1).sum() > 10
+        assert (label < -1).sum() == 0
+        assert label.dtype == torch.int64
+        if j % 10 == 0 and j != 0:
+            break
+            print(j/len(dataloader))
+        
     print('Total time', time.time()-st)
         #print(j)
         # img, label, _img_ori= dataset[i]    # C, H, W
