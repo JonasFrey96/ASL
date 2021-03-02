@@ -10,6 +10,7 @@ dependencies:
   - aiohttp=3.7.3=py37h5e8e339_2
   - async-timeout=3.0.1=py_1000
   - attrs=20.3.0=pyhd3deb0d_0
+  - bcrypt=3.2.0=py37h5e8e339_1
   - blas=1.0=mkl
   - blinker=1.4=py_1
   - bravado=11.0.2=pyh9f0ad1d_0
@@ -75,6 +76,7 @@ dependencies:
   - libopenblas=0.3.12=pthreads_h4812303_1
   - libpng=1.6.37=h21135ba_2
   - libprotobuf=3.15.1=h780b84a_0
+  - libsodium=1.0.18=h36c2ea0_1
   - libssh2=1.9.0=hab1572f_5
   - libstdcxx-ng=9.3.0=h6de172a_18
   - libtiff=4.1.0=h2733197_1
@@ -101,11 +103,13 @@ dependencies:
   - openssl=1.1.1j=h7f98852_0
   - packaging=20.9=pyh44b312d_0
   - pandas=1.2.2=py37hdc94413_0
+  - paramiko=2.7.2=pyh9f0ad1d_0
   - pcre=8.44=he1b5a44_0
   - pillow=8.1.0=py37he98fc37_0
   - pip=21.0.1=pyhd8ed1ab_0
   - pluggy=0.13.1=py37h89c1867_4
   - protobuf=3.15.1=py37hcd2ae1e_0
+  - psutil=5.8.0=py37h5e8e339_1
   - pthread-stubs=0.4=h36c2ea0_1001
   - py=1.10.0=pyhd3deb0d_0
   - py3nvml=0.2.5=py37hc8dfbb8_2
@@ -113,6 +117,7 @@ dependencies:
   - pyasn1-modules=0.2.7=py_0
   - pycparser=2.20=pyh9f0ad1d_2
   - pyjwt=2.0.1=pyhd8ed1ab_0
+  - pynacl=1.4.0=py37h5e8e339_2
   - pyopenssl=20.0.1=pyhd8ed1ab_0
   - pyparsing=2.4.7=pyh9f0ad1d_0
   - pyqt=5.9.2=py37hcca6a23_4
