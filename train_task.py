@@ -35,7 +35,7 @@ from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.profiler import AdvancedProfiler
 
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
-from pytorch_lightning.loggers import TensorBoardLogger
+
 
 # Costume Modules
 from lightning import Network, fill_buffer
@@ -45,7 +45,7 @@ from callbacks import TaskSpecificEarlyStopping
 from log import _create_or_get_experiment2
 from utils import flatten_list, flatten_dict
 from utils import load_yaml, file_path
-from utils import get_neptune_logger
+from utils import get_neptune_logger, get_tensorboard_logger
 
 
 __all__ = ['train_task']
@@ -525,19 +525,11 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
 
 
 if __name__ == "__main__":
-  def signal_handler(signal, frame):
-    print('exiting on CRTL-C')
-    sys.exit(0)
-  print("CALLED TRAIN TASK AS MAIN")
-  # this is needed for leonhard to use interactive session and dont freeze on
-  # control-C !!!!
-  signal.signal(signal.SIGINT, signal_handler)
-  signal.signal(signal.SIGTERM, signal_handler)
 
   parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='/home/jonfrey/ASL/cfg/exp/3/metric_soft_max_distance.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/scannet/exp.yml',
                       help='The main experiment yaml file.')
-  parser.add_argument('--env', type=file_path, default='cfg/env/env.yml',
+  parser.add_argument('--env', type=file_path, default='cfg/env/hyrax.yml',
                       help='The environment yaml file.')
   parser.add_argument('--task_nr', type=int, default=0,
                       help='Task nr.')
@@ -546,7 +538,6 @@ if __name__ == "__main__":
   parser.add_argument('--close', type=int, default=1,
                       help='Task nr.')
   
-
   args = parser.parse_args()
   args.init = bool(args.init)
   args.close = bool(args.close)
@@ -568,7 +559,6 @@ if __name__ == "__main__":
     exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
   
   
-
   exp = load_yaml(exp_cfg_path)
   env = load_yaml(env_cfg_path)
 
@@ -685,12 +675,14 @@ if __name__ == "__main__":
   else:
     cb_ls = [lr_monitor]
   
-  tses = TaskSpecificEarlyStopping(
-    nr_tasks=exp['task_generator']['total_tasks'] , 
-    **exp['task_specific_early_stopping']
-  )
-  cb_ls.append(tses)
-  if local_rank == 0:
+  if exp['task_specific_early_stopping']['active']:
+    tses = TaskSpecificEarlyStopping(
+      nr_tasks=exp['task_generator']['total_tasks'] , 
+      **exp['task_specific_early_stopping']['cfg']
+    )
+    cb_ls.append(tses)
+
+  if exp['cb_checkpoint']['active']:
     for i in range(exp['task_generator']['total_tasks']):
       if i == task_nr:
         m = '/'.join( [a for a in model_path.split('/') if a.find('rank') == -1])
@@ -700,9 +692,7 @@ if __name__ == "__main__":
           filename= 'task'+str(i)+'-{epoch:02d}--{step:06d}',
           **dic
         )
-        
         cb_ls.append( checkpoint_callback )
-      
   
   if not exp.get('offline_mode', False):
     # if exp.get('experiment_id',-1) == -1:
@@ -716,11 +706,7 @@ if __name__ == "__main__":
       logger = logger_pass
     print('Neptune Experiment ID: '+ str( logger.experiment.id)+" TASK NR "+str( task_nr ) )
   else:
-    logger = TensorBoardLogger(
-      save_dir=model_path,
-      name= 'tensorboard', # Optional,
-      default_hp_metric=params, # Optional,
-    )
+    logger = get_tensorboard_logger(exp=exp,env=env, exp_p =exp_cfg_path, env_p = env_cfg_path)
   
   weight_restore = exp.get('weights_restore', False) 
   checkpoint_load = exp['checkpoint_load']
@@ -790,82 +776,80 @@ if __name__ == "__main__":
     if idx == task_nr:
       break 
   
-  if True:
-  #for idx, out in enumerate(tc):
-    task, eval_lists = out
-    main_visu.epoch = idx
-    # New Logger
-    print( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
+  task, eval_lists = out
+  main_visu.epoch = idx
+  # New Logger
+  print( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
 
-    model._task_name = task.name
-    model._task_count = idx
-    dataloader_train, dataloader_buffer= get_dataloader_train(d_train= task.dataset_train_cfg,
-                                                                env=env,exp = exp)
-    print(str(dataloader_train.dataset))
-    print(str(dataloader_buffer.dataset))
-    dataloader_list_test = eval_lists_into_dataloaders(eval_lists, env=env, exp=exp)
-    print( f'<<<<<<<<<<<< All Datasets are loaded and set up >>>>>>>>>>>>>' )
-    #Training the model
-    trainer.should_stop = False
-    # print("GLOBAL STEP ", model.global_step)
-    for d in dataloader_list_test:
-      print(str(d.dataset))
+  model._task_name = task.name
+  model._task_count = idx
+  dataloader_train, dataloader_buffer= get_dataloader_train(d_train= task.dataset_train_cfg,
+                                                              env=env,exp = exp)
+  print(str(dataloader_train.dataset))
+  print(str(dataloader_buffer.dataset))
+  dataloader_list_test = eval_lists_into_dataloaders(eval_lists, env=env, exp=exp)
+  print( f'<<<<<<<<<<<< All Datasets are loaded and set up >>>>>>>>>>>>>' )
+  #Training the model
+  trainer.should_stop = False
+  # print("GLOBAL STEP ", model.global_step)
+  for d in dataloader_list_test:
+    print(str(d.dataset))
+  
+  
+  if idx < exp['start_at_task']:
+    # trainer.limit_val_batches = 1.0
+    trainer.limit_train_batches = 1
+    trainer.max_epochs = 1
+    trainer.check_val_every_n_epoch = 1
+    train_res = trainer.fit(model = model,
+                            train_dataloader= dataloader_train,
+                            val_dataloaders= dataloader_list_test)
     
+    trainer.max_epochs = exp['trainer']['max_epochs']
+    trainer.check_val_every_n_epoch =  exp['trainer']['check_val_every_n_epoch']
+    trainer.limit_val_batches = exp['trainer']['limit_val_batches']
+    trainer.limit_train_batches = exp['trainer']['limit_train_batches']
+  else:
+    print('Train', dataloader_train)
+    print('Val', dataloader_list_test)
     
-    if idx < exp['start_at_task']:
-      # trainer.limit_val_batches = 1.0
-      trainer.limit_train_batches = 1
-      trainer.max_epochs = 1
-      trainer.check_val_every_n_epoch = 1
-      train_res = trainer.fit(model = model,
-                              train_dataloader= dataloader_train,
-                              val_dataloaders= dataloader_list_test)
-      
-      trainer.max_epochs = exp['trainer']['max_epochs']
-      trainer.check_val_every_n_epoch =  exp['trainer']['check_val_every_n_epoch']
-      trainer.limit_val_batches = exp['trainer']['limit_val_batches']
-      trainer.limit_train_batches = exp['trainer']['limit_train_batches']
-    else:
-      print('Train', dataloader_train)
-      print('Val', dataloader_list_test)
-      
-      train_res = trainer.fit(model = model,
-                              train_dataloader= dataloader_train,
-                              val_dataloaders= dataloader_list_test)
-    res = trainer.logger_connector.callback_metrics
-    res_store = {}
-    for k in res.keys():
-      try:
-        res_store[k] = float( res[k] )
-      except:
-        pass
-    base_path = '/'.join( [a for a in model_path.split('/') if a.find('rank') == -1])
-    with open(f"{base_path}/res{task_nr}.pkl", "wb") as f:
-      pickle.dump(res_store, f)
-    
-    print( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' Trained >>>>>>>>>>>>>' )
+    train_res = trainer.fit(model = model,
+                            train_dataloader= dataloader_train,
+                            val_dataloaders= dataloader_list_test)
+  res = trainer.logger_connector.callback_metrics
+  res_store = {}
+  for k in res.keys():
+    try:
+      res_store[k] = float( res[k] )
+    except:
+      pass
+  base_path = '/'.join( [a for a in model_path.split('/') if a.find('rank') == -1])
+  with open(f"{base_path}/res{task_nr}.pkl", "wb") as f:
+    pickle.dump(res_store, f)
+  
+  print( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' Trained >>>>>>>>>>>>>' )
 
-    if exp.get('buffer',{}).get('fill_after_fit', False):
-      print( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
-      
-      trainer.test(model=model,
-                  test_dataloaders= dataloader_buffer)
+  if exp.get('buffer',{}).get('fill_after_fit', False):
+    print( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
     
-      if local_rank == 0:
-        checkpoint_callback.save_checkpoint(trainer, model)
-      print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
-    
-    number_validation_dataloaders = len( dataloader_list_test ) 
-    
-    if model._rssb_active:
-      # visualize rssb
-      bins, valids = model._rssb.get()
-      fill_status = (bins != 0).sum(axis=1)
-      main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
-    
-    plot_from_pkl(main_visu, base_path, task_nr)
-    
-    validation_acc_plot(main_visu, logger)
+    trainer.test(model=model,
+                test_dataloaders= dataloader_buffer)
+  
+    if local_rank == 0:
+      checkpoint_callback.save_checkpoint(trainer, model)
+    print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
+  
+  number_validation_dataloaders = len( dataloader_list_test ) 
+  
+  if model._rssb_active:
+    # visualize rssb
+    bins, valids = model._rssb.get()
+    fill_status = (bins != 0).sum(axis=1)
+    main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
+  
+  plot_from_pkl(main_visu, base_path, task_nr)
+  
+  validation_acc_plot(main_visu, logger)
   
   try:
     if close:
