@@ -22,6 +22,8 @@ python tools/leonhard/push_and_run_folder.py --exp=ml-hypersim --time=4 --gpus=4
 
 # ScanNet
 python tools/leonhard/push_and_run_folder.py --exp=scannet --time=4 --gpus=4 --mem=10240 --workers=16 --ram=60 --scratch=80
+
+python tools/leonhard/push_and_run_folder.py --exp=scannet --time=4 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=80
 """
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp', default='exp',  required=True,
