@@ -305,14 +305,23 @@ class Network(LightningModule):
       pred = torch.argmax(outputs['pred'], 1).clone().detach()
       target = outputs['target'].clone().detach()
       
-      pred[0][ target[0] == -1 ] = -1
-      pred[0] = pred[0]+1
-      target[0] = target[0] +1
+      pred[ target == -1 ] = -1
+      pred += 1
+      target += 1
       self.logged_images_train += 1
-      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=target[0], method='left')  
-      self.visualizer.plot_segmentation(tag=f'', seg=pred[0], method='right')
-      self.visualizer.plot_image(tag=f'train_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
+      BS = pred.shape[0]
+      rows = int( BS**0.5 )
+      grid_pred = make_grid(pred[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
+              scale_each = False, pad_value = 0)
+      grid_target = make_grid(target[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
+              scale_each = False, pad_value = 0)
+      grid_image = make_grid(outputs['ori_img'],nrow = rows,padding = 2,
+              scale_each = False, pad_value = 0)
+      print(grid_pred.shape, grid_target.shape, grid_image.shape)
+      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=grid_target[0], method='left')  
+      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
+      self.visualizer.plot_image(tag=f'train_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=grid_image, method='left')
     
     return {'loss': outputs['loss']}
         
@@ -351,13 +360,22 @@ class Network(LightningModule):
       self.logged_images_val += 1
       pred_c = pred.clone().detach()
       target_c = target.clone().detach()
-      pred_c[0][ target_c[0] == -1 ] = -1
-      pred_c[0] = pred_c[0]+1
-      target_c[0] = target_c[0] +1
-      self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right__Name_{self._task_name}__Val_Task_{dataloader_idx}__Sample_{self.logged_images_val}', seg=target_c[0], method='left')
-      self.visualizer.plot_segmentation(tag=f'', seg=pred_c[0], method='right')
-      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right__Name_{self._task_name}_Val_Task_{dataloader_idx}__Sample_{self.logged_images_train}', img=outputs['ori_img'][0], method='left')
+      
+      pred_c[ target_c == -1 ] = -1
+      pred_c += 1
+      target_c += 1
+      BS = pred_c.shape[0]
+      rows = int( BS**0.5 )
+      grid_pred = make_grid(pred_c[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
+              scale_each = False, pad_value = 0)
+      grid_target = make_grid(target_c[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
+              scale_each = False, pad_value = 0)
+      grid_image = make_grid(outputs['ori_img'],nrow = rows,padding = 2,
+              scale_each = False, pad_value = 0)
+      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
+      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right__Name_{self._task_name}__Val_Task_{dataloader_idx}__Sample_{self.logged_images_val}', seg=grid_target[0], method='left')
+      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
+      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right__Name_{self._task_name}_Val_Task_{dataloader_idx}__Sample_{self.logged_images_train}', img=grid_image, method='left')
       
       
     self.val_mIoU[dataloader_idx] (pred,target)

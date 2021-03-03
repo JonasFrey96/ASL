@@ -23,11 +23,6 @@ import pandas
 
 import pickle
 __all__ = ['ScanNet']
-def loop_translate(a,d):
-  n = np.zeros(a.shape, dtype=np.int64)
-  for k in d:
-      n[a == k] = d[k]
-  return n
 
 class ScanNet(StaticReplayDataset):
     def __init__(
@@ -93,6 +88,7 @@ class ScanNet(StaticReplayDataset):
         replayed [torch.tensor]: 1 torch.float32 
         global_idx [int]: global_index in dataset
         """
+
         idx = -1
         replayed = torch.zeros( [1] )
         
@@ -101,14 +97,13 @@ class ScanNet(StaticReplayDataset):
         # Read Image and Label
         label = imageio.imread(self.label_pths[global_idx])        
         #170 ms
-        label = loop_translate(label,self.d) # 0 = invalid 40 max number 
-        label = torch.from_numpy(label.astype(np.uint8)).type(
+        label = torch.from_numpy(label.astype(np.int32)).type(
             torch.float32)[None, :, :]  # C H W
+        
         img = imageio.imread(self.image_pths[global_idx])
         img = torch.from_numpy(img).type(
             torch.float32).permute(
             2, 0, 1)/255  # C H W range 0-1
-
         if (self._mode == 'train' and 
             ( ( self._data_augmentation and idx == -1) or 
               ( self._data_augmentation_for_replay and idx != -1) ) ):
@@ -121,10 +116,12 @@ class ScanNet(StaticReplayDataset):
         img_ori = img.clone()
         if self._output_trafo is not None:
             img = self._output_trafo(img)
-
+        sa = label.shape
+        label = label.flatten()
+        label = self.mapping[label.type(torch.int64)] # scannet to nyu40
+        label = label.reshape(sa)
         label = label - 1  # 0 == chairs 39 other prop  -1 invalid
-
-
+        
         # check if reject
         if (label != -1).sum() < 10:
             # reject this example
@@ -133,7 +130,6 @@ class ScanNet(StaticReplayDataset):
                 return self[idx]
             else:
                 replayed[0] = -999
-
         return img, label.type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
 
     def __len__(self):
@@ -155,9 +151,13 @@ class ScanNet(StaticReplayDataset):
         tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
         df = pandas.read_csv(tsv, sep='\t')
         self.df =df
-        mapping_source = np.array( df['id'] ).tolist()
-        mapping_target = np.array( df['nyu40id'] ).tolist()
-        self.d = {mapping_source[i]:mapping_target[i] for i in range(len(mapping_target))}
+        mapping_source = np.array( df['id'] )
+        mapping_target = np.array( df['nyu40id'] )
+        
+        self.mapping = torch.zeros( ( int(mapping_source.max()+1) ),dtype=torch.int64)
+        for so,ta in zip(mapping_source, mapping_target):
+            self.mapping[so] = ta 
+        
         
         self.train_test, self.scenes, self.image_pths, self.label_pths = self._load_cfg(root, train_val_split)
         self.image_pths = [ os.path.join(root,i) for i in self.image_pths]
@@ -267,7 +267,6 @@ def test():
 
     # create new dataset 
     dataset = ScanNet(
-        root='/scratch/14456366.tmpdir/scannet',
         mode='val',
         scenes=[],
         output_trafo=output_transform,
@@ -283,7 +282,7 @@ def test():
     dataset[0]
     dataloader = torch.utils.data.DataLoader(dataset,
                                              shuffle=False,
-                                             num_workers=8,
+                                             num_workers=2,
                                              pin_memory=False,
                                              batch_size=4)
     print(dataset)
@@ -298,8 +297,10 @@ def test():
         assert (label < -1).sum() == 0
         assert label.dtype == torch.int64
         if j % 10 == 0 and j != 0:
+            
+            print(j, '/', len(dataloader))
+        if j == 100:
             break
-            print(j/len(dataloader))
         
     print('Total time', time.time()-st)
         #print(j)
