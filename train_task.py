@@ -501,8 +501,6 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()    
   parser.add_argument('--exp', type=file_path, default='cfg/exp/scannet/exp.yml',
                       help='The main experiment yaml file.')
-  parser.add_argument('--env', type=file_path, default='cfg/env/hyrax.yml',
-                      help='The environment yaml file.')
   parser.add_argument('--task_nr', type=int, default=0,
                       help='Task nr.')
   parser.add_argument('--init', type=int, default=1,
@@ -512,6 +510,8 @@ if __name__ == "__main__":
   args = parser.parse_args()
 
   print('Train Task called as MAIN with the following arguments: '+ str(args))  
-  train_task( bool(args.init),  bool(args.close), args.exp, args.env, args.task_nr)
+  env_cfg_path = os.path.join('cfg/env', os.environ['ENV_WORKSTATION_NAME']+ '.yml')
+  
+  train_task( bool(args.init),  bool(args.close), args.exp, env_cfg_path, args.task_nr)
 
   
