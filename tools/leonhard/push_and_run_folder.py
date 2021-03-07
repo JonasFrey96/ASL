@@ -24,6 +24,8 @@ python tools/leonhard/push_and_run_folder.py --exp=ml-hypersim --time=4 --gpus=4
 python tools/leonhard/push_and_run_folder.py --exp=scannet --time=4 --gpus=4 --mem=10240 --workers=16 --ram=60 --scratch=80
 
 python tools/leonhard/push_and_run_folder.py --exp=scannet --time=4 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=80
+
+--exp=scannet --time=24 --gpus=1 --mem=10240 --workers=16 --ram=60 --scratch=80
 """
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp', default='exp',  required=True,
@@ -142,7 +144,7 @@ else:
       elif args.script == 'supervisor':
         subscr = 'submit_supervisor'
           
-      cmd += f"""./tools/leonhard/{subscr}.sh --env={env} --exp={e}"""  
+      cmd += f"""./tools/leonhard/{subscr}.sh --exp={e}"""  
       
       cmd = cmd.replace('\n', '')
       logging.info(f'   {j}-Command: {cmd}')

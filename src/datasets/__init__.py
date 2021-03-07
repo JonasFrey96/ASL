@@ -1,4 +1,4 @@
-from .helper import Augmentation
+from .helper import Augmentation, get_output_size
 from .replay_base import *
 from .cityscapes import *
 from .nyu_v2 import *
