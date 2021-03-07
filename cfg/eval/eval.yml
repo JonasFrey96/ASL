@@ -9,7 +9,7 @@ loader:
 
 dataset: 
   name: scannet
-  mode: train
+  mode: val
   output_size:
   - 960
   - 1280

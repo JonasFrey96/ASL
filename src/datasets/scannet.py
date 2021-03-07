@@ -164,10 +164,12 @@ class ScanNet(StaticReplayDataset):
         
         self.valid_mode = np.array(self.train_test) == mode
         
+        idis = np.array( [ int(p.split('/')[-1][:-4]) for p in self.image_pths])
+        
         sub = 10
-        sub_mask = np.zeros( self.valid_mode.shape )
-        sub_mask[::sub] = 1
-        self.valid_mode = self.valid_mode * (sub_mask == 1)
+        for k in range(idis.shape[0] ):
+            if idis[k] % sub != 0:
+                self.valid_mode[k] = False
         
         self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )
         self.global_to_local_idx = (self.global_to_local_idx[self.valid_mode]).tolist()
