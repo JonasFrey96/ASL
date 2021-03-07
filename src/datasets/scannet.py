@@ -31,7 +31,7 @@ class ScanNet(StaticReplayDataset):
             mode='train',
             scenes=[],
             output_trafo=None,
-            output_size=400,
+            output_size=(480,640),
             degrees=10,
             flip_p=0.5,
             jitter_bcsh=[
@@ -54,11 +54,10 @@ class ScanNet(StaticReplayDataset):
             ScanNet,
             self).__init__(
             ** cfg_replay, replay=replay)
-            
+
         if mode == 'val':
             mode = 'test'
             
-        self._output_size = output_size
         self._mode = mode
 
         self._load(root, mode)
@@ -250,7 +249,7 @@ class ScanNet(StaticReplayDataset):
         if len(scenes) != 0:
           for sce in scenes:
             tmp = np.array(self.scenes) == sce
-            self.valid_scene = np.logical_and(tmp. self.valid_scene )
+            self.valid_scene = np.logical_and(tmp, self.valid_scene )
             
         self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )
         self.global_to_local_idx = (self.global_to_local_idx[self.valid_scene]).tolist()

@@ -1,0 +1,35 @@
+name: scannet_eval/run_24h_train_1gpu
+checkpoint_load: cluster/2021-03-03T21:24:17_run_24h_train_1gpu/task0-epoch=163--step=297331.ckpt
+
+loader:
+  pin_memory: true
+  batch_size: 1
+  shuffle: true
+  num_workers: 0
+
+dataset: 
+  name: scannet
+  mode: train
+  output_size:
+  - 960
+  - 1280
+  scenes: 
+  - scene0000
+  replay: True
+  cfg_replay:
+    bins: 4
+    elements: 100
+    add_p: 0.5
+    replay_p: 0.5
+    current_bin: 0
+  data_augmentation: False
+  data_augmentation_for_replay: False
+
+model:
+  name: Fast-SCNN
+  cfg:
+    num_classes: 40
+    aux: false
+    extraction:
+      active: false
+      layer: learn_to_down
