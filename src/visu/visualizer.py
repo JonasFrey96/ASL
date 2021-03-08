@@ -185,7 +185,7 @@ class MainVisualizer():
 
   @image_functionality  
   def plot_matrix(self, data_matrix, higher_is_better= True, title='TitleNotDefined',max_tasks=None, max_tests= None,
-                  label_x=None, label_y=None, *args,**kwargs):
+                  label_x=None, label_y=None, color_map='custom', *args,**kwargs):
 
     if max_tasks is None and max_tests is None:
             max_tasks = data_matrix.shape[0]
@@ -210,9 +210,15 @@ class MainVisualizer():
     
     fig, ax = plt.subplots()
     if higher_is_better:
-      im = ax.imshow(data_matrix,cmap=cm.get_cmap('PiYG')  )
+      if color_map == 'custom':
+        im = ax.imshow(data_matrix,cmap= RG_PASTEL )
+      else:
+        im = ax.imshow(data_matrix,cmap=cm.get_cmap('PiYG')  )
     else:
-      im = ax.imshow(data_matrix,cmap=cm.get_cmap('PiYG_r')  )
+      if color_map == 'custom':
+        im = ax.imshow(data_matrix,cmap= RG_PASTEL_r )
+      else:
+        im = ax.imshow(data_matrix,cmap=cm.get_cmap('PiYG_r')  )
 
     # We want to show all ticks...
     ax.set_xticks(np.arange(len(label_x)))
