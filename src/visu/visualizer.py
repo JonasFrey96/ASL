@@ -17,6 +17,7 @@ from matplotlib import cm
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 
 from .colors import *
+from .flow_viz import *
 
 __all__ = ['Visualizer', 'MainVisualizer']
 
@@ -140,7 +141,7 @@ class MainVisualizer():
     self._store = store
   
   @image_functionality
-  def plot_segmentation(self, seg, *args,**kwargs):
+  def plot_segmentation(self, seg, **kwargs):
     try:
       seg = seg.clone().cpu().numpy()
     except:
@@ -160,7 +161,7 @@ class MainVisualizer():
     return img
   
   @image_functionality
-  def plot_image(self, img, *args,**kwargs):
+  def plot_image(self, img,**kwargs):
     """
     ----------
     img : CHW HWC accepts torch.tensor or numpy.array
@@ -185,7 +186,7 @@ class MainVisualizer():
 
   @image_functionality  
   def plot_matrix(self, data_matrix, higher_is_better= True, title='TitleNotDefined',max_tasks=None, max_tests= None,
-                  label_x=None, label_y=None, color_map='custom', *args,**kwargs):
+                  label_x=None, label_y=None, color_map='custom',**kwargs):
 
     if max_tasks is None and max_tests is None:
             max_tasks = data_matrix.shape[0]
@@ -247,7 +248,7 @@ class MainVisualizer():
     return np.uint8(arr)
   
   @image_functionality
-  def plot_lines_with_bachground(self, x,y, count=None, x_label='x', y_label='y', title='Title', task_names=None, *args,**kwargs):
+  def plot_lines_with_bachground(self, x,y, count=None, x_label='x', y_label='y', title='Title', task_names=None,**kwargs):
     # y = list of K  np.arrays with len N  . first tasks goes first
     # x : np.array N
     # both x and y might be just an array
@@ -299,7 +300,7 @@ class MainVisualizer():
         
         
   @image_functionality  
-  def plot_cont_validation_eval(self, task_data, *args,**kwargs):
+  def plot_cont_validation_eval(self, task_data,**kwargs):
     """
     res1 =  np.linspace(0., 0.5, 6)
     res2 =  np.linspace(0., 0.5, 6)*0.5
@@ -348,7 +349,7 @@ class MainVisualizer():
     return np.uint8(arr)
   
   @image_functionality
-  def plot_bar(self, data, x_label='Sample', y_label='Value', title='Bar Plot', sort=True, reverse=True, *args,**kwargs):
+  def plot_bar(self, data, x_label='Sample', y_label='Value', title='Bar Plot', sort=True, reverse=True, **kwargs):
     def check_shape(data):
         if len(data.shape)>1:
             if data.shape[0] == 0:
@@ -383,6 +384,27 @@ class MainVisualizer():
     arr = get_img_from_fig(fig, dpi=300)
     plt.close()
     return np.uint8(arr)
+
+
+def colorize(value, vmin=0.1, vmax=10, cmap='plasma'):
+    # normalize
+  vmin = value.min() if vmin is None else vmin
+  vmax = value.max() if vmax is None else vmax
+  if vmin != vmax:
+      value = (value - vmin) / (vmax - vmin)  # vmin..vmax
+  else:
+      # Avoid 0-division
+      value = value * 0.
+  # squeeze last dim if it exists
+  # value = value.squeeze(axis=0)
+
+  cmapper = matplotlib.cm.get_cmap(cmap)
+  value = cmapper(value, bytes=True)  # (nxmx4)
+  img = value[:, :, :3]
+
+  #     return img.transpose((2, 0, 1))
+  return img
+
 class Visualizer():
   def __init__(self, p_visu, logger=None, epoch=0, store=True, num_classes=22):
     self.p_visu = p_visu
@@ -416,8 +438,26 @@ class Visualizer():
   def store(self, store):
     self._store = store
   
+  def plot_flow(self, flow, **kwargs):
+    # flow input HxWx2 or 2xHxW tensor or array, dtype float 
+    if type(flow) == torch.Tensor:
+      if flow.device != 'cpu':
+        flow = flow.cpu()
+      flow = flow.numpy()
+
+    if flow.shape[0] == 2:
+      flow = np.moveaxis(flow, [0,1,2],[2,1,0])
+    flow = flow.astype(np.float32)
+    
+    img = flow_to_image(flow)
+    self.plot_image(img=img, **kwargs)
+
+  def plot_depth(self, depth, **kwargs):
+    img = colorize(depth)
+    self.plot_image(img=img, **kwargs )
+
   @image_functionality
-  def plot_segmentation(self, seg, *args,**kwargs):
+  def plot_segmentation(self, seg,**kwargs):
     try:
       seg = seg.clone().cpu().numpy()
     except:
@@ -442,7 +482,7 @@ class Visualizer():
     return img
   
   @image_functionality
-  def plot_bar(self, data, x_label='Sample', y_label='Value', title='Bar Plot', sort=True, reverse=True, *args,**kwargs):
+  def plot_bar(self, data, x_label='Sample', y_label='Value', title='Bar Plot', sort=True, reverse=True, **kwargs):
     def check_shape(data):
         if len(data.shape)>1:
             if data.shape[0] == 0:
@@ -479,7 +519,7 @@ class Visualizer():
     return np.uint8(arr)
   
   @image_functionality
-  def plot_image(self, img, *args,**kwargs):
+  def plot_image(self, img,**kwargs):
     try:
       img = img.clone().cpu().numpy()
     except:
