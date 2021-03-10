@@ -46,9 +46,9 @@ class Augmentation():
     if img.shape[1] >= 2*self._output_size[0] :  
         sf = float(self._output_size[0]/img.shape[1])*1.2
         scale = True
-    elif img.shape[1] < self._output_size[0] or img.shape[2] < self._output_size[0]:
+    elif img.shape[1] < self._output_size[0] or img.shape[2] < self._output_size[1]:
         sf1 = float(self._output_size[0]/img.shape[1])*1.2
-        sf2 = float(self._output_size[0]/img.shape[2])*1.2
+        sf2 = float(self._output_size[1]/img.shape[2])*1.2
         sf = max(sf1,sf2)
         scale = True
     

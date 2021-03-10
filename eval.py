@@ -98,11 +98,12 @@ if __name__ == "__main__":
     img = np.stack( [pred_image, target_image, valid_image], axis=1)
     for b in range(BS):
       img_path = globale_idx_to_image_path[global_idx[b]]
-
+      
       p = os.path.join(base,
         img_path.split('/')[-3],
         'segmentation_estimate',
         img_path.split('/')[-1][:-4]+'.png')
+      print(j, '  ', p)
       Path(p).parent.mkdir(parents=True, exist_ok=True)
       imageio.imwrite( p, np.moveaxis( img[b], [0,1,2], [2,0,1] ) )
 

@@ -9,13 +9,14 @@ loader:
 
 dataset: 
   name: scannet
-  mode: val
+  mode: train
   output_size:
-  - 960
+  - 640
   - 1280
   scenes: 
   - scene0000
   replay: True
+  sub: 1
   cfg_replay:
     bins: 4
     elements: 100

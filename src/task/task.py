@@ -72,6 +72,8 @@ scannet_template_dict = {
     'data_augmentation_for_replay': True
 }
 
+template_list = [nyu_template_dict, coco_template_dict, mlhypersim_template_dict, scannet_template_dict]
+
 nyu_scene_names, nyu_class_counts = NYUv2.get_classes('train')
 
 class TaskCreator():
@@ -83,29 +85,27 @@ class TaskCreator():
   and the trainer or simply iterated over in a for loop!
   """
   def __init__(self, mode= 'SingleScenesCountsDescending', output_size=384, *args, **kwargs):
-    nyu_template_dict['output_size'] = output_size
-    coco_template_dict['output_size'] = output_size 
-    mlhypersim_template_dict['output_size'] = output_size
+    # SET ALL TEMPLATES CORRECT
+    for t in template_list:
+      t['output_size'] = output_size
+
+      da = kwargs.get('data_augmentation',None) 
+      if da is not None:
+        t['data_augmentation'] = da
+      
+      darp = kwargs.get('data_augmentation_for_replay',None) 
+      if darp is not None:
+        t['data_augmentation_for_replay'] = darp
+        
+      if kwargs.get('cfg_replay', None) is not None:
+        t['cfg_replay'] = kwargs['cfg_replay']
     
-    
+      t['replay'] = kwargs.get('replay',False)
+      
     self._task_list = []
     self._eval_lists = []
-    
-    
     self.replay_adaptive_add_p = kwargs.get('replay_adaptive_add_p',False)
-    da = kwargs.get('data_augmentation',None) 
-    if da is not None:
-      mlhypersim_template_dict['data_augmentation'] = da
     
-    darp = kwargs.get('data_augmentation_for_replay',None) 
-    if darp is not None:
-      mlhypersim_template_dict['data_augmentation_for_replay'] = darp
-      
-    if kwargs.get('cfg_replay', None) is not None:
-      mlhypersim_template_dict['cfg_replay'] = kwargs['cfg_replay']
-   
-    mlhypersim_template_dict['replay'] = kwargs.get('replay',False)
-      
     if mode == 'SingleScenesCountsDescending':
       self._getTaskSingleScenesCountsDescending()  
     elif mode == 'All':
