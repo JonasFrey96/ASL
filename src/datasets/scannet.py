@@ -40,6 +40,7 @@ class ScanNet(StaticReplayDataset):
                 0.3,
                 0.05],
             replay = False,
+            sub = 10,
             cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
             data_augmentation= True, data_augmentation_for_replay=True):
         """
@@ -57,7 +58,7 @@ class ScanNet(StaticReplayDataset):
 
         if mode == 'val':
             mode = 'test'
-            
+        self._sub = sub
         self._mode = mode
 
         self._load(root, mode)
@@ -166,9 +167,8 @@ class ScanNet(StaticReplayDataset):
         
         idis = np.array( [ int(p.split('/')[-1][:-4]) for p in self.image_pths])
         
-        sub = 10
         for k in range(idis.shape[0] ):
-            if idis[k] % sub != 0:
+            if idis[k] % self._sub != 0:
                 self.valid_mode[k] = False
         
         self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )

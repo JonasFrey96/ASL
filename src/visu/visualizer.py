@@ -450,11 +450,11 @@ class Visualizer():
     flow = flow.astype(np.float32)
     
     img = flow_to_image(flow)
-    self.plot_image(img=img, **kwargs)
+    return self.plot_image(img=img, **kwargs)
 
   def plot_depth(self, depth, **kwargs):
     img = colorize(depth)
-    self.plot_image(img=img, **kwargs )
+    return self.plot_image(img=img, **kwargs )
 
   @image_functionality
   def plot_segmentation(self, seg,**kwargs):

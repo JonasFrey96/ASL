@@ -295,7 +295,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       env['mlhypersim'] = str(os.path.join(env['mlhypersim'], 'mlhypersim'))
       
   # SET GPUS
-  if ( exp['trainer'] ).get('gpus', -1):
+  if ( exp['trainer'] ).get('gpus', -1) and os.environ['ENV_WORKSTATION_NAME'] != 'hyrax':
     nr = torch.cuda.device_count()
     exp['trainer']['gpus'] = nr
     print( f'Set GPU Count for Trainer to {nr}!' )

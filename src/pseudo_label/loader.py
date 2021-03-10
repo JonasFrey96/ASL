@@ -1,19 +1,24 @@
-from helper_functions import *
+try:
+	from helper_functions import *
+except:
+	from .helper_functions import *
 import numpy as np 
+import os
 
 __all__ = ['PseudoLabelLoader']
 
 class PseudoLabelLoader():
-	def __init__(self, window_size):
+	def __init__(self, window_size, h=960, w=1280, sub=10, ignore_depth=False):
 		self.depth_paths = getPathsDepth()
 		self.segmentation_paths = getPathsSegmentation()
-		self.flow_paths = getPathsFlow()
+		self.flow_paths = getPathsFlow(key=f"flow_sub_{sub}")
 		self.window_size = window_size 
-		self.sub = 10 
-
-
+		self.sub = sub
+		self.H=h
+		self.W=w
+		self.ignore_depth = ignore_depth
+		
 		self.lists_to_ids()
-
 		self.global_to_local_idx = self.get_global_idx_list()
 		self.length = len( self.global_to_local_idx )
 
@@ -43,18 +48,18 @@ class PseudoLabelLoader():
 				# check if seg flow and depth are availalbe
 				_ids = int( ids-k*self.sub )
 				
-				# DEPTH
-				scene_depth_filter = self.depth_ids[:,0] == scene
-				if scene_depth_filter.sum() == 0:
-					brake = True
-					continue
-				if (self.depth_ids[scene_depth_filter][:,1] == _ids).sum() == 0:
-					brake = True
-					continue
-
-				idx_depth = np.where( self.depth_ids[scene_depth_filter][:,1] == _ids )
-				idx_depth = int( idx_depth[0])
-				__d_ids.append( idx_depth )
+				if not self.ignore_depth:
+					# DEPTH
+					scene_depth_filter = self.depth_ids[:,0] == scene
+					if scene_depth_filter.sum() == 0:
+						brake = True
+						continue
+					if (self.depth_ids[scene_depth_filter][:,1] == _ids).sum() == 0:
+						brake = True
+						continue
+					idx_depth = np.where( self.depth_ids[scene_depth_filter][:,1] == _ids )
+					idx_depth = int( idx_depth[0])
+					__d_ids.append( idx_depth )
 
 				# FLOW
 				scene_flow_filter = self.flow_ids[:,0] == scene
@@ -87,14 +92,19 @@ class PseudoLabelLoader():
 		seg = []
 		flow = []
 		depth = []
+		paths = []
 		for i in range(len( di['seg_ids'] )):
-			flow.append( readFlowKITTI( self.flow_paths[di['flow_ids'][i]]))
+			flow.append( readFlowKITTI( self.flow_paths[di['flow_ids'][i]], H=self.H ,W=self.W))
 			seg.append( readSegmentation( self.segmentation_paths[di['seg_ids'][i]]))
-			depth.append( readDepth( self.depth_paths[di['depth_ids'][i]]))
-		return seg, depth, flow
+			if not self.ignore_depth:
+				depth.append( readDepth( self.depth_paths[di['depth_ids'][i]]))
+			
+			l = self.flow_paths[di['flow_ids'][i]].split('/')
+			paths.append( os.path.join( 'scans',  l[-3], 'color', l[-1][:-4]+'.jpg' ) )
+		return seg, depth, flow, paths
 
 def test():
-	pll = PseudoLabelLoader(window_size=5)
+	pll = PseudoLabelLoader(window_size=5, sub=1, ignore_depth=True)
 	print( pll[0] )
 
 

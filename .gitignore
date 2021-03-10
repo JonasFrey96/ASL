@@ -2,6 +2,7 @@ tools/private/*
 cfg/exp/*
 tools/private
 src/datasets/test_results/*
+notebooks/private/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
