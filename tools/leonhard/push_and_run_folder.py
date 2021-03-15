@@ -41,9 +41,21 @@ parser.add_argument('--scratch', default=0, help="Total Scratch space in GB")
 parser.add_argument('--fake', default=False, help="Not schedule")
 parser.add_argument('--ignore_workers', default=False, help="Ignore workers")
 parser.add_argument('--script', default='supervisor', choices=['main', 'supervisor'], help="Select script to start")
+parser.add_argument('--fast_gpu', default=False, help="Select script to start")
+parser.add_argument('--host', default="leonhard", choices=['leonhard', 'euler'])
 
 
 args = parser.parse_args()
+if args.host == 'leonhard':
+  login = "jonfrey@login.leonhard.ethz.ch"
+  export_cmd = """export LSF_ENVDIR=/cluster/apps/lsf/conf; export LSF_SERVERDIR=/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/etc;"""
+  bsub_cmd = """/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub"""
+    
+elif args.host == 'euler':
+  login = "jonfrey@euler.ethz.ch"
+  export_cmd = """export LSF_ENVDIR=/cluster/apps/lsf/conf; export LSF_SERVERDIR=/cluster/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc;"""
+  bsub_cmd = """/cluster/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin/bsub"""
+
 w = int(args.workers)
 gpus = int(args.gpus)
 ram = int(int(args.ram)*1000/w)
@@ -97,23 +109,22 @@ if len(model_paths) == 0:
   logging.info('Model Paths Empty!')
   
 else:  
-  export_cmd = """export LSF_ENVDIR=/cluster/apps/lsf/conf; export LSF_SERVERDIR=/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/etc;"""
-  bsub_cmd = """/cluster/apps/lsf/10.1/linux3.10-glibc2.17-x86_64/bin/bsub"""
-    
+  
+ 
   with open(os.path.join( home, 'ASL', env )) as f:
     doc = yaml.load(f, Loader=yaml.FullLoader) 
     base = doc['base']
   model_paths = [os.path.join(base,i) for i in model_paths] 
 
   # Push to cluster 
-  cmd = f"""rsync -a --delete --exclude='.git/' --exclude='cfg/exp/tmp/*' {home}/ASL/* jonfrey@login.leonhard.ethz.ch:/cluster/home/jonfrey/ASL"""
+  cmd = f"""rsync -a --delete --exclude='.git/' --exclude='cfg/exp/tmp/*' {home}/ASL/* {login}:/cluster/home/jonfrey/ASL"""
   os.system(cmd)
 
   # Executue commands on cluster
   import paramiko
   try:
 
-    host = "login.leonhard.ethz.ch"
+    host = login[login.find('@')+1:]
     port = 22
     username = "jonfrey"
     ssh = paramiko.SSHClient()
@@ -135,10 +146,15 @@ else:
 
       name = model_paths[j].split('/')[-1] + str(j) + '.out'
       o = f""" -oo {p}/{name} """
-      cmd = f"""{export_cmd} cd $HOME/ASL && {bsub_cmd}{o}-n {w} -W {s1} -R "rusage[mem={ram},ngpus_excl_p={gpus}]" -R "select[gpu_mtotal0>={mem}]" """ 
+      cmd = f"""{export_cmd} cd $HOME/ASL && {bsub_cmd}{o}-n {w} -W {s1} -R "rusage[mem={ram},ngpus_excl_p={gpus}]" """ 
+      
       if scratch > 0:
         cmd += f"""-R "rusage[scratch={scratch}]" """
         
+      if  bool(args.fast_gpu):
+        cmd += """ -R "select[gpu_model0==GeForceRTX2080Ti]" """
+      else:
+        cmd += f""" -R "select[gpu_mtotal0>={mem}]" """
       if args.script == 'main':
         subscr = 'submit'
       elif args.script == 'supervisor':

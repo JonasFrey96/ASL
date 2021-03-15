@@ -10,6 +10,20 @@
 			"request": "launch",
 			"program": "${file}",
 			"console": "integratedTerminal"
+		},
+		{
+			"name": "Eval",
+			"type": "python",
+			"request": "launch",
+			"program": "${env:HOME}/ASL/eval.py",
+			"console": "integratedTerminal"
+		},
+		{
+			"name": "Supervisor",
+			"type": "python",
+			"request": "launch",
+			"program": "${env:HOME}/ASL/supervisor.py",
+			"console": "integratedTerminal"
 		}
 	]
 }

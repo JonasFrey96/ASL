@@ -15,10 +15,14 @@ import matplotlib
 import matplotlib.pyplot as plt
 from matplotlib import cm
 from matplotlib.backends.backend_agg import FigureCanvasAgg
-
-from .colors import *
-from .flow_viz import *
-
+import matplotlib.patches as patches
+import pickle
+try:
+  from .colors import *
+  from .flow_viz import *
+except:
+  from colors import *
+  from flow_viz import *
 __all__ = ['Visualizer', 'MainVisualizer']
 
 # define a function which returns an image as numpy array from figure
@@ -125,7 +129,7 @@ class MainVisualizer():
       for v in np.linspace(0, 1, num_classes)]) * 255).astype(np.uint8)
     self.SEG_COLORS_BINARY = (np.stack([jet(v)
       for v in np.linspace(0, 1, 2)]) * 255).astype(np.uint8)
-  
+
   @property
   def epoch(self):
     return self._epoch
@@ -421,6 +425,10 @@ class Visualizer():
     jet = cm.get_cmap('jet')
     self.SEG_COLORS = (np.stack([jet(v)
       for v in np.linspace(0, 1, num_classes)]) * 255).astype(np.uint8)
+
+    if num_classes == 41:
+      self.SEG_COLORS = np.array( [ (*SCANNET_COLOR_MAP[k],255) for k in SCANNET_COLOR_MAP.keys()], dtype=np.uint8)
+
     self.SEG_COLORS_BINARY = (np.stack([jet(v)
       for v in np.linspace(0, 1, 2)]) * 255).astype(np.uint8)
   
@@ -457,26 +465,76 @@ class Visualizer():
     return self.plot_image(img=img, **kwargs )
 
   @image_functionality
+  def plot_nyu_confusion_matrix(self, conf, title="NYU40 Confusion Matrix",**kwargs):
+    with open('cfg/dataset/mappings/coco_nyu.pkl', 'rb') as handle:
+      mappings = pickle.load(handle)
+
+    label_y = [ str(i) for i in range(conf.shape[0]+1)]
+    label_x = [ str(i) for i in range(conf.shape[1]+1)]
+    fig, ax = plt.subplots( figsize=(10,10))
+    conf_expa = np.zeros((conf.shape[0]+1,conf.shape[1]+1))
+    conf_expa[1:,1:] = conf
+
+    diago = np.eye(conf_expa.shape[0],dtype=bool)
+    conf_expa[diago==False] *= -1
+    fac = -conf_expa.max()/conf_expa.min()
+    conf_expa[diago==False] *= fac
+    im = ax.imshow(conf_expa,cmap=cm.get_cmap('PiYG'))
+
+    for i in range( len(label_y)):
+        v = self.SEG_COLORS[i]
+        vals= (v[0]/255,v[1]/255,v[2]/255,1)
+        rect = patches.Rectangle((i-0.5, -0.5), 1, 1, linewidth=1, edgecolor=None, facecolor= vals )
+        rect2 = patches.Rectangle((0-0.5, i-0.5), 1, 1, linewidth=1, edgecolor=None, facecolor= vals )
+        ax.add_patch(rect)
+        ax.add_patch(rect2)
+
+    ax.set_xticks(np.arange(len(label_x)))
+    ax.set_yticks(np.arange(len(label_y)))
+    ax.set_xticklabels(list(mappings['nyu_name_id'].keys())[:])
+    ax.set_yticklabels(list(mappings['nyu_name_id'].keys())[:])
+    ax.xaxis.tick_top()
+
+    plt.xlabel("predicted_class")
+    plt.ylabel("targets") 
+    ax.yaxis.set_label_position('right') 
+
+    ax.set_axisbelow(True)
+    ax.yaxis.grid(color='gray', linestyle='dashed')
+    ax.xaxis.grid(color='gray', linestyle='dashed')
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="left",
+              rotation_mode="anchor")
+    ax.set_title(title)
+
+    arr = get_img_from_fig(fig, dpi=600)
+    plt.close()
+    return np.uint8(arr)
+
+  @image_functionality
   def plot_segmentation(self, seg,**kwargs):
-    try:
-      seg = seg.clone().cpu().numpy()
-    except:
+    """
+    Input segmentation NYU: 0 unlabeled, 1 wall, 40 highest label
+    """
+    if not type(seg).__module__ == np.__name__:
       try:
-        seg = seg.numpy()
+        seg = seg.clone().cpu().numpy()
       except:
-        print('Failed converting tensor to numpy')
-        pass
+        try:
+          seg = seg.numpy()
+        except:
+          pass
 
     if seg.dtype == np.bool:
       col_map = self.SEG_COLORS_BINARY
     else:
       col_map = self.SEG_COLORS
-      seg = seg.astype(np.float32)
-      seg = seg.round()
+      # seg = seg.astype(np.float32)
+      # seg = seg.round()
         
     
     H,W = seg.shape[:2]
     img = np.zeros((H,W,3), dtype=np.uint8)
+
     for i, color in enumerate( col_map ) :
       img[ seg==i ] = color[:3]
     return img
@@ -537,10 +595,11 @@ class Visualizer():
   
 def test():
   # pytest -q -s src/visu/visualizer.py
-  vis = MainVisualizer( p_visu='/home/jonfrey/tmp', logger=None, epoch=0, store=True, num_classes=41)
-  x = np.arange(100)
-  y = [ np.random.normal(0, 1, 100), np.random.normal(0.5, 0.2, 100), np.random.normal(-0.5, 0.1, 100), np.random.normal(0.2, 1, 100)]
-  vis.plot_lines_with_bachground(x,y, count=[5,55,60,100], task_names=['a', 'b', 'c', 'd'])
+  visu = Visualizer(os.getenv('HOME')+'/tmp', logger=None, epoch=0, store=False, num_classes=41)
+  # vis = MainVisualizer( p_visu='/home/jonfrey/tmp', logger=None, epoch=0, store=True, num_classes=41)
+  # x = np.arange(100)
+  # y = [ np.random.normal(0, 1, 100), np.random.normal(0.5, 0.2, 100), np.random.normal(-0.5, 0.1, 100), np.random.normal(0.2, 1, 100)]
+  # vis.plot_lines_with_bachground(x,y, count=[5,55,60,100], task_names=['a', 'b', 'c', 'd'])
   
 if __name__ == "__main__":
   
