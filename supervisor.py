@@ -21,7 +21,7 @@ import gc
 import torch
 
 # Costume Modules
-from utils import file_path, load_yaml
+from utils_asl import file_path, load_yaml
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()    
@@ -42,7 +42,7 @@ if __name__ == "__main__":
   if args.mode != 'sell':
     sys.path.append(os.path.join(os.getcwd() + '/train_task.py'))
     from train_task import train_task
-    from utils import get_neptune_logger
+    from utils_asl import get_neptune_logger
     logger = get_neptune_logger(exp,env, args.exp, env_cfg_path)
     
   for i in range( exp['max_tasks'] ):

@@ -30,8 +30,8 @@ from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
 from torchvision.utils import make_grid
 from torch.nn import functional as F
 # MODULES
-from models import FastSCNN, Teacher, ReplayStateSyncBack
-from datasets import get_dataset
+from models_asl import FastSCNN, Teacher, ReplayStateSyncBack
+from datasets_asl import get_dataset
 from loss import cross_entropy_soft
 
 #from .metrices import IoU, PixAcc

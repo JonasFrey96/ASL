@@ -87,7 +87,9 @@ class TaskCreator():
   def __init__(self, mode= 'SingleScenesCountsDescending', output_size=384, *args, **kwargs):
     # SET ALL TEMPLATES CORRECT
     for t in template_list:
-      t['output_size'] = output_size
+      ktt = kwargs.get('copy_to_template',{})
+      for k in ktt.keys():
+        t[k] = ktt[k]
 
       da = kwargs.get('data_augmentation',None) 
       if da is not None:
@@ -104,8 +106,11 @@ class TaskCreator():
       
     self._task_list = []
     self._eval_lists = []
-    self.replay_adaptive_add_p = kwargs.get('replay_adaptive_add_p',False)
     
+    self.replay_adaptive_add_p = kwargs.get('replay_adaptive_add_p',False)
+    self.scannet_strict_split = kwargs.get('scannet_strict_split',False)
+    
+
     if mode == 'SingleScenesCountsDescending':
       self._getTaskSingleScenesCountsDescending()  
     elif mode == 'All':
@@ -126,6 +131,8 @@ class TaskCreator():
       self._mlhypersim_random4_seeded(seed=kwargs['seed'])
     elif mode == 'scannet':
       self._scannet()
+    elif mode == 'scannet_scenes':
+      self._scannet()
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
@@ -134,7 +141,11 @@ class TaskCreator():
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
     train['mode'] = 'train'
-    val['mode'] = 'val'      
+    val['mode'] = 'val'
+    if self.scannet_strict_split:
+      train['mode'] += '_strict'
+      val['mode'] += '_strict'
+
     train['scenes'] = []
     val['scenes'] = []
     t = Task(name = f'Scannet_Task_Train_All',

@@ -22,10 +22,10 @@ import torch
 import numpy as np
 import imageio
 # Costume Modules
-from utils import file_path, load_yaml
+from utils_asl import file_path, load_yaml
 
-from models import FastSCNN
-from datasets import get_dataset
+from models_asl import FastSCNN
+from datasets_asl import get_dataset
 from torchvision import transforms
 from torchvision import transforms as tf
 
@@ -46,9 +46,13 @@ if __name__ == "__main__":
   model = FastSCNN(**eval_cfg['model']['cfg'])
   p = os.path.join( env_cfg['base'], eval_cfg['checkpoint_load'])
   if os.path.isfile( p ):
-    res = model.load_state_dict( torch.load(p,
-      map_location=lambda storage, loc: storage)['state_dict'], 
-      strict=False)
+    res = torch.load(p)
+    new_statedict = {}
+    for k in res['state_dict'].keys():
+      if k.find('model.') != -1: 
+        new_statedict[ k[6:]] = res['state_dict'][k]
+    res = model.load_state_dict( new_statedict, strict=True)
+    
     print('Restoring weights: ' + str(res))
   else:
     raise Exception('Checkpoint not a file')
