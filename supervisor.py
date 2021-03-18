@@ -24,8 +24,8 @@ import torch
 from utils_asl import file_path, load_yaml
 
 if __name__ == "__main__":
-  parser = argparse.ArgumentParser()    
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/exp.yml',
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/debug.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')
@@ -44,10 +44,14 @@ if __name__ == "__main__":
     from train_task import train_task
     from utils_asl import get_neptune_logger
     logger = get_neptune_logger(exp,env, args.exp, env_cfg_path)
+ 
+  sta = exp['start_at_task']
+  end = exp['max_tasks']-1
+  print(f"SUPERVISOR: Execute Task {sta}-{end}")
+  for i in range(int(sta), exp['max_tasks'] ):
     
-  for i in range( exp['max_tasks'] ):
-    init = int(bool(i==0))
-    close = int(bool(i==exp['max_tasks']))
+    init = int(bool(i==exp['start_at_task']))
+    close = int(bool(i==exp['max_tasks']-1))
     
     if args.mode == 'shell':
       if env['workstation']:
@@ -59,5 +63,7 @@ if __name__ == "__main__":
       print("Execute script: " , cmd)
       os.system(cmd)
     else:
+      print("SUPERVISOR: CALLING train_task:", init, close, args.exp, env_cfg_path, i)
       train_task( init, close, args.exp, env_cfg_path, i, logger_pass=logger)
+      torch.cuda.empty_cache()
 

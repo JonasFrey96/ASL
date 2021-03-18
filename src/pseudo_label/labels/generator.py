@@ -146,17 +146,9 @@ class PseudoLabelGenerator():
         i_seg = 0 # 0=pred 1=target 
 
         if pre_fusion_function is None:
-            seg, depth, flow, paths = self._pll[index]
+            seg, depth, flow, _ = self._pll[index]
         else:
-            seg, depth, flow, paths = pre_fusion_function( self._pll[index] )
-
-
-        for i in range(len( seg )):
-            prob = 0.7
-            p = np.random.rand( *seg[0][i_seg].shape )
-            m = p > prob
-            noise = np.random.randint( low = -1, high= 39, size = seg[0][1].shape)
-            seg[i][1][m] = noise[m]
+            seg, depth, flow, _ = pre_fusion_function( self._pll[index] )
 
         assert self._flow_mode == 'sequential'
         seg_forwarded = []

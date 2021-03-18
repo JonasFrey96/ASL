@@ -164,6 +164,7 @@ def validation_acc_plot(main_visu, logger):
         x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
         task_names=names, tag='Validation_Accuracy_Summary')
   except:
+    print("VALIED to generate validation_acc_plot")
     pass
   
 def plot_from_neptune(main_visu,logger):
@@ -206,6 +207,8 @@ def plot_from_neptune(main_visu,logger):
           higher_is_better= higher_is_better,
           title= m)
   except:
+    print("VALIED TO PLOT FROM PICKLE")
+    
     pass    
 
 def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=None):
@@ -230,18 +233,10 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       model_path = os.path.join('/',*p[:-1] ,str(timestamp)+'_'+ p[-1] )
     else:
       model_path = os.path.join(env['base'], exp['name'])
-      try:
-        shutil.rmtree(model_path)
-      except:
-        pass
+      shutil.rmtree(model_path,ignore_errors=True)
+    
     # Create the directory
-    if not os.path.exists(model_path):
-      try:
-        os.makedirs(model_path)
-      except:
-        print("Failed generating network run folder")
-    else:
-      print("Network run folder already exits")
+    Path(model_path).mkdir(parents=True, exist_ok=True)
     
     # Only copy config files for the main ddp-task  
     exp_cfg_fn = os.path.split(exp_cfg_path)[-1]
@@ -254,11 +249,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     # the correct model path has already been written to the yaml file.
     model_path = os.path.join( exp['name'], f'rank_{local_rank}_{task_nr}')
     # Create the directory
-    if not os.path.exists(model_path):
-      try:
-        os.makedirs(model_path)
-      except:
-        pass
+    Path(model_path).mkdir(parents=True, exist_ok=True)
 
   # COPY DATASET
   if env['workstation'] == False:
@@ -294,11 +285,21 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       env['mlhypersim'] = str(os.path.join(env['mlhypersim'], 'mlhypersim'))
       
   # SET GPUS
-  if ( exp['trainer'] ).get('gpus', -1) and os.environ['ENV_WORKSTATION_NAME'] != 'hyrax':
+  if ( exp['trainer'] ).get('gpus', -1) == -1 and os.environ['ENV_WORKSTATION_NAME'] != 'hyrax':
     nr = torch.cuda.device_count()
-    exp['trainer']['gpus'] = nr
     print( f'Set GPU Count for Trainer to {nr}!' )
-    
+    for i in range(nr):
+      print( f"Device {i}: ", torch.cuda.get_device_name(i) )
+    exp['trainer']['gpus'] = -1
+  elif  os.environ['ENV_WORKSTATION_NAME'] == 'hyrax':
+    exp['trainer']['gpus'] = "1"
+  
+  # HOST SPECIFIC SETTINGS:
+  if os.environ['ENV_WORKSTATION_NAME'] == 'hyrax':
+    exp['loader']['num_workers'] = 0
+
+
+
   # MODEL
   model = Network(exp=exp, env=env)
   
@@ -368,11 +369,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     exp['checkpoint_load'] = exp['checkpoint_load_2']
     exp['weights_restore'] = exp['weights_restore_2']
   
-  # Always use advanced profiler
-  if exp['trainer'].get('profiler', False):
-    exp['trainer']['profiler'] = AdvancedProfiler(output_filename=os.path.join(model_path, 'profile.out'))
-  else:
-    exp['trainer']['profiler']  = False
   
   # CHECKPOINT
   if exp.get('checkpoint_restore', False):
@@ -401,7 +397,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       raise Exception('Checkpoint not a file')
   
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
-                            logger=logger, epoch=0, store=True, num_classes=22 )
+                            logger=logger, epoch=0, store=True, num_classes=exp['model']['cfg']['num_classes']+1)
   
   tc = TaskCreator(**exp['task_generator'],output_size=exp['model']['input_size'])
   

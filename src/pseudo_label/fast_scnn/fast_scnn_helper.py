@@ -1,10 +1,17 @@
+if __name__ == '__main__':
+    import os
+    import sys 
+    os.chdir(os.path.join(os.getenv('HOME'), 'ASL'))
+    sys.path.insert(0, os.path.join(os.getenv('HOME'), 'ASL'))
+    sys.path.append(os.path.join(os.path.join(os.getenv('HOME'), 'ASL') + '/src'))
+
 import os
 import sys 
 from torchvision import transforms as tf
 import numpy as np
 import pickle
 import torch
-
+import torch.nn.functional as F
 from utils_asl import file_path, load_yaml
 from models_asl import FastSCNN
 
@@ -42,12 +49,26 @@ class FastSCNNHelper():
             img = self.output_transform( img )
             outputs = self.model( img )
             return torch.argmax(outputs[0], 1).cpu().numpy()[0]
+    
+    def get_label_prob(self, img):
+        with torch.no_grad():
+            # H,W,C 0-255 uint8 np
+            img = (torch.from_numpy( img.astype(np.float32)/255).permute(2,0,1)[None]).to(self.device)
+            img = self.output_transform( img )
+            outputs = self.model( img )
+
+            pred = F.softmax(outputs[0] , dim=1)[0]
+            label = torch.zeros( (41,pred.shape[1],pred.shape[2]), device=pred.device, dtype= pred.dtype )
+            label[1:] = pred
+            return label.cpu().numpy() # 41,H,W
+        
 
 
 if __name__ == '__main__':
     from pseudo_label import readImage 
     i1 = readImage("/home/jonfrey/datasets/scannet/scans/scene0033_00/color/500.jpg", H=640, W=1280, scale=True)
     fsh = FastSCNNHelper(device='cuda:1')
+    label = fsh.get_label_prob( i1 )
     label = fsh.get_label( i1 )
     from visu import Visualizer
     visu = Visualizer(os.getenv('HOME')+'/tmp', logger=None, epoch=0, store=False, num_classes=41)

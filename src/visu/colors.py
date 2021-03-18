@@ -1,7 +1,7 @@
 import numpy as np
 from matplotlib import cm
 import matplotlib.colors as mcolors
-__all__ = ['SCANNET_COLOR_MAP', 'RG_PASTEL', "RG_PASTEL_r"]
+__all__ = ['SCANNET_COLOR_MAP', 'RG_PASTEL', "RG_PASTEL_r", "COL_MAP", "COL_DICT"]
 # SCANNET_COLOR_MAP = {
 #     (0, (0, 0, 0)),
 #     ('wall', (174, 199, 232)),
@@ -46,13 +46,13 @@ __all__ = ['SCANNET_COLOR_MAP', 'RG_PASTEL', "RG_PASTEL_r"]
 #     ('otherprop', (100, 85, 144)),
 # }
 
-col = { "red":[255,89,94],
+COL_DICT = { "red":[255,89,94],
  "yellow":[255,202,58],
  "green":[138,201,38],
  "blue":[25,130,196],
  "purple":[106,76,147] }
 
-li = [ [*(v),255] for v in col.values()]
+li = [ [*(v),255] for v in COL_DICT.values()]
 li = (np.array(li)/255).tolist()
 COL_MAP = cm.colors.ListedColormap(li)
 
