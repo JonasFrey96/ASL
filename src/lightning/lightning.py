@@ -122,8 +122,8 @@ class Network(LightningModule):
       self._rssb_active = True
       self._rssb_last_epoch = -1
       if self._exp['replay_state_sync_back']['get_size_from_task_generator']:
-        bins = self._exp['task_generator']['cfg_replay']['bins']
-        self._buffer_elements = self._exp['task_generator']['cfg_replay']['elements']
+        bins = self._exp['task_generator']['copy_to_template']['cfg_replay']['bins']
+        self._buffer_elements = self._exp['task_generator']['copy_to_template']['cfg_replay']['elements']
       else:
         raise Exception('Not Implemented something else')
       self._rssb = ReplayStateSyncBack(bins=bins, elements=self._buffer_elements)
@@ -172,16 +172,14 @@ class Network(LightningModule):
         bin= self._task_count)
       
   def on_save_checkpoint(self, params):
-    local_rank = int(os.environ.get('LOCAL_RANK', 0))
-    if local_rank == 0: 
-      if self._rssb_active:
-        if self.current_epoch != self._rssb_last_epoch and self.trainer.train_dataloader.dataset.datasets.replay:
-          self._rssb_last_epoch = self.current_epoch
-          print( 'ON_SAVE_CHECKPOINT: Before saving checkpoint sync-back buffer state')
-          bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
-          if self._mode != 'test':
-            pass
-            # self._rssb.absorbe(bins,valids)
+    if self._rssb_active:
+      if self.current_epoch != self._rssb_last_epoch and self.trainer.train_dataloader.dataset.datasets.replay:
+        self._rssb_last_epoch = self.current_epoch
+        print( 'ON_SAVE_CHECKPOINT: Before saving checkpoint sync-back buffer state')
+        bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
+        if self._mode != 'test':
+          pass
+          # self._rssb.absorbe(bins,valids)
       
   def teardown(self, stage):
     print('TEARDOWN: Called')

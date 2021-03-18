@@ -1,16 +1,4 @@
-"""
-python cfg/dataset/mappings/mappings_nyu_coco181.py
-
-
-import pickle
-with open('cfg/dataset/mappings/coco_nyu.pkl', 'rb') as handle:
-    mappings = pickle.load(handle)
-print( mappings.keys() )
-"""
-
-
-coco181_to_nyu = [
-	'person',
+coco181_to_nyu = [	'person',
 	'unlabeled',
 	'unlabeled',
 	'unlabeled',
@@ -110,7 +98,7 @@ coco181_to_nyu = [
 	'cabinet',
 	'unlabeled',
 	'unlabeled',
-	'floormat',
+	'floor',
 	'ceiling',
 	'ceiling',
 	'unlabeled',
@@ -192,6 +180,16 @@ coco181_to_nyu = [
 	'window',
 	'window',
 	'unlabeled']
+
+"""
+python cfg/dataset/mappings/mappings_nyu_coco181.py
+
+
+import pickle
+with open('cfg/dataset/mappings/coco_nyu.pkl', 'rb') as handle:
+    mappings = pickle.load(handle)
+print( mappings.keys() )
+"""
 
 od = [
     ('unlabeled', (0, 0, 0)),

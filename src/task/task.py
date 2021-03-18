@@ -12,8 +12,9 @@ if __name__ == "__main__":
 
 import torch
 from torchvision import transforms as tf
-from src.datasets import NYUv2
-from src.datasets import MLHypersim
+from datasets_asl import NYUv2
+from datasets_asl import MLHypersim
+from datasets_asl import ScanNet
 import numpy as np
 import copy
 
@@ -90,20 +91,7 @@ class TaskCreator():
       ktt = kwargs.get('copy_to_template',{})
       for k in ktt.keys():
         t[k] = ktt[k]
-
-      da = kwargs.get('data_augmentation',None) 
-      if da is not None:
-        t['data_augmentation'] = da
-      
-      darp = kwargs.get('data_augmentation_for_replay',None) 
-      if darp is not None:
-        t['data_augmentation_for_replay'] = darp
-        
-      if kwargs.get('cfg_replay', None) is not None:
-        t['cfg_replay'] = kwargs['cfg_replay']
     
-      t['replay'] = kwargs.get('replay',False)
-      
     self._task_list = []
     self._eval_lists = []
     
@@ -133,10 +121,50 @@ class TaskCreator():
       self._scannet()
     elif mode == 'scannet_scenes':
       self._scannet()
+    elif mode == 'scannet_continual_learning':
+      self._scannet_continual_learning(kwargs['total_tasks'])
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
-  
+
+  def _scannet_continual_learning(self, total_tasks):
+    # Dont use the strict split !
+    classes = ScanNet.get_classes()
+    classes_per_task = int( len(classes) /4 )
+
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    
+    train['mode'] = 'train'
+    val['mode'] = 'val'
+    
+    seed = 0
+    for i in range( total_tasks ):
+      train_i = copy.deepcopy( train )
+      train_i['scenes'] = classes[int( classes_per_task)*i:int( classes_per_task*(i+1))]
+      
+      if self.replay_adaptive_add_p:
+        if i == seed:
+          train_i['cfg_replay']['replay_p'] = 0.0
+        else:
+          train_i['cfg_replay']['replay_p'] = float(i-seed)/float(i+1-seed)
+
+      t = Task(name = f'Scannet_Task_Train_All',
+                dataset_train_cfg= train_i,
+                dataset_val_cfg= val)
+      self._task_list.append(t)
+      
+      eval_tasks = []
+      for j in range(total_tasks):
+        val_j = copy.deepcopy( val )
+
+        val_j['scenes'] = classes[int( classes_per_task)*j:int( classes_per_task*(j+1))]
+        eval_task = EvalTask(
+          name = f'Scannet_Eval_All',
+          dataset_test_cfg=val_j)
+        eval_tasks.append( eval_task )
+      self._eval_lists.append( eval_tasks )
+
   def _scannet(self):
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
@@ -158,7 +186,6 @@ class TaskCreator():
       dataset_test_cfg=val)
     eval_tasks.append( eval_task )
     self._eval_lists.append( eval_tasks )
-    
   
   def _mlhypersim_random10(self):
     spt = int( len(mlhypersim_scene_names)/10 ) # scenes_per_task spt

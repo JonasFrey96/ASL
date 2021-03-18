@@ -62,6 +62,7 @@ class ScanNet(StaticReplayDataset):
         self._mode = mode
 
         self._load(root, mode)
+        
         self._filter_scene(scenes)
 
         self._augmenter = Augmentation(output_size,
@@ -188,9 +189,9 @@ class ScanNet(StaticReplayDataset):
         self.length = len(self.global_to_local_idx)
 
     @staticmethod
-    def get_classes():
-        _, scenes, _, _ = self._load_cfg()
-        return np.unique(scenes).tolist()
+    def get_classes(train_val_split=0.2):
+        data = pickle.load( open( f"cfg/dataset/scannet/scannet_trainval_{train_val_split}.pkl", "rb" ) )
+        return np.unique(data['scenes']).tolist()
     
     def _load_cfg( self, root='not_def', train_val_split=0.2 ):
         # if pkl file already created no root is needed. used in get_classes
@@ -258,11 +259,19 @@ class ScanNet(StaticReplayDataset):
         
     def _filter_scene(self, scenes):
         self.valid_scene = copy.deepcopy( self.valid_mode )
+        
+        
         if len(scenes) != 0:
+          vs = np.zeros( len(self.valid_mode), dtype=bool )
           for sce in scenes:
             tmp = np.array(self.scenes) == sce
-            self.valid_scene = np.logical_and(tmp, self.valid_scene )
-            
+
+            vs[tmp] = True
+            # self.valid_scene = np.logical_and(tmp, self.valid_scene )
+        else:
+            vs = np.ones( len(self.valid_mode), dtype=bool )
+        self.valid_scene =  vs *  self.valid_scene
+
         self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )
         self.global_to_local_idx = (self.global_to_local_idx[self.valid_scene]).tolist()
         self.length = len(self.global_to_local_idx)

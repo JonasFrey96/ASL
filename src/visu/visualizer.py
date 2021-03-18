@@ -269,7 +269,7 @@ class MainVisualizer():
     if type(y) is not list:
       y = [y]
     
-    keys = list( col.keys()) 
+    keys = list( COL_DICT.keys()) 
     for j, y_ in enumerate( y ): 
       if type(x) is list:
         if len(x) == len(y):
@@ -279,7 +279,7 @@ class MainVisualizer():
       else:
         x_ = x
       
-      ax.plot(x_,y_, color=np.array( col[keys[j]])/255)
+      ax.plot(x_,y_, color=np.array( COL_DICT[keys[j]])/255)
     if task_names is not None:
       plt.legend(task_names) 
       
@@ -290,12 +290,12 @@ class MainVisualizer():
       for i in range(0, nr_tasks):
           print("Plotting")
           print((i)*length/nr_tasks)
-          plt.axvspan((i)*length/nr_tasks, (i+1)*length/nr_tasks, facecolor=np.array( col[keys[i]])/255, alpha=0.2)
+          plt.axvspan((i)*length/nr_tasks, (i+1)*length/nr_tasks, facecolor=np.array( COL_DICT[keys[i]])/255, alpha=0.2)
     else:
       start = x.min()
       for i in range(0, nr_tasks):
         stop = count[i]
-        plt.axvspan( max(start,x.min()) , min(stop,x.max()) , facecolor=np.array( col[keys[i]])/255, alpha=0.2)
+        plt.axvspan( max(start,x.min()) , min(stop,x.max()) , facecolor=np.array( COL_DICT[keys[i]])/255, alpha=0.2)
         start = stop
       
     arr = get_img_from_fig(fig, dpi=300)
@@ -343,8 +343,8 @@ class MainVisualizer():
         axs[nr].set_yticks( [0,0.2,0.4,0.6,0.8,1])
         axs[nr].grid(True, linestyle='-', linewidth=1)
         for j, i in enumerate( task['val_task_results']):
-            k = list( col.keys())
-            val = col[k[j]]
+            k = list( COL_DICT.keys())
+            val = COL_DICT[k[j]]
             val = [v/255 for v in val]
             axs[nr].plot(i[0], i[1], color=val, linestyle = line_styles[j], label=task['eval_names'][j])
         plt.legend(loc='upper left')

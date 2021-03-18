@@ -1,15 +1,15 @@
 name: scannet_pseudo_label
-checkpoint_load: /home/jonfrey/results/cluster/2021-03-10T20:19:16_run_4h_train_1gpu_debug2080/last.ckpt
+checkpoint_load: /home/jonfrey/results/cluster_results/2021-03-15T10:21:22_24h_lr_001/task0-epoch=120--step=444069.ckpt
 
 loader:
   pin_memory: true
   batch_size: 1
-  shuffle: true
+  shuffle: false
   num_workers: 0
 
 dataset: 
   name: scannet
-  mode: val_strict
+  mode: test_strict
   output_size:
   - 640
   - 1280
