@@ -41,8 +41,8 @@ parser.add_argument('--scratch', default=0, help="Total Scratch space in GB")
 parser.add_argument('--fake', default=False, help="Not schedule")
 parser.add_argument('--ignore_workers', default=False, help="Ignore workers")
 parser.add_argument('--script', default='supervisor', choices=['main', 'supervisor'], help="Select script to start")
-parser.add_argument('--fast_gpu', default=False, help="Select script to start")
-parser.add_argument('--host', default="leonhard", choices=['leonhard', 'euler'])
+parser.add_argument('--fast_gpu', default=True, help="Select script to start")
+parser.add_argument('--host', default="euler", choices=['leonhard', 'euler'])
 
 
 args = parser.parse_args()
@@ -56,10 +56,10 @@ elif args.host == 'euler':
   export_cmd = """export LSF_ENVDIR=/cluster/apps/lsf/conf; export LSF_SERVERDIR=/cluster/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/etc;"""
   bsub_cmd = """/cluster/apps/lsf/10.1/linux2.6-glibc2.3-x86_64/bin/bsub"""
 
+env = f'cfg/env/{args.host}.yml' 
 w = int(args.workers)
 gpus = int(args.gpus)
 ram = int(int(args.ram)*1000/w)
-env = args.env
 logging.info('#'*80)
 logging.info(' '*25+f'All jobs will be run for {args.time}h')
 logging.info('#'*80)
@@ -146,7 +146,7 @@ else:
 
       name = model_paths[j].split('/')[-1] + str(j) + '.out'
       o = f""" -oo {p}/{name} """
-      cmd = f"""{export_cmd} cd $HOME/ASL && {bsub_cmd}{o}-n {w} -W {s1} -R "rusage[mem={ram},ngpus_excl_p={gpus}]" """ 
+      cmd = f"""bsub{o} -n {w} -W {s1} -R "rusage[mem={ram},ngpus_excl_p={gpus}]" """ 
       
       if scratch > 0:
         cmd += f"""-R "rusage[scratch={scratch}]" """
@@ -160,17 +160,19 @@ else:
       elif args.script == 'supervisor':
         subscr = 'submit_supervisor'
           
-      cmd += f"""./tools/leonhard/{subscr}.sh --exp={e}"""  
-      
+      cmd += f""" /cluster/home/jonfrey/miniconda3/envs/track4/bin/python supervisor.py --exp={e}"""  
       cmd = cmd.replace('\n', '')
+      cmd = """source /cluster/apps/local/env2lmod.sh && module purge && module load gcc/6.3.0 hdf5 eth_proxy python_gpu/3.8.5 && source ~/.bashrc && cd $HOME/ASL && """ + cmd
+      print(cmd)
+      # cmd = "echo $MODELS"
       logging.info(f'   {j}-Command: {cmd}')
       
       if not fake:
         stdin, stdout, stderr = ssh.exec_command(cmd)
-        #a = stdin.readlines()
-        b = stdout.readlines()[0]
+        # a = stdin.readlines()
+        b = stdout.readlines()
         c = stderr.readlines()
-        logging.info(f'   {j}-Results: {b}')
+        print(f'   {j}-Results: {b} {c} ' )
       else:
         logging.info('   Fake Flag is set')
       #Remote schedule jobs

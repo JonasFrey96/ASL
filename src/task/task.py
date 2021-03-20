@@ -97,7 +97,7 @@ class TaskCreator():
     
     self.replay_adaptive_add_p = kwargs.get('replay_adaptive_add_p',False)
     self.scannet_strict_split = kwargs.get('scannet_strict_split',False)
-    
+    self.scannet_small_factor = kwargs.get('scannet_small_factor',1)
 
     if mode == 'SingleScenesCountsDescending':
       self._getTaskSingleScenesCountsDescending()  
@@ -130,7 +130,7 @@ class TaskCreator():
   def _scannet_continual_learning(self, total_tasks):
     # Dont use the strict split !
     classes = ScanNet.get_classes()
-    classes_per_task = int( len(classes) /4 )
+    classes_per_task = int( int( len(classes) /4 ) / self.scannet_small_factor)
 
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
