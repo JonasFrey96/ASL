@@ -89,11 +89,21 @@ class ScanNet(StaticReplayDataset):
         replayed [torch.tensor]: 1 torch.float32 
         global_idx [int]: global_index in dataset
         """
-
-        idx = -1
-        replayed = torch.zeros( [1] )
         
-        global_idx = self.global_to_local_idx[index]
+        replayed = torch.tensor( [-1] , dtype=torch.int32)
+        idx = -1
+        if self.replay:
+            if self._mode == 'train':
+                idx, bin = self.idx(self.global_to_local_idx[index])
+                if idx != -1:
+                    global_idx = idx
+                    replayed[0] = bin
+                else:
+                    global_idx = self.global_to_local_idx[index]
+            else:
+                global_idx = self.global_to_local_idx[index]
+        else:
+            global_idx = self.global_to_local_idx[index]
         
         # Read Image and Label
         label = imageio.imread(self.label_pths[global_idx])

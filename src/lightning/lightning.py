@@ -44,7 +44,7 @@ from uncertainty import get_softmax_uncertainty_max, get_softmax_uncertainty_dis
 from uncertainty import get_image_indices
 from uncertainty import distribution_matching
 from uncertainty import get_kMeans_indices
-
+from uncertainty import interclass_dissimilarity
 __all__ = ['Network']
 def wrap(s,length, hard=False):
   if len(s) < length:
@@ -565,6 +565,13 @@ class Network(LightningModule):
       elif m == 'random':
         selected = torch.randperm( self._t_ret.shape[0], device=self.device)[:self._rssb.bins.shape[1]]
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
+      elif m == "interclass_dissimilarity":
+        selected, metric = interclass_dissimilarity(self._t_latent_feature_all, 
+                                 self._t_feature_labels, 
+                                 K_return=self._rssb.bins.shape[1], iterations= 5000)
+        ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
+        
+      
       elif m == 'kmeans':
         flag = m = self._exp['buffer']['kmeans']['perform_distribution_matching_based_on_subset']
         if flag:
