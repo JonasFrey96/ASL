@@ -162,13 +162,14 @@ else:
           
       cmd += f""" /cluster/home/jonfrey/miniconda3/envs/track4/bin/python supervisor.py --exp={e}"""  
       cmd = cmd.replace('\n', '')
-      cmd = """source /cluster/apps/local/env2lmod.sh && module purge && module load gcc/6.3.0 hdf5 eth_proxy python_gpu/3.8.5 && source ~/.bashrc && cd $HOME/ASL && """ + cmd
+      t = ""
+      cmd = """source /cluster/apps/local/env2lmod.sh && module purge && module load gcc/6.3.0 && module load hdf5 eth_proxy python_gpu/3.8.5 && cd $HOME/ASL && """ + cmd
       print(cmd)
       # cmd = "echo $MODELS"
       logging.info(f'   {j}-Command: {cmd}')
       
       if not fake:
-        stdin, stdout, stderr = ssh.exec_command(cmd)
+        stdin, stdout, stderr = ssh.exec_command(cmd, get_pty=True)
         # a = stdin.readlines()
         b = stdout.readlines()
         c = stderr.readlines()

@@ -24,9 +24,10 @@ class LabData(StaticReplayDataset):
             mode='train',
             scenes=[],
             output_trafo=None,
-            output_size=400,
+            output_size=(480,640),
             degrees=10,
             flip_p=0.5,
+            sub = 1,
             jitter_bcsh=[
                 0.3,
                 0.3,
@@ -42,6 +43,7 @@ class LabData(StaticReplayDataset):
         self._output_size = output_size
         self._mode = mode
 
+        self._sub = sub
         self._load(root, mode)
         self._filter_scene(scenes)
 
@@ -121,6 +123,9 @@ class LabData(StaticReplayDataset):
         sp = Path(os.path.join(root, '2'))
         self.image_pths =  [str(p) for p in sp.rglob('*.png') if str(p).find('undistorted') != -1]
         self.image_pths.sort()
+        
+        self.image_pths = self.image_pths[::self._sub]
+        
         self.global_to_local_idx = list( range( len(self.image_pths) ) )
         self.length = len(self.global_to_local_idx)
 

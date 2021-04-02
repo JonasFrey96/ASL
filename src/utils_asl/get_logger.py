@@ -26,6 +26,7 @@ def get_neptune_logger(exp,env,exp_p, env_p, project_name="jonasfrey96/asl"):
     
   t1 = str( os.environ['ENV_WORKSTATION_NAME'] )
   if not env['workstation']:
+    print( "Not workstation set proxy")
     NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
   
   gpus = 'gpus_'+str(torch.cuda.device_count())

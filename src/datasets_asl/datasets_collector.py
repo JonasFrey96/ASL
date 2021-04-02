@@ -3,17 +3,20 @@ from .nyu_v2 import NYUv2
 from .ml_hypersim import MLHypersim
 from .coco import COCo
 from .scannet import ScanNet
-
+from .labdata import LabData
 datasets = {
     'cityscapes': Cityscapes,
     'nyuv2': NYUv2,
     'mlhypersim': MLHypersim,
     'coco': COCo,
-    'scannet': ScanNet     
+    'scannet': ScanNet,
+    'labdata': LabData
 }
 
 def get_dataset(name, env, **kwargs):
     """Segmentation Datasets"""
+    print(datasets)
+    print(datasets.keys())
     return datasets[name.lower()](root=env[name], **kwargs)
 
     

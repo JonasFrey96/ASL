@@ -75,9 +75,8 @@ class TaskSpecificEarlyStopping(Callback):
           trainer.should_stop = True
           
           # stop every ddp process if any world process decides to stop
-          trainer.training_type_plugin.reduce_early_stopping_decision(should_stop)
-          trainer.should_stop = should_stop
-    
+          trainer.should_stop = trainer.training_type_plugin.reduce_boolean_decision(trainer.should_stop)
+          
       if self.verbose:
         string = 'Callback State\n'
         string += f'Trainger should stop: {should_stop}\n'

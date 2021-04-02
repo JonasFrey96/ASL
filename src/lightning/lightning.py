@@ -45,6 +45,10 @@ from uncertainty import get_image_indices
 from uncertainty import distribution_matching
 from uncertainty import get_kMeans_indices
 from uncertainty import interclass_dissimilarity
+from uncertainty import gradient_dissimilarity
+
+from gradient_helper import * # get_weights, get_grad, set_grad, gem_project, sum_project, random_project
+
 __all__ = ['Network']
 def wrap(s,length, hard=False):
   if len(s) < length:
@@ -129,8 +133,15 @@ class Network(LightningModule):
       self._rssb = ReplayStateSyncBack(bins=bins, elements=self._buffer_elements)
     else:
       self._rssb_active = False
+
+
+    self._gem = self._exp.get('gem',{}).get('active', False)
+    
+    if self._gem:
+      # register BUFFER 
+      pass
   
-  def forward(self, batch, **kwargs):
+  def forward(self, batch, **kwargs):    
     if kwargs.get('replayed', None) is not None:
       injection_mask = kwargs['replayed'] != -1
       outputs = self.model.injection_forward(
@@ -141,7 +152,49 @@ class Network(LightningModule):
       outputs = self.model(batch)
     return outputs
   
+  def on_after_backward(self):
+    # TRACK WEIGHT MOVEMENT
+    if hasattr(self, 'reference_weights'):
+      if self.trainer.global_step % self._exp['visu'].get('log_ref_weights_grad_every_n_steps',10) == 0: 
+          cur = get_weights( self.model.named_parameters() )
+          dif = torch.abs( self.reference_weights - cur )
+          mean = torch.mean( dif )
+          std = torch.std( dif )
+          self.log('mean_weight_movement', mean.detach(), on_step=True, on_epoch=True)
+          self.log('std_weight_movement', std.detach(), on_step=True, on_epoch=True)
+    else:
+      # INIT WEIGHTS
+      self.reference_weights = get_weights( self.model.named_parameters() )
+      print("Created weight reference for this epoch")
+    
+    # TRACK GRADIENT MOVEMENT FOR INITAL SAMPLE -> INIT REFERENCE GRADIENT
+    if not hasattr(self, 'reference_gradient'):
+      self.reference_gradient = get_grad( self.model.named_parameters() )
+    
+    # AGEM
+    if self._gem and hasattr(self, 'reference_gradient_agem'):
+      g = get_grad( self.model.named_parameters() )
+      if self._exp['gem']['method'] == 'agem':
+        g = gem_project(g, self.reference_gradient_agem)
+      elif self._exp['gem']['method'] == 'sum':
+        g = sum_project(g, self.reference_gradient_agem)
+      elif self.__exp['gem']['method'] == 'mean_sum':
+        g = mean_sum_project(g, self.reference_gradient_agem)
+      elif self._exp['gem']['method'] == 'random':
+        g = random_project(g, self.reference_gradient_agem)
+      
+      set_grad(g, self.model.named_parameters() )
+        
   def on_train_epoch_start(self):
+    # Reset the weight refernce
+    if hasattr(self, 'reference_weights'):  
+      del self.reference_weights
+      print("Resetted weight reference for this epoch")
+    
+    if hasattr(self, 'reference_gradient_batch'):
+      del reference_gradient_batch
+      
+        
     self._mode = 'train'
      
   def on_train_start(self):
@@ -180,10 +233,7 @@ class Network(LightningModule):
         if self._mode != 'test':
           pass
           # self._rssb.absorbe(bins,valids)
-      
-  def teardown(self, stage):
-    print('TEARDOWN: Called')
-  
+
   def on_fit_end(self):
     if self._mode != 'test':
       print('ON_FIT_END: Called')
@@ -222,7 +272,7 @@ class Network(LightningModule):
     string += f'   CurrentModel: WeightSum == {sum}\n'
     print('ON_EPOCH_START:\n' + string)
       
-  def compute_loss(self, pred, target, teacher_targets, images, replayed ):
+  def compute_loss(self, pred, target, teacher_targets, replayed, not_reduce = False):
     nr_replayed = (replayed != -1).sum()
     BS = replayed.shape[0]
     self._replayed_samples += int( nr_replayed )
@@ -245,8 +295,25 @@ class Network(LightningModule):
         target = target * (replayed[:,0]== -1)[:,None,None].repeat(1,target.shape[1],target.shape[2]) + teacher_targets * (replayed[:,0] != -1)[:,None,None].repeat(1,target.shape[1],target.shape[2])
         loss = F.cross_entropy(pred, target, ignore_index=-1)
     else:
+      loss = F.cross_entropy(pred, target, ignore_index=-1,reduction='none').mean(dim=[1,2])
+      try:
+        self.log('train_loss_memory', (loss * (replayed != -1)[:,0])/ (replayed != -1).sum(), on_step=False, on_epoch=True)
+      except:
+        pass
+      try:
+        self.log('train_loss_new', (loss * (replayed == -1)[:,0])/(replayed == -1).sum(), on_step=False, on_epoch=True)
+      except:
+        pass
+      
       # use gt labels
-      loss = F.cross_entropy(pred, target, ignore_index=-1)
+      if not self._gem or (replayed == -1).sum() == 0 :
+        loss = loss.mean()
+      else:
+        if not_reduce:
+          return loss
+        # caclulate loss only over new samples
+        loss = loss * (replayed == -1)[:,0]
+        loss = loss.sum() / (replayed == -1).sum()
     return loss
   
   def training_step(self, batch, batch_idx):
@@ -255,8 +322,42 @@ class Network(LightningModule):
     ori_img = batch[2]
     replayed = batch[3]
     BS = images.shape[0]
-    
     teacher_targets = None
+    
+    # IF REFERENCE GRADIENT IMAGES ARE AVAILABLE COMPUTE GRADIENT AT CURRENT STEP
+    if (hasattr(self, 'reference_gradient_images') and
+      self.trainer.global_step % self._exp['visu'].get('log_ref_weights_grad_every_n_steps',10) == 0):
+      o = self(self.reference_gradient_images)
+      l = self.compute_loss(  
+              pred = o[0], 
+              target = self.reference_gradient_target,
+              teacher_targets = self.reference_teacher_targets,
+              replayed = self.reference_replayed)
+      l.backward()
+      current_gradient = get_grad( self.model.named_parameters() )
+      dif = torch.abs( self.reference_gradient - current_gradient )
+      mean = torch.mean( dif )
+      std = torch.std( dif )
+      self.log('mean_gradient_movement', mean.detach(), on_step=True, on_epoch=True)
+      self.log('std_gradient_movement', std.detach(), on_step=True, on_epoch=True)
+      self.model.zero_grad()
+      
+      
+    # IF AGEM COMPUTE GRADIENT OVER REPLAYED SAMPLES
+    if (replayed != -1).sum() > 0 and self._gem:
+      o = self( images)
+      l = self.compute_loss(  
+        pred = o[0], 
+        target = target,
+        teacher_targets = target,
+        replayed = replayed,
+        not_reduce = True)
+      l = (( l * (replayed != -1)[:,0] ).sum())/((replayed != -1).sum()) 
+      l.backward()
+      self.reference_gradient_agem = get_grad( self.model.named_parameters() )
+      self.model.zero_grad()
+      
+    # ACTUAL FORWARD PASS
     if ( (replayed != -1).sum() != 0 and
       ( self._exp.get('latent_replay',{}).get('active',False) or self._teaching)):
         teacher_targets, injection_features = self.teacher.get_latent_replay(images, replayed)
@@ -270,13 +371,19 @@ class Network(LightningModule):
     else:
       outputs = self(batch = images)
 
+    # SET REFERENCE IMAGES AND GRADIENTS FOR GRADIENT TRACKING !
+    if not hasattr(self, 'reference_gradient_images'):
+        self.reference_gradient_images = images
+        self.reference_gradient_target = target
+        self.reference_replayed = replayed
+        self.reference_teacher_targets = teacher_targets 
+        
     loss = self.compute_loss(  
               pred = outputs[0], 
               target = target,
               teacher_targets = teacher_targets,
-              images= images, 
               replayed = replayed)
-        
+    loss.mean()
     self.log('train_loss', loss, on_step=False, on_epoch=True)
     return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
   
@@ -332,7 +439,6 @@ class Network(LightningModule):
       self.log('val_mIoU_epoch',val_mIoU_epoch,)
       self.log('val_loss',val_loss)
   
-    
   def validation_step(self, batch, batch_idx, dataloader_idx=0):
     if self._dataloader_index_store != dataloader_idx:
       self._dataloader_index_store = dataloader_idx
@@ -344,8 +450,6 @@ class Network(LightningModule):
     
     loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
     pred = torch.argmax(outputs[0], 1)
-
-    
 
     return {'pred': pred, 'target': target, 'ori_img': batch[2], 'dataloader_idx': dataloader_idx, 'loss_ret': loss }
 
@@ -494,11 +598,9 @@ class Network(LightningModule):
                                     device=self.device, dtype = torch.int64)
     self._t_s = 0
     self._t_st = time.time()
-    
+    self._t_gradient_list = []
     
   def test_step(self, batch, batch_idx):
-    self._t_s
-    
     if batch_idx % int(self.trainer.log_every_n_steps/5) == 0:
       info = f'TEST_STEP: Analyzed Dataset {batch_idx}/{self._t_l} Time: {time.time()-self._t_st }'
       print(info)
@@ -543,7 +645,6 @@ class Network(LightningModule):
         # more complex evaluate according to latent feature space
         ret_globale_indices = self.use_latent_features( self._t_latent_feature_all, 
                                                       self._t_ret[:,self._t_ret_metrices] )
-        
       elif m == 'softmax_max' or m == 'softmax_distance' or m == 'loss':
         if m == 'softmax_max':
           metric_idx = 0
@@ -556,7 +657,15 @@ class Network(LightningModule):
                               k =self._rssb.bins.shape[1],
                               largest =self._exp['buffer'].get('metric_cfg',{}).get('use_highest_uncertainty',True))
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][indi]
+      elif m == 'gradient_selection':
+        self._t_gradient_list = [t[None] for t in self._t_gradient_list]
+        selected, metric = gradient_dissimilarity( 
+          torch.cat( self._t_gradient_list ) , 
+          K_return= self._rssb.bins.shape[1], 
+          **self._exp['buffer']['gradient_selection_cfg'])
+        selected.to( self._t_ret.device )
         
+        ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
       elif m == 'distribution_matching':
         selected, metric = distribution_matching(self._t_feature_labels, 
                               K_return=self._rssb.bins.shape[1], 
@@ -705,28 +814,37 @@ class Network(LightningModule):
     """
     Extract metric + latent features
     """
-    BS = batch[0].shape[0]
-    global_index =  batch[4]    
-    
-    outputs = self(batch = batch[0]) 
-    pred = outputs[0]
-    features = outputs[1]
-    label = batch[1]
-    _BS,_C,_H, _W = features.shape
-    label_features = F.interpolate(label[:,None].type(features.dtype), (_H,_W), mode='nearest')[:,0].type(label.dtype)
-    
-    NC = self._exp['model']['cfg']['num_classes']
-    
-    latent_feature = torch.zeros( (_BS,NC,_C), device=self.device ) #10kB per Image if 16 bit
-    for b in range(BS): 
-      for n in range(NC):
-        m = label_features[b]==n
-        if m.sum() != 0:
-          latent_feature[b,n] = features[b][:,m].mean(dim=1)
-    
-    res1 = get_softmax_uncertainty_max(pred) # confident 0 , uncertain 1
-    res2 = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
-    res3 = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
+    with torch.set_grad_enabled(True):
+        
+      BS = batch[0].shape[0]
+      global_index =  batch[4]    
+      
+      outputs = self(batch = batch[0]) 
+      pred = outputs[0]
+      features = outputs[1]
+      label = batch[1]
+      _BS,_C,_H, _W = features.shape
+      label_features = F.interpolate(label[:,None].type(features.dtype), (_H,_W), mode='nearest')[:,0].type(label.dtype)
+      
+      NC = self._exp['model']['cfg']['num_classes']
+      
+      latent_feature = torch.zeros( (_BS,NC,_C), device=self.device ) #10kB per Image if 16 bit
+      for b in range(BS): 
+        for n in range(NC):
+          m = label_features[b]==n
+          if m.sum() != 0:
+            latent_feature[b,n] = features[b][:,m].mean(dim=1)
+      
+      res1 = get_softmax_uncertainty_max(pred) # confident 0 , uncertain 1
+      res2 = get_softmax_uncertainty_distance(pred) # confident 0 , uncertain 1
+      res3 = F.cross_entropy(pred, batch[1], ignore_index=-1,reduction='none').mean(dim=[1,2]) # correct 0 , incorrect high
+      
+      self.model.zero_grad()
+      l = res3.mean()
+      l.backward()
+      res = get_grad( self.model.named_parameters() ) #4 MB per sample 
+      self._t_gradient_list.append( res.detach().cpu() )
+      
     res = torch.stack([res1,res2,res3],dim=1)
     return res.detach(), global_index.detach(), latent_feature.detach()
   
