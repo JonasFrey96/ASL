@@ -5,3 +5,4 @@ from .get_image_indices import *
 from .distribution_machting import *
 from .get_kMeans_indices import *
 from .interclass_dissimilarity import *
+from .gradient_dissimilarity import *

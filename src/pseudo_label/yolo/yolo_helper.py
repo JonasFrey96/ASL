@@ -37,7 +37,7 @@ class YoloHelper():
             y1 = int( results.xyxy[0][-k][1])
             x2 = int( results.xyxy[0][-k][2])
             y2 = int( results.xyxy[0][-k][3])
-            confidence = results.xyxy[0][-k][4]      
+            confidence = (results.xyxy[0][-k][4]).cpu()      
             coco_class = int( results.xyxy[0][-k][5])
             cla = self.mappings['coco2017_id_nyu_id'][coco_class]
             label[cla, int(y1):int(y2), int(x1):int(x2)] = confidence        

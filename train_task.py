@@ -108,7 +108,7 @@ def get_dataloader_train(d_train, env, exp):
     shuffle = False,
     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
     pin_memory = exp['loader']['pin_memory'],
-    batch_size = max(1,ceil(exp['loader']['batch_size'])), 
+    batch_size = 1, 
     drop_last = True)
     
   return dataloader_train, dataloader_buffer
@@ -468,8 +468,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     trainer.test(model=model,
                 test_dataloaders= dataloader_buffer)
   
-    if local_rank == 0:
-      checkpoint_callback.save_checkpoint(trainer, model)
+    checkpoint_callback.save_checkpoint(trainer, model)
     print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
   
   number_validation_dataloaders = len( dataloader_list_test ) 
@@ -480,7 +479,10 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     fill_status = (bins != 0).sum(axis=1)
     main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
   
-  plot_from_pkl(main_visu, base_path, task_nr)
+  try:
+    plot_from_pkl(main_visu, base_path, task_nr)
+  except:
+    print("Failde because not implemented when restarting training")
   
   validation_acc_plot(main_visu, logger)
   
