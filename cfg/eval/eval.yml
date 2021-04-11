@@ -1,6 +1,5 @@
 name: scannet_pseudo_label
-checkpoint_load: /home/jonfrey/results/cluster_results/2021-03-15T10:21:22_24h_lr_001/task0-epoch=120--step=444069.ckpt
-
+checkpoint_load: /home/jonfrey/results/cluster/2021-03-30T21:35:50_01/task0-epoch=25--step=002677.ckpt
 loader:
   pin_memory: true
   batch_size: 2
@@ -11,8 +10,8 @@ dataset:
   name: scannet
   mode: test_strict
   output_size:
+  - 320
   - 640
-  - 1280
   replay: True
   sub: 10
   cfg_replay:
@@ -38,19 +37,19 @@ task_generator:
   total_tasks: 4
   mode: scannet_continual_learning
   seed: 0
-  replay_adaptive_add_p: True
+  replay_adaptive_add_p: False
   scannet_strict_split: False
-  scannet_small_factor: 10
-
+  scannet_small_factor: 4
   copy_to_template:
     # scenes: # S
     # - scene0000
     cfg_replay:
       bins: 4
-      elements: 500
-      add_p: 0.5
+      elements: 100
+      add_p: 0
       replay_p: 0.5
       current_bin: 0
-    replay: True
-    data_augmentation: True
-    data_augmentation_for_replay: True
+    replay: False
+    data_augmentation: False
+    data_augmentation_for_replay: False
+        

@@ -384,7 +384,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       callbacks=cb_ls,
       logger=logger)   
   
-  # WEIGHTS
+  
   if exp['weights_restore'] :
     # it is not strict since the latent replay buffer is not always available
     p = os.path.join( env['base'],exp['checkpoint_load'])
@@ -416,6 +416,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
 
   model._task_name = task.name
   model._task_count = idx
+  # Normal Validation datloader is ignored !
   dataloader_train, dataloader_buffer= get_dataloader_train(d_train= task.dataset_train_cfg,
                                                               env=env,exp = exp)
   print(str(dataloader_train.dataset))
@@ -510,5 +511,4 @@ if __name__ == "__main__":
   env_cfg_path = os.path.join('cfg/env', os.environ['ENV_WORKSTATION_NAME']+ '.yml')
   
   train_task( bool(args.init),  bool(args.close), args.exp, env_cfg_path, args.task_nr)
-
   
