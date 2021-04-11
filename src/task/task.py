@@ -123,14 +123,97 @@ class TaskCreator():
       self._scannet()
     elif mode == 'scannet_continual_learning':
       self._scannet_continual_learning(kwargs['total_tasks'])
+    elif mode == 'scannet_continual_learning_count_adjusted':
+      self._scannet_continual_learning_count_adjusted(kwargs['total_tasks'])
+
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
 
+  def _scannet_continual_learning_count_adjusted(self, total_tasks):
+    # Dont use the strict split !
+    target_counts = 30000
+    classes, counts = ScanNet.get_classes()
+
+    store = []
+    used = []
+    nr = 0
+    np.random.seed(42)
+    randoms = np.random.randint(0,len(counts), (10000,5) )
+    m = (randoms[:,0] == randoms[:,1])
+    m = (randoms[:,0] == randoms[:,2]) + m
+    m = (randoms[:,0] == randoms[:,3]) + m
+    m = (randoms[:,0] == randoms[:,4]) + m
+    m = (randoms[:,1] == randoms[:,2]) + m
+    m = (randoms[:,1] == randoms[:,3]) + m
+    m = (randoms[:,1] == randoms[:,4]) + m
+    m = (randoms[:,2] == randoms[:,3]) + m
+    m = (randoms[:,2] == randoms[:,4]) + m
+    m = (randoms[:,3] == randoms[:,4]) + m
+    m = m == False
+    randoms = randoms[ m ]
+    ar = np.array( counts )
+    sums = (ar[ randoms[:,:] ]).sum(axis=1)
+    dif = np.abs( sums - target_counts )  
+    while nr < total_tasks:
+      best = np.argmin( dif )
+      if not (randoms[best, 0] in used
+        or randoms[best, 1] in used or
+        randoms[best, 2] in used or
+        randoms[best, 3] in used or
+        randoms[best, 4] in used):
+        used.append( int(randoms[best, 0]) )
+        used.append( int(randoms[best, 1]) )
+        used.append( int(randoms[best, 2]) )
+        used.append( int(randoms[best, 3]) )
+        used.append( int(randoms[best, 4]) )
+        nr += 1
+        store.append( randoms[best] )
+      else:
+        dif[best] = 99999
+
+
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    
+    train['mode'] = 'train'
+    val['mode'] = 'val'
+    
+    classes = np.array(classes)
+    for i in range( total_tasks ):
+      train_i = copy.deepcopy( train )
+      train_i['scenes'] = classes[ store[i] ].tolist()
+      
+      print("train_task", i, train_i['scenes'])
+      seed = 0
+      if self.replay_adaptive_add_p:
+        if i == seed:
+          train_i['cfg_replay']['replay_p'] = 0.0
+        else:
+          train_i['cfg_replay']['replay_p'] = float(i-seed)/float(i+1-seed)
+
+      t = Task(name = f'Scannet_Task_Train_All',
+                dataset_train_cfg= copy.deepcopy(train_i),
+                dataset_val_cfg= val)
+
+      self._task_list.append(t)
+      
+      eval_tasks = []
+      for j in range(total_tasks):
+        val_j = copy.deepcopy( val )
+        val_j['scenes'] = classes[ store[j] ].tolist()
+        print("eval_task", j, val_j['scenes'])
+        eval_task = EvalTask(
+          name = f'Scannet_Eval_All',
+          dataset_test_cfg=copy.deepcopy(val_j))
+        eval_tasks.append( eval_task )
+      self._eval_lists.append( eval_tasks )
+
   def _scannet_continual_learning(self, total_tasks):
     # Dont use the strict split !
-    classes = ScanNet.get_classes()
-    classes_per_task = int( int( len(classes) /4 ) / self.scannet_small_factor)
+    classes, counts = ScanNet.get_classes()
+
+    classes_per_task = int( int( len(classes) / total_tasks ) / self.scannet_small_factor)
 
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
@@ -143,6 +226,7 @@ class TaskCreator():
       train_i = copy.deepcopy( train )
       train_i['scenes'] = classes[int( classes_per_task)*i:int( classes_per_task*(i+1))]
       
+      print("train_task", i, train_i['scenes'])
       if self.replay_adaptive_add_p:
         if i == seed:
           train_i['cfg_replay']['replay_p'] = 0.0
@@ -150,8 +234,9 @@ class TaskCreator():
           train_i['cfg_replay']['replay_p'] = float(i-seed)/float(i+1-seed)
 
       t = Task(name = f'Scannet_Task_Train_All',
-                dataset_train_cfg= train_i,
+                dataset_train_cfg= copy.deepcopy(train_i),
                 dataset_val_cfg= val)
+
       self._task_list.append(t)
       
       eval_tasks = []
@@ -159,9 +244,10 @@ class TaskCreator():
         val_j = copy.deepcopy( val )
 
         val_j['scenes'] = classes[int( classes_per_task)*j:int( classes_per_task*(j+1))]
+        print("eval_task", j, val_j['scenes'])
         eval_task = EvalTask(
           name = f'Scannet_Eval_All',
-          dataset_test_cfg=val_j)
+          dataset_test_cfg=copy.deepcopy(val_j))
         eval_tasks.append( eval_task )
       self._eval_lists.append( eval_tasks )
 

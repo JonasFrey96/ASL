@@ -117,7 +117,7 @@ else:
   model_paths = [os.path.join(base,i) for i in model_paths] 
 
   # Push to cluster 
-  cmd = f"""rsync -a --delete --exclude='.git/' --exclude='cfg/exp/tmp/*' {home}/ASL/* {login}:/cluster/home/jonfrey/ASL"""
+  cmd = f"""rsync -a --delete --exclude='.git/' --exclude='__pycache__/' --exclude='cfg/exp/tmp/*' {home}/ASL/* {login}:/cluster/home/jonfrey/ASL"""
   os.system(cmd)
 
   # Executue commands on cluster

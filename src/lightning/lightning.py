@@ -46,7 +46,7 @@ from uncertainty import distribution_matching
 from uncertainty import get_kMeans_indices
 from uncertainty import interclass_dissimilarity
 from uncertainty import gradient_dissimilarity
-
+from uncertainty import hierarchical_dissimilarity
 from gradient_helper import * # get_weights, get_grad, set_grad, gem_project, sum_project, random_project
 
 __all__ = ['Network']
@@ -620,7 +620,8 @@ class Network(LightningModule):
         self._t_ret[self._t_s,self._t_ret_metrices] = global_index[ba]
         self._t_latent_feature_all[self._t_s] = latent_feature[ba]
         self._t_s += 1
-    
+  
+  @torch.no_grad()
   def on_test_epoch_end(self):
     local_rank = int(os.environ.get('LOCAL_RANK', 0))
     if local_rank == 0:
@@ -659,10 +660,18 @@ class Network(LightningModule):
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][indi]
       elif m == 'gradient_selection':
         self._t_gradient_list = [t[None] for t in self._t_gradient_list]
-        selected, metric = gradient_dissimilarity( 
-          torch.cat( self._t_gradient_list ) , 
-          K_return= self._rssb.bins.shape[1], 
-          **self._exp['buffer']['gradient_selection_cfg'])
+        # selected, metric = gradient_dissimilarity( 
+        #   torch.cat( self._t_gradient_list ) , 
+        #   K_return= self._rssb.bins.shape[1], 
+        #   **self._exp['buffer']['gradient_selection_cfg'])
+        # hierarchical_dissimilarity(X, K=50, maxSize=100)
+        sub = 50
+        grad = torch.cat( self._t_gradient_list )
+        print("orignal_size", grad.shape)
+        new_grad = grad[:,::sub]
+        selected = hierarchical_dissimilarity( new_grad , K=self._rssb.bins.shape[1], maxSize=100, device= self._t_ret.device)
+        
+        
         selected.to( self._t_ret.device )
         
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
@@ -670,6 +679,8 @@ class Network(LightningModule):
         selected, metric = distribution_matching(self._t_feature_labels, 
                               K_return=self._rssb.bins.shape[1], 
                               **self._exp['buffer']['distribution_matching_cfg'])
+
+        
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
       elif m == 'random':
         selected = torch.randperm( self._t_ret.shape[0], device=self.device)[:self._rssb.bins.shape[1]]

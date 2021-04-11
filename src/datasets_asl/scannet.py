@@ -201,7 +201,9 @@ class ScanNet(StaticReplayDataset):
     @staticmethod
     def get_classes(train_val_split=0.2):
         data = pickle.load( open( f"cfg/dataset/scannet/scannet_trainval_{train_val_split}.pkl", "rb" ) )
-        return np.unique(data['scenes']).tolist()
+        names, counts = np.unique(data['scenes'], return_counts=True)
+
+        return names.tolist(), counts.tolist() 
     
     def _load_cfg( self, root='not_def', train_val_split=0.2 ):
         # if pkl file already created no root is needed. used in get_classes
