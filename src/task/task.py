@@ -85,7 +85,7 @@ class TaskCreator():
   This object might be passed to an Task executor with the model
   and the trainer or simply iterated over in a for loop!
   """
-  def __init__(self, mode= 'SingleScenesCountsDescending', output_size=384, *args, **kwargs):
+  def __init__(self, mode= 'SingleScenesCountsDescending', *args, **kwargs):
     # SET ALL TEMPLATES CORRECT
     for t in template_list:
       ktt = kwargs.get('copy_to_template',{})
