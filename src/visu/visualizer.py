@@ -184,7 +184,7 @@ class MainVisualizer():
       raise Exception('Invalid Shape')  
     if img.max() <= 1:
       img = img*255
-    
+
     img = np.uint8(img)
     return img
 

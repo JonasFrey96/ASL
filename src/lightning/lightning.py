@@ -297,11 +297,11 @@ class Network(LightningModule):
     else:
       loss = F.cross_entropy(pred, target, ignore_index=-1,reduction='none').mean(dim=[1,2])
       try:
-        self.log('train_loss_memory', (loss * (replayed != -1)[:,0])/ (replayed != -1).sum(), on_step=False, on_epoch=True)
+        self.log('train_loss_memory', ((loss * (replayed != -1)[:,0]))/((replayed != -1).sum()), on_step=False, on_epoch=True)
       except:
         pass
       try:
-        self.log('train_loss_new', (loss * (replayed == -1)[:,0])/(replayed == -1).sum(), on_step=False, on_epoch=True)
+        self.log('train_loss_new', ((loss * (replayed == -1)[:,0]))/((replayed == -1).sum()), on_step=False, on_epoch=True)
       except:
         pass
       

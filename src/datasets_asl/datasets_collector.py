@@ -15,8 +15,6 @@ datasets = {
 
 def get_dataset(name, env, **kwargs):
     """Segmentation Datasets"""
-    print(datasets)
-    print(datasets.keys())
     return datasets[name.lower()](root=env[name], **kwargs)
 
     
