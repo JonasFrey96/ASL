@@ -13,10 +13,11 @@ from PIL import Image
 import copy 
 import time
 try:
-    from .helper import Augmentation
+    from .helper import AugmentationList
     from .replay_base import StaticReplayDataset
 except Exception:  # ImportError
     from helper import Augmentation
+    from helper import AugmentationList
     from replay_base import StaticReplayDataset
 import imageio
 import pandas
@@ -42,7 +43,8 @@ class ScanNet(StaticReplayDataset):
             replay = False,
             sub = 10,
             cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
-            data_augmentation= True, data_augmentation_for_replay=True):
+            data_augmentation= True, data_augmentation_for_replay=True,
+            label_setting = "default"):
         """
         Some images are stored in 640x480 other ins 1296x968
         Warning scene0088_03 has wrong resolution -> Ignored
@@ -55,17 +57,19 @@ class ScanNet(StaticReplayDataset):
             ScanNet,
             self).__init__(
             ** cfg_replay, replay=replay)
+        
+        
 
         if mode.find('val') != -1:
             mode = mode.replace('val', 'test')
         self._sub = sub
         self._mode = mode
 
-        self._load(root, mode)
+        self._load(root, mode, label_setting=label_setting )
         
         self._filter_scene(scenes)
 
-        self._augmenter = Augmentation(output_size,
+        self._augmenter = AugmentationList(output_size,
                                        degrees,
                                        flip_p,
                                        jitter_bcsh)
@@ -107,9 +111,16 @@ class ScanNet(StaticReplayDataset):
         
         # Read Image and Label
         label = imageio.imread(self.label_pths[global_idx])
-        #170 ms
         label = torch.from_numpy(label.astype(np.int32)).type(
             torch.float32)[None, :, :]  # C H W
+        label = [label]
+
+        if self.aux_labels:
+            aux_label = imageio.imread(self.aux_label_pths[global_idx])
+            
+            aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
+                torch.float32)[None, :, :]
+            label.append(aux_label)
         
         img = imageio.imread(self.image_pths[global_idx])
         img = torch.from_numpy(img).type(
@@ -127,21 +138,36 @@ class ScanNet(StaticReplayDataset):
         img_ori = img.clone()
         if self._output_trafo is not None:
             img = self._output_trafo(img)
-        sa = label.shape
-        label = label.flatten()
-        label = self.mapping[label.type(torch.int64)] # scannet to nyu40
-        label = label.reshape(sa)
-        label = label - 1  # 0 == chairs 39 other prop  -1 invalid
+
+        # scannet to nyu40 for GT LABEL
+        sa = label[0].shape
+        label[0] = label[0].flatten()
+        label[0] = self.mapping[label[0].type(torch.int64)] 
+        label[0] = label[0].reshape(sa)
+        label[0] = label[0] - 1  # 0 == chairs 39 other prop  -1 invalid
         
-        # check if reject
-        if (label != -1).sum() < 10:
+        if len(label) > 1:
+            for l in label[1:]:
+                l = l-1 # 0 == chairs 39 other prop  -1 invalid
+
+        # check if reject on GT LABEL
+        if (label[0] != -1).sum() < 10:
             # reject this example
             idx = random.randint(0, len(self) - 1)
             if not self.unique:
                 return self[idx]
             else:
                 replayed[0] = -999
-        return img, label.type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
+        
+        if len(label) > 1:
+            return (img, 
+                    label[0].type(torch.int64)[0, :, :], 
+                    img_ori, 
+                    replayed.type(torch.float32), 
+                    global_idx,
+                    label[1].type(torch.int64)[0, :, :])
+        else:
+            return img, label[0].type(torch.int64)[0, :, :], img_ori, replayed.type(torch.float32), global_idx
 
     def __len__(self):
         return self.length
@@ -158,7 +184,7 @@ class ScanNet(StaticReplayDataset):
         string += "="*90
         return string
         
-    def _load(self, root, mode, train_val_split=0.2):
+    def _load(self, root, mode, train_val_split=0.2, label_setting="default"):
         tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
         df = pandas.read_csv(tsv, sep='\t')
         self.df =df
@@ -173,6 +199,12 @@ class ScanNet(StaticReplayDataset):
         self.train_test, self.scenes, self.image_pths, self.label_pths = self._load_cfg(root, train_val_split)
         self.image_pths = [ os.path.join(root,i[1:]) for i in self.image_pths if i.find("scene0088_03") == -1 ]
         self.label_pths = [ os.path.join(root,i[1:]) for i in self.label_pths if i.find("scene0088_03") == -1 ]
+
+        if label_setting == "label_v1_detectron" and mode.find("train") != -1:
+            self.aux_label_pths = [ i.replace("label-filt", "label_detectron2") for i in self.label_pths]
+            self.aux_labels = True
+        else:
+            self.aux_labels = False
 
         if mode.find("_strict") != -1:
             r = os.path.join( root,'scans')

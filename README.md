@@ -186,6 +186,8 @@ To utilize the unlabeled data we have a look into the following aspects:
 | **Optical Flow**         | Optical Flow directly relates semantic intra-frame segmentation     |
 | **Depth Data**           | Semantic segmentation aligns with frames                            |
 
+![Detectron2 Panoptic Segmentation](https://github.com/JonasFrey96/ASL/blob/main/docs/lab_data_segmentation.jpg)
+
 ## 1.7. Continual Learning Options  
 We will focus on latent memory replay to avoid catastrophic forgetting initially.
 

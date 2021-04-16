@@ -46,7 +46,7 @@ from utils_asl import flatten_list, flatten_dict
 from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
 
-from datasets import eval_lists_into_dataloaders, get_dataloader_test, get_dataloade_train
+from datasets_asl import eval_lists_into_dataloaders, get_dataloader_test, get_dataloader_train
 
 __all__ = ['train_task']
 

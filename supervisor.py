@@ -25,7 +25,7 @@ from utils_asl import file_path, load_yaml
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/eval/random.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/debug.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')

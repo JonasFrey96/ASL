@@ -5,3 +5,4 @@ nyuv2: /cluster/work/riner/users/jonfrey/datasets/nyuv2
 coco: /cluster/work/riner/users/jonfrey/datasets/coco
 mlhypersim: /cluster/work/riner/users/jonfrey/datasets/mlhypersim
 scannet: /cluster/work/riner/users/jonfrey/datasets/scannet
+label_v1_detectron: /cluster/work/riner/users/jonfrey/datasets/scannet
