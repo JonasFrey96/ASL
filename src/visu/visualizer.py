@@ -17,6 +17,9 @@ from matplotlib import cm
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.patches as patches
 import pickle
+
+from detectron2.utils.visualizer import Visualizer as DetectronVisu
+
 try:
   from .colors import *
   from .flow_viz import *
@@ -62,7 +65,7 @@ def image_functionality(func):
       args[0]._storage_left = None
       args[0]._storage_right = None
       log = True
-    
+    log *= not kwargs.get('not_log', False)
     if log:
       log_exp = args[0].logger is not None
       tag = kwargs.get('tag', 'TagNotDefined')
@@ -431,7 +434,35 @@ class Visualizer():
 
     self.SEG_COLORS_BINARY = (np.stack([jet(v)
       for v in np.linspace(0, 1, 2)]) * 255).astype(np.uint8)
-  
+
+    class DotDict(dict):
+      """dot.notation access to dictionary attributes"""
+      __getattr__ = dict.get
+      __setattr__ = dict.__setitem__
+      __delattr__ = dict.__delitem__
+
+    self._meta_data =  {
+        'stuff_classes':list(ORDERED_DICT.keys()),
+        'stuff_colors': list(SCANNET_COLOR_MAP.values())
+    }
+    
+    self._meta_data = DotDict(self._meta_data)
+
+  @image_functionality
+  def plot_detectron(self, img, label, **kwargs):
+    # Label: H,W numpy or torch tensor
+    # use image function to get imagae is np.array uint8
+    img = self.plot_image( img, not_log=True )
+    try:
+      label = label.clone().cpu().numpy()
+    except:
+      pass
+    label = label.astype(np.long) 
+    detectronVisualizer = DetectronVisu( torch.from_numpy(img).type(torch.uint8), self._meta_data, scale=1)
+
+    out = detectronVisualizer.draw_sem_seg( label, area_threshold=None, alpha=0.85).get_image()
+    return out
+
   @property
   def epoch(self):
     return self._epoch

@@ -25,7 +25,7 @@ from utils_asl import file_path, load_yaml
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/debug.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/train_first_scene/train_first_scene.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')
@@ -44,8 +44,8 @@ if __name__ == "__main__":
     from train_task import train_task
     from utils_asl import get_neptune_logger
     logger = get_neptune_logger(exp,env, args.exp, env_cfg_path)
- 
-  sta = exp['start_at_task']
+  
+  sta = 0 #exp['start_at_task']
   end = exp['max_tasks']-1
   print(f"SUPERVISOR: Execute Task {sta}-{end}")
   for i in range(int(sta), exp['max_tasks'] ):

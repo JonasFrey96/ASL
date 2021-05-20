@@ -47,7 +47,7 @@ from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
 
 from datasets_asl import eval_lists_into_dataloaders, get_dataloader_test, get_dataloader_train
-
+from task import TaskCreator
 __all__ = ['train_task']
 
 # def eval_lists_into_dataloaders( eval_lists, env, exp):
@@ -213,7 +213,7 @@ def plot_from_neptune(main_visu,logger):
     pass    
 
 def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=None):
-  from task import TaskCreator
+  
   seed_everything(42)
   local_rank = int(os.environ.get('LOCAL_RANK', 0))
   if local_rank != 0 or not init:
@@ -259,23 +259,25 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     if exp['move_datasets'][0]['env_var'] != 'none':
       for dataset in exp['move_datasets']:
         scratchdir = os.getenv('TMPDIR')
-        
         print( 'TMPDIR directory: ', scratchdir )
         env_var = dataset['env_var']
         tar = os.path.join( env[env_var],f'{env_var}.tar')
         name = (tar.split('/')[-1]).split('.')[0]
           
         if not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ):
-          
-          try:  
-            cmd = f"tar -xvf {tar} -C $TMPDIR >/dev/null 2>&1"
+          try:
+            if tar.find('labels') != -1:
+              target = "$TMPDIR/scannet/scans/"
+            else:
+              target = "$TMPDIR"
+
+            cmd = f"tar -xvf {tar} -C {target} >/dev/null 2>&1"
             st =time.time()
             print( f'Start moveing dataset-{env_var}: {cmd}')
             os.system(cmd)
             env[env_var] = str(os.path.join(scratchdir, name))
             new_env_var = env[env_var]
             print( f'Finished moveing dataset-{new_env_var} in {time.time()-st}s')
-            
           except:
               rank_zero_warn( 'ENV Var'+ env_var )
               env[env_var] = str(os.path.join(scratchdir, name))
@@ -390,8 +392,13 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     # it is not strict since the latent replay buffer is not always available
     p = os.path.join( env['base'],exp['checkpoint_load'])
     if os.path.isfile( p ):
-      res = model.load_state_dict( torch.load(p,
-        map_location=lambda storage, loc: storage)['state_dict'], 
+      state_dict_loaded = torch.load(p,
+        map_location=lambda storage, loc: storage)['state_dict']
+      if state_dict_loaded['_rssb.bins'].shape != model._rssb.bins.shape:
+        state_dict_loaded['_rssb.bins'] = model._rssb.bins
+        state_dict_loaded['_rssb.valid'] = model._rssb.valid
+
+      res = model.load_state_dict( state_dict_loaded, 
         strict=False)
       print('Restoring weights: ' + str(res))
     else:
@@ -464,17 +471,28 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   
   print( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' Trained >>>>>>>>>>>>>' )
 
-  if exp.get('buffer',{}).get('fill_after_fit', False):
+
+  # SET THE REPLAY BUFFER FAST RANDOMLY !
+  if (exp.get('buffer',{}).get('fill_after_fit', False) and 
+    exp.get('buffer',{}).get('mode', 'random')  == 'random'):
+    global_idx_list = torch.tensor( dataloader_buffer.dataset.global_to_local_idx, device=model.device)
+    selected = torch.randperm( global_idx_list, device = model.device )[:model._rssb.bins.shape[1]]
+    ret_globale_indices = global_idx_list[selected]
+    if exp['buffer'].get('sync_back', True):
+          if model._rssb_active:
+            model._rssb.bins[ model._task_count,:] = ret_globale_indices
+            model._rssb.valid[ model._task_count,:] = True
+
+  # START THE COMPLEX REPLAY BUFFER FILLING BY ITERATING OVER THE FULL DATASET
+  elif exp.get('buffer',{}).get('fill_after_fit', False):
     print( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
-    
     trainer.test(model=model,
                 test_dataloaders= dataloader_buffer)
   
     checkpoint_callback.save_checkpoint(trainer, model)
     print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
   
-  number_validation_dataloaders = len( dataloader_list_test ) 
-  
+  number_validation_dataloaders = len( dataloader_list_test )
   if model._rssb_active:
     # visualize rssb
     bins, valids = model._rssb.get()
@@ -493,7 +511,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       logger.experiment.stop()
   except:
     pass
-
 
 if __name__ == "__main__":
 

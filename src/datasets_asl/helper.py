@@ -120,6 +120,9 @@ class AugmentationList():
     # Check if rescaling is neccessary based on image height and output height  
     if img.shape[1] >= 2*self._output_size[0] :  
         sf = float(self._output_size[0]/img.shape[1])*1.2
+        sf2 = float(self._output_size[1]/img.shape[2])*1.2
+        sf = max(sf,sf2)
+
         scale = True
     elif img.shape[1] < self._output_size[0] or img.shape[2] < self._output_size[1]:
         sf1 = float(self._output_size[0]/img.shape[1])*1.2
@@ -134,8 +137,8 @@ class AugmentationList():
                                               mode='bilinear', 
                                               recompute_scale_factor=False, 
                                               align_corners=False)[0]
-        for l in label:
-          l = torch.nn.functional.interpolate(l[None],
+        for _i,l in enumerate(label):
+          label[_i] = torch.nn.functional.interpolate(l[None],
                                                   scale_factor=(sf,sf), 
                                                   mode='nearest', 
                                                   recompute_scale_factor=False)[0]
@@ -149,24 +152,24 @@ class AugmentationList():
         # this will suppress all warnings in this block
         warnings.simplefilter("ignore")
         img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=None)
-        for l in label:
-          l = F.rotate(l, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
+        for _i,l in enumerate(label):
+          label[_i] = F.rotate(l, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
       
       # Crop
       i, j, h, w = self._crop.get_params( img, self._output_size )
       img = F.crop(img, i, j, h, w)
-      for l in label:
-        l = F.crop(l, i, j, h, w)
+      for _i,l in enumerate(label):
+        label[_i] = F.crop(l, i, j, h, w)
       
       # Flip
       if torch.rand(1) < self._flip_p:
         img = F.hflip(img)
-        for l in label:
-          l = F.hflip(l)
+        for _i,l in enumerate(label):
+          label[_i] = F.hflip(l)
 
     # Performes center crop
     img = self._crop_center( img )
-    for l in label:
-      l = self._crop_center( l )
+    for _i,l in enumerate(label):
+      label[_i] = self._crop_center( l )
     
     return img, label

@@ -80,6 +80,11 @@ class Network(LightningModule):
     max_tests = 4
     self.test_acc = pl_metrics.classification.Accuracy()
     self.train_acc = pl_metrics.classification.Accuracy()
+    self.train_aux_acc = pl_metrics.classification.Accuracy()
+    self.train_aux_vs_gt_acc = pl_metrics.classification.Accuracy()
+    self.val_aux_acc = pl_metrics.classification.Accuracy()    
+
+
     self.val_acc = torch.nn.ModuleList( 
       [pl_metrics.classification.Accuracy() for i in range(max_tests)] )
 
@@ -136,10 +141,11 @@ class Network(LightningModule):
 
 
     self._gem = self._exp.get('gem',{}).get('active', False)
-    
-    if self._gem:
-      # register BUFFER 
-      pass
+    self._store_reference_gradient = False
+
+    # if self._gem:
+    #   # register BUFFER 
+    #   pass
   
   def forward(self, batch, **kwargs):    
     if kwargs.get('replayed', None) is not None:
@@ -325,23 +331,24 @@ class Network(LightningModule):
     teacher_targets = None
     
     # IF REFERENCE GRADIENT IMAGES ARE AVAILABLE COMPUTE GRADIENT AT CURRENT STEP
-    if (hasattr(self, 'reference_gradient_images') and
-      self.trainer.global_step % self._exp['visu'].get('log_ref_weights_grad_every_n_steps',10) == 0):
-      o = self(self.reference_gradient_images)
-      l = self.compute_loss(  
-              pred = o[0], 
-              target = self.reference_gradient_target,
-              teacher_targets = self.reference_teacher_targets,
-              replayed = self.reference_replayed)
-      l.backward()
-      current_gradient = get_grad( self.model.named_parameters() )
-      dif = torch.abs( self.reference_gradient - current_gradient )
-      mean = torch.mean( dif )
-      std = torch.std( dif )
-      self.log('mean_gradient_movement', mean.detach(), on_step=True, on_epoch=True)
-      self.log('std_gradient_movement', std.detach(), on_step=True, on_epoch=True)
-      self.model.zero_grad()
-      
+    if self._store_reference_gradient:
+      if (hasattr(self, 'reference_gradient_images') and
+        self.trainer.global_step % self._exp['visu'].get('log_ref_weights_grad_every_n_steps',10) == 0):
+        o = self(self.reference_gradient_images)
+        l = self.compute_loss(  
+                pred = o[0], 
+                target = self.reference_gradient_target,
+                teacher_targets = self.reference_teacher_targets,
+                replayed = self.reference_replayed)
+        l.backward()
+        current_gradient = get_grad( self.model.named_parameters() )
+        dif = torch.abs( self.reference_gradient - current_gradient )
+        mean = torch.mean( dif )
+        std = torch.std( dif )
+        self.log('mean_gradient_movement', mean.detach(), on_step=True, on_epoch=True)
+        self.log('std_gradient_movement', std.detach(), on_step=True, on_epoch=True)
+        self.model.zero_grad()
+        
       
     # IF AGEM COMPUTE GRADIENT OVER REPLAYED SAMPLES
     if (replayed != -1).sum() > 0 and self._gem:
@@ -377,15 +384,27 @@ class Network(LightningModule):
         self.reference_gradient_target = target
         self.reference_replayed = replayed
         self.reference_teacher_targets = teacher_targets 
-        
-    loss = self.compute_loss(  
-              pred = outputs[0], 
-              target = target,
-              teacher_targets = teacher_targets,
+    
+    
+    if len(batch) == 6:
+      loss = self.compute_loss(  
+                pred = outputs[0], 
+                target = batch[5],
+                teacher_targets = None,
+                replayed = replayed)
+    else:
+      loss = self.compute_loss(  
+                pred = outputs[0], 
+                target = target,
+                teacher_targets = teacher_targets,
               replayed = replayed)
+
     loss.mean()
     self.log('train_loss', loss, on_step=False, on_epoch=True)
-    return {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img }
+    ret = {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img  }
+    if len(batch) == 6:
+      ret["aux_target"] = batch[5]
+    return ret
   
   def training_step_end(self, outputs):
     # Log replay buffer stats
@@ -404,7 +423,15 @@ class Network(LightningModule):
       train_acc = self.train_acc(pred[m], target[m])
       self.log('train_acc_epoch', self.train_acc, on_step=False, on_epoch=True, prog_bar = True)
       self.log('train_mIoU_epoch', self.train_mIoU, on_step=False, on_epoch=True, prog_bar = True)
-    
+      
+      if "aux_target" in outputs:
+        m2 = m* (outputs['aux_target']>-1)
+        self.train_aux_acc(pred[m2], outputs['aux_target'][m2])
+        self.train_aux_vs_gt_acc(target[m2], outputs['aux_target'][m2])
+        self.log('train_PRED_VS_AUX_acc_epoch', self.train_aux_acc )
+        self.log('train_GT_VS_AUX_acc_epoch', self.train_aux_vs_gt_acc )
+
+
     if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
          self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):
       pred = torch.argmax(outputs['pred'], 1).clone().detach()
@@ -422,11 +449,23 @@ class Network(LightningModule):
               scale_each = False, pad_value = 0)
       grid_image = make_grid(outputs['ori_img'],nrow = rows,padding = 2,
               scale_each = False, pad_value = 0)
+
+      if "aux_target" in outputs:
+        aux_target = outputs['aux_target'].clone().detach()
+        grid_aux_target = make_grid(aux_target[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
+              scale_each = False, pad_value = 0)
+        self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
+        self.visualizer.plot_segmentation(tag=f'{self._mode}_AUX_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=grid_aux_target[0], method='left')  
+
+        self.visualizer.plot_segmentation(tag=f'', seg=grid_target[0], method='right')
+        self.visualizer.plot_segmentation(tag=f'{self._mode}_AUX_left_GT_right_{self._task_name}_{self.logged_images_train}', seg=grid_aux_target[0], method='left')  
+      
+
       print(grid_pred.shape, grid_target.shape, grid_image.shape)
       self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'train_gt_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=grid_target[0], method='left')  
+      self.visualizer.plot_segmentation(tag=f'{self._mode}_gt_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=grid_target[0], method='left')  
       self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
-      self.visualizer.plot_image(tag=f'train_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=grid_image, method='left')
+      self.visualizer.plot_image(tag=f'{self._mode}_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=grid_image, method='left')
     
     return {'loss': outputs['loss']}
         
@@ -690,8 +729,6 @@ class Network(LightningModule):
                                  self._t_feature_labels, 
                                  K_return=self._rssb.bins.shape[1], iterations= 5000)
         ret_globale_indices = self._t_ret[:,self._t_ret_metrices][selected]
-        
-      
       elif m == 'kmeans':
         flag = m = self._exp['buffer']['kmeans']['perform_distribution_matching_based_on_subset']
         if flag:
