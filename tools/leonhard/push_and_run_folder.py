@@ -26,6 +26,12 @@ python tools/leonhard/push_and_run_folder.py --exp=scannet --time=4 --gpus=4 --m
 python tools/leonhard/push_and_run_folder.py --exp=scannet --time=4 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=80
 
 --exp=scannet --time=24 --gpus=1 --mem=10240 --workers=16 --ram=60 --scratch=80
+
+
+# Scheduled with fake SCANNET 
+python tools/leonhard/push_and_run_folder.py --exp=pretrain --time=4 --gpus=1 --mem=5240 --workers=16 --ram=60 --scratch=80 --fake=True
+
+python tools/leonhard/push_and_run_folder.py --exp=pretrain --time=24 --gpus=1 --mem=5240 --workers=16 --ram=60 --scratch=80
 """
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp', default='exp',  required=True,

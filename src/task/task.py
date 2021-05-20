@@ -125,10 +125,90 @@ class TaskCreator():
       self._scannet_continual_learning(kwargs['total_tasks'])
     elif mode == 'scannet_continual_learning_count_adjusted':
       self._scannet_continual_learning_count_adjusted(kwargs['total_tasks'])
+    elif mode == 'scannet_single_scene':
+      self._scannet_single_scene() 
+    elif mode == "scannet_pretrain":
+      self._scannet_pretrain() 
+    
+    elif mode == 'scannet_start_pretrain':
+      self._scannet_start_pretrain()
 
     else:
       raise AssertionError('TaskCreator: Undefined Mode')
     self._current_task = 0
+
+  def _scannet_single_scene(self):
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    train['mode'] = 'train'
+    val['mode'] = 'val'
+    train['scenes'] = ['scene0000']
+    val['scenes'] = ['scene0000']
+    t = Task(name = f'Scannet_Scene_Train_0000_00',
+              dataset_train_cfg= train,
+              dataset_val_cfg= val)
+    self._task_list.append(t)
+    eval_tasks = []
+    eval_task = EvalTask(
+      name = f'Scannet_Scene_Eval_0000_00',
+      dataset_test_cfg=val)
+    eval_tasks.append( eval_task )
+    self._eval_lists.append( eval_tasks )
+
+  def _scannet_start_pretrain(self):
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    train['mode'] = 'train'
+    val['mode'] = 'val'
+    train['scenes'] = [f'scene00{i:02d}' for i in range(10,60)]
+    val['scenes'] = [f'scene00{i:02d}' for i in range(10,60)]
+    t = Task(name = f'Scannet_Scene_Train_10-60',
+              dataset_train_cfg= copy.deepcopy(train),
+              dataset_val_cfg= copy.deepcopy(val))
+    self._task_list.append(copy.deepcopy(t))
+    
+    # Set the two evaltasks
+    eval_tasks = []
+    eval_task = EvalTask(
+      name = f'Scannet_Scene_Eval_10-60',
+      dataset_test_cfg=copy.deepcopy(val))
+    eval_tasks.append( eval_task )
+    val['scenes'] = ["scene0000"]
+    eval_task = EvalTask(
+      name = f'Scannet_Scene_Test_0',
+      dataset_test_cfg=val)    
+    eval_tasks.append( eval_task )
+    
+    self._eval_lists.append( eval_tasks )
+    self._eval_lists.append( eval_tasks )
+
+    train['scenes'] = ['scene0000']
+    train['label_setting'] = 'iteration_0/map_probs' 
+    t = Task(name = f'Scannet_Scene_Train_0',
+              dataset_train_cfg= copy.deepcopy(train),
+              dataset_val_cfg= copy.deepcopy(val))
+    self._task_list.append(copy.deepcopy(t))
+
+
+  def _scannet_pretrain(self):
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    train['mode'] = 'train'
+    val['mode'] = 'val'
+    train['scenes'] = [f'scene00{i:02d}' for i in range(10,60)]
+    val['scenes'] = [f'scene00{i:02d}' for i in range(10,60)]
+    t = Task(name = f'Scannet_Scene_Train_10-60',
+              dataset_train_cfg= train,
+              dataset_val_cfg= val)
+    self._task_list.append(t)
+    eval_tasks = []
+    eval_task = EvalTask(
+      name = f'Scannet_Scene_Eval_10-60',
+      dataset_test_cfg=val)
+    eval_tasks.append( eval_task )
+    self._eval_lists.append( eval_tasks )
+
+
 
   def _scannet_continual_learning_count_adjusted(self, total_tasks):
     # Dont use the strict split !

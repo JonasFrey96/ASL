@@ -1,5 +1,5 @@
 workstation: True
-base: /home/jonfrey/results
+base: /media/scratch1/jonfrey/results
 cityscapes: /media/scratch1/jonfrey/datasets/cityscapes
 nyuv2: /media/scratch1/jonfrey/datasets/nyuv2
 coco: /media/scratch2/jonfrey/datasets/coco

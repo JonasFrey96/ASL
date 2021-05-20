@@ -1,7 +1,7 @@
 import numpy as np
 from matplotlib import cm
 import matplotlib.colors as mcolors
-__all__ = ['SCANNET_COLOR_MAP', 'RG_PASTEL', "RG_PASTEL_r", "COL_MAP", "COL_DICT"]
+__all__ = ['SCANNET_COLOR_MAP', 'RG_PASTEL', "RG_PASTEL_r", "COL_MAP", "COL_DICT", "ORDERED_DICT"]
 # SCANNET_COLOR_MAP = {
 #     (0, (0, 0, 0)),
 #     ('wall', (174, 199, 232)),
@@ -81,7 +81,7 @@ RG_PASTEL_r = make_colormap(
     [ COL_MAP(0)[:3] , COL_MAP(2)[:3]] )
 
 from collections import OrderedDict
-od = OrderedDict([
+ORDERED_DICT = OrderedDict([
     ('unlabeled', (0, 0, 0)),
     ('wall', (174, 199, 232)),
     ('floor', (152, 223, 138)),
@@ -125,4 +125,4 @@ od = OrderedDict([
     ('otherprop', (100, 85, 144)),
 ])
 
-SCANNET_COLOR_MAP = {i:v for i,v in enumerate(od.values())}
+SCANNET_COLOR_MAP = {i:v for i,v in enumerate(ORDERED_DICT.values())}

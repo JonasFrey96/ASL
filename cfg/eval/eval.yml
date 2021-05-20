@@ -1,6 +1,5 @@
 name: scannet_pseudo_label
-checkpoint_load: cluster/2021-03-30T21:35:50_01/task0-epoch=25--step=002677.ckpt
-
+checkpoint_load: pretrain24/run_full_24h_small_bs/task0-epoch=141--step=268095.ckpt
 
 dataset: 
   name: labdata

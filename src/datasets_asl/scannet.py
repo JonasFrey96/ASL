@@ -129,7 +129,6 @@ class ScanNet(StaticReplayDataset):
         if (self._mode.find('train') != -1 and 
             ( ( self._data_augmentation and idx == -1) or 
               ( self._data_augmentation_for_replay and idx != -1) ) ):
-            
             img, label = self._augmenter.apply(img, label)
         else:
             img, label = self._augmenter.apply(img, label, only_crop=True)
@@ -147,8 +146,8 @@ class ScanNet(StaticReplayDataset):
         label[0] = label[0] - 1  # 0 == chairs 39 other prop  -1 invalid
         
         if len(label) > 1:
-            for l in label[1:]:
-                l = l-1 # 0 == chairs 39 other prop  -1 invalid
+            for k in range(1,len(label)):
+                label[k] = label[k]-1 # 0 == chairs 39 other prop  -1 invalid
 
         # check if reject on GT LABEL
         if (label[0] != -1).sum() < 10:
@@ -200,8 +199,8 @@ class ScanNet(StaticReplayDataset):
         self.image_pths = [ os.path.join(root,i[1:]) for i in self.image_pths if i.find("scene0088_03") == -1 ]
         self.label_pths = [ os.path.join(root,i[1:]) for i in self.label_pths if i.find("scene0088_03") == -1 ]
 
-        if label_setting == "label_v1_detectron" and mode.find("train") != -1:
-            self.aux_label_pths = [ i.replace("label-filt", "label_detectron2") for i in self.label_pths]
+        if label_setting != "default":
+            self.aux_label_pths = [ i.replace("label-filt", label_setting) for i in self.label_pths]
             self.aux_labels = True
         else:
             self.aux_labels = False
@@ -319,6 +318,18 @@ class ScanNet(StaticReplayDataset):
         self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )
         self.global_to_local_idx = (self.global_to_local_idx[self.valid_scene]).tolist()
         self.length = len(self.global_to_local_idx)
+
+
+        # verify paths found:
+        for global_idx in self.global_to_local_idx:
+            if not os.path.exists(self.label_pths[global_idx]):             print("Label not found ", self.label_pths[global_idx])
+            if self.aux_labels: 
+                if not os.path.exists(self.aux_label_pths[global_idx]):
+                    print("AuxLa not found ", self.aux_label_pths[global_idx])
+            if not os.path.exists(self.image_pths[global_idx]):             print("Image not found ", self.image_pths[global_idx])
+               
+                
+        
 
 def test():
     # pytest -q -s src/datasets/ml_hypersim.py

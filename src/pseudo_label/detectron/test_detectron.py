@@ -86,3 +86,6 @@ for i, (in_p, out_p) in enumerate( zip( inputs, outputs) ):
 # /home/jonfrey/datasets/scannet/scans/scene0000_00/label-filt/0.png
 # imageio.imread( "/home/jonfrey/datasets/scannet/scans/scene0000_00/label-filt/0.png" )
 # label = torch.from_numpy(imageio.imread( "/home/jonfrey/ASL/test.png" ).astype(np.int32)).type(torch.float32)
+
+
+

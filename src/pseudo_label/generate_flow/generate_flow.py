@@ -81,7 +81,7 @@ for cfg in cfgs:
       'mixed_precision': False,
       'alternate_corr': False,
     }    
-  class DotDict(dict):
+  class t(dict):
       """dot.notation access to dictionary attributes"""
       __getattr__ = dict.get
       __setattr__ = dict.__setitem__
