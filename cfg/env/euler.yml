@@ -1,4 +1,6 @@
 workstation: False
+neptune_project_name: jonasfrey96/CLS
+
 base: /cluster/work/riner/users/jonfrey/models/master_thesis
 cityscapes: /cluster/work/riner/users/jonfrey/datasets/cityscapes
 nyuv2: /cluster/work/riner/users/jonfrey/datasets/nyuv2

@@ -623,7 +623,8 @@ class Visualizer():
       img = img*255
     img = np.uint8(img)
     return img
-  
+
+
 def test():
   # pytest -q -s src/visu/visualizer.py
   visu = Visualizer(os.getenv('HOME')+'/tmp', logger=None, epoch=0, store=False, num_classes=41)
