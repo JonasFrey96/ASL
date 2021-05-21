@@ -1,3 +1,9 @@
+#TODO: Jonas Frey check if new neptune AI api would do the job for us and ease the ddp problem away!
+#TODO: Refactor the dataloader and replayed label that we get in a usefull way maybe with a wrappwer dataset
+#TODO: Remove the continual learning part maybe fully to a plugin.
+#TODO: Check if the monitoring that we are currently doing is worth in the lighning module here it got just to large
+#TODO: Check if we can use smart callbacks to fullfill the loggin better 
+
 import os
 import sys 
 os.chdir(os.path.join(os.getenv('HOME'), 'ASL'))
@@ -7,16 +13,7 @@ sys.path.append(os.path.join(os.getcwd() + '/src'))
 import coloredlogs
 coloredlogs.install()
 
-import time
-import shutil
-import datetime
 import argparse
-import signal
-import yaml
-import logging
-from pathlib import Path
-import gc
-
 # Frameworks
 import torch
 
@@ -50,7 +47,7 @@ if __name__ == "__main__":
   print(f"SUPERVISOR: Execute Task {sta}-{end}")
   for i in range(int(sta), exp['max_tasks'] ):
     
-    init = int(bool(i==exp['start_at_task']))
+    init = int(bool(i== 0 ))
     close = int(bool(i==exp['max_tasks']-1))
     
     if args.mode == 'shell':

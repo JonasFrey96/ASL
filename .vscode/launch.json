@@ -21,6 +21,7 @@
 		{
 			"name": "Supervisor",
 			"type": "python",
+			"python.pythonPath": "/home/jonfrey/miniconda3/envs/track4/bin/python", 
 			"request": "launch",
 			"program": "${env:HOME}/ASL/supervisor.py",
 			"console": "integratedTerminal"
