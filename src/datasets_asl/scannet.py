@@ -107,7 +107,8 @@ class ScanNet(StaticReplayDataset):
         label = torch.from_numpy(label.astype(np.int32)).type(
             torch.float32)[None, :, :]  # C H W
         label = [label]
-
+        
+        
         if self.aux_labels:
             # TODO: Jonas FREY this is very sketchy
             # How to manage the labels for replayed and new tasks differently.
@@ -116,10 +117,7 @@ class ScanNet(StaticReplayDataset):
             # Might be the cleanest option.
             # Main problem what do we want to do if we want to do if we want to treat the replayed 
             # labels differently for each task.
-
-            if replayed != -1:
-                label.append(label[0].clone())
-            else:
+            if replayed == -1:
                 aux_label = imageio.imread(self.aux_label_pths[global_idx])
                 aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
                     torch.float32)[None, :, :]
@@ -161,6 +159,11 @@ class ScanNet(StaticReplayDataset):
             else:
                 replayed[0] = -999
         
+        if self.aux_labels and replayed != -1:
+            # TODO: Jonas FREY this is very sketchy 2
+            label.append(label[0])
+        
+
         if len(label) > 1:
             return (img, 
                     label[0].type(torch.int64)[0, :, :], 

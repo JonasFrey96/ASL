@@ -16,7 +16,8 @@ def log_important_params( exp ):
   dic = flatten_dict(exp)
   return dic
 
-def get_neptune_logger(exp,env,exp_p, env_p, project_name="jonasfrey96/asl"):
+def get_neptune_logger(exp,env,exp_p, env_p):
+  project_name = env['neptune_project_name']
   params = log_important_params( exp )
   cwd = os.getcwd()
   files = [str(p).replace(cwd+'/','') for p in Path(cwd).rglob('*.py') 
@@ -57,7 +58,6 @@ def get_tensorboard_logger(exp,env,exp_p, env_p):
     t1 = 'leonhard'
     NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
   gpus = 'gpus_'+str(torch.cuda.device_count())
-
   return TensorBoardLogger(
       save_dir=exp['name'],
       name= 'tensorboard', # Optional,

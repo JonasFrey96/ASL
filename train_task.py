@@ -8,14 +8,12 @@ import time
 import shutil
 import datetime
 import argparse
-import coloredlogs
 import yaml
-coloredlogs.install()
 import copy
 from pathlib import Path
 import pickle
+
 # Frameworks
-import numpy as np
 import torch
 
 from pytorch_lightning import seed_everything, Trainer
@@ -24,11 +22,11 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import LearningRateMonitor
 
 from pytorch_lightning.utilities import rank_zero_warn
-
+from pytorch_lightning.loggers.neptune import NeptuneLogger
 
 # Costume Modules
 from lightning import Network
-from visu import MainVisualizer
+from visu import MainVisualizer, plot_from_pkl, validation_acc_plot, plot_from_neptune
 from callbacks import TaskSpecificEarlyStopping
 from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
@@ -37,181 +35,21 @@ from datasets_asl import eval_lists_into_dataloaders, get_dataloader_train
 from task import TaskCreator
 __all__ = ['train_task']
 
-# def eval_lists_into_dataloaders( eval_lists, env, exp):
-#   loaders = []
-#   for eval_task in eval_lists:
-    
-#     loaders.append( get_dataloader_test(eval_task.dataset_test_cfg, env, exp))
-#   return loaders
-
-# def get_dataloader_test(d_test, env, exp):
-#   output_transform = transforms.Compose([
-#           transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-#   ])
-#   # dataset and dataloader
-#   dataset_test = get_dataset(
-#     **d_test,
-#     env = env,
-#     output_trafo = output_transform,
-#   )
-#   dataloader_test = torch.utils.data.DataLoader(dataset_test,
-#     shuffle = False,
-#     num_workers = max(1, ceil(exp['loader']['num_workers']/torch.cuda.device_count()) ),
-#     pin_memory = exp['loader']['pin_memory'],
-#     batch_size = exp['loader']['batch_size'], 
-#     drop_last = True)
-#   return dataloader_test
-  
-# def get_dataloader_train(d_train, env, exp):
-#   print( 'Number CUDA Devices: '+ str( torch.cuda.device_count()) )
-  
-#   output_transform = transforms.Compose([
-#           transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-#   ])
-#   # dataset and dataloader
-#   dataset_train = get_dataset(
-#     **d_train,
-#     env = env,
-#     output_trafo = output_transform,
-#   )
-  
-    
-#   dataloader_train = torch.utils.data.DataLoader(dataset_train,
-#     shuffle = exp['loader']['shuffle'],
-#     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
-#     pin_memory = exp['loader']['pin_memory'],
-#     batch_size = exp['loader']['batch_size'], 
-#     drop_last = True)
-  
-#   # dataset and dataloader
-#   dataset_buffer = get_dataset(
-#     **d_train,
-#     env = env,
-#     output_trafo = output_transform,
-#   )
-#   dataset_buffer.replay = False
-#   dataset_buffer.unique = True
-  
-#   dataloader_buffer= torch.utils.data.DataLoader(dataset_buffer,
-#     shuffle = False,
-#     num_workers = ceil(exp['loader']['num_workers']/torch.cuda.device_count()),
-#     pin_memory = exp['loader']['pin_memory'],
-#     batch_size = 1, 
-#     drop_last = True)
-    
-#   return dataloader_train, dataloader_buffer
-
-
-def plot_from_pkl(main_visu, base_path, task_nr):
-  with open(f"{base_path}/res0.pkl",'rb') as f:
-    res = pickle.load(f)
-  nr_val_tasks = 0
-  for k in res.keys():
-    if str(k).find('task_count')  != -1:
-      nr_val_tasks += 1
-  val_metrices = ['val_acc', 'val_loss', 'val_mIoU']
-  for m in val_metrices: 
-    data_matrix = np.zeros( ( task_nr+1, nr_val_tasks) )
-    for i in range(task_nr+1):
-      with open(f"{base_path}/res{i}.pkl",'rb') as f:
-        res = pickle.load(f)
-      for j in range(nr_val_tasks):
-        try:
-          v = res[f'{m}/dataloader_idx_{j}']
-        except:
-          v = res[f'{m}']
-        data_matrix[i,j] = v*100
-    data_matrix = np.round( data_matrix, decimals=1) 
-    if m.find('loss') != -1:
-      higher_is_better = False
-    else:
-      higher_is_better = True
-    main_visu.plot_matrix(
-      tag = m,
-      data_matrix = data_matrix,
-      higher_is_better= higher_is_better,
-      title= m)
-
-def validation_acc_plot(main_visu, logger):
-  try:
-    df_acc = logger.experiment.get_numeric_channels_values('val_acc/dataloader_idx_0','val_acc/dataloader_idx_1','val_acc/dataloader_idx_2','val_acc/dataloader_idx_3','task_count/dataloader_idx_0')
-    x = np.array(df_acc['task_count/dataloader_idx_0'])
-    
-    
-    task_nrs, where = np.unique( x, return_index=True )
-    task_nrs = task_nrs.astype(np.uint8).tolist()
-    where = where.tolist()[1:]
-    where = [w-1 for w in where]
-    where += [x.shape[0]-1]*int(4-len(where))
-    
-    names = [f'val_acc_{idx}' for idx in range(4)]
-    x =  np.arange(x.shape[0])
-    y = [np.array(df_acc[f'val_acc/dataloader_idx_{idx}']  ) for idx in range(4)]
-    arr = main_visu.plot_lines_with_bachground(
-        x, y, count=where,
-        x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
-        task_names=names, tag='Validation_Accuracy_Summary')
-  except:
-    print("VALIED to generate validation_acc_plot")
-    pass
-  
-def plot_from_neptune(main_visu,logger):
-  try: 
-    idxs = logger.experiment.get_numeric_channels_values('task_count/dataloader_idx_0')['x']
-    task_numbers = logger.experiment.get_numeric_channels_values('task_count/dataloader_idx_0')['task_count/dataloader_idx_0']
-    
-    val_metrices = ['val_acc', 'val_loss', 'val_mIoU']
-    
-    dic = {}
-    task_start = 0
-    np.unique(task_numbers, return_index=True)
-    
-    training_task_indices = []
-    s = 0
-    for i in range(len(task_numbers)):
-      if task_numbers[i] != s:
-        s = task_numbers[i]
-        training_task_indices.append(i-1)
-    training_task_indices.append(len(task_numbers)-1)
-    
-    val_dataloaders = len( [d for d in logger.experiment.get_logs().keys() if d.find('task_count/dataloader_idx') != -1] )
-    trained_tasks = np.unique(task_numbers).shape[0]
-    data_matrix = {}
-    for m in val_metrices:
-      data_matrix[m] = np.zeros( ( trained_tasks, val_dataloaders) )
-      for training_task in range(trained_tasks):
-        for val_dataloader in range(val_dataloaders):
-          v = logger.experiment.get_numeric_channels_values(f'{m}/dataloader_idx_{val_dataloader}')[f'{m}/dataloader_idx_{val_dataloader}'][training_task_indices[training_task]]
-          data_matrix[m][training_task, val_dataloader] = v*100
-      data_matrix[m] = np.round( data_matrix[m], decimals=1)
-      
-      if m.find('loss') != -1:
-        higher_is_better = False
-      else:
-        higher_is_better = True
-      main_visu.plot_matrix(
-          tag = m,
-          data_matrix = data_matrix[m],
-          higher_is_better= higher_is_better,
-          title= m)
-  except:
-    print("VALIED TO PLOT FROM PICKLE")
-    
-    pass    
-
 def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=None):
   
   seed_everything(42)
   local_rank = int(os.environ.get('LOCAL_RANK', 0))
+
+  # LOADING THE CONFIGURATION
   if local_rank != 0 or not init:
     print(init, local_rank)
     rm = exp_cfg_path.find('cfg/exp/') + len('cfg/exp/')
     exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
-  
-  print( "exp_cfg_path: ", exp_cfg_path )
+
   exp = load_yaml(exp_cfg_path)
   env = load_yaml(env_cfg_path)
 
+  # CREATE EXPERIMENTS FOLDER + MOVE THE CONFIG FILES
   if local_rank == 0 and init:
     # Set in name the correct model path
     if exp.get('timestamp',True):
@@ -276,20 +114,13 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       env['mlhypersim'] = str(os.path.join(env['mlhypersim'], 'mlhypersim'))
       
   # SET GPUS
-  if ( exp['trainer'] ).get('gpus', -1) == -1 and os.environ['ENV_WORKSTATION_NAME'] != 'hyrax':
+  if ( exp['trainer'] ).get('gpus', -1) == -1:
     nr = torch.cuda.device_count()
     print( f'Set GPU Count for Trainer to {nr}!' )
     for i in range(nr):
       print( f"Device {i}: ", torch.cuda.get_device_name(i) )
     exp['trainer']['gpus'] = -1
-  elif  os.environ['ENV_WORKSTATION_NAME'] == 'hyrax':
-    exp['trainer']['gpus'] = "1"
   
-  # HOST SPECIFIC SETTINGS:
-  if os.environ['ENV_WORKSTATION_NAME'] == 'hyrax':
-    exp['loader']['num_workers'] = 0
-
-
 
   # MODEL
   model = Network(exp=exp, env=env)
@@ -324,13 +155,20 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   
   # GET LOGGER
   if not exp.get('offline_mode', False):
-    if  logger_pass is None:
+    if  logger_pass is None and exp.get('experiment_id',None) is None:
       logger = get_neptune_logger(exp=exp,env=env,
-        exp_p =exp_cfg_path, env_p = env_cfg_path, project_name="jonasfrey96/asl")
+        exp_p =exp_cfg_path, env_p = env_cfg_path)
       exp['experiment_id'] = logger.experiment.id
       print('Created Experiment ID: ' +  str( exp['experiment_id']))
     else:
-      logger = logger_pass
+      logger = NeptuneLogger(
+          api_key=os.environ["NEPTUNE_API_TOKEN"],
+          project_name=env['neptune_project_name'],
+          experiment_id= exp['experiment_id'],
+          close_after_fit = False,
+          upload_stdout=True,
+          upload_stderr=True
+      )
     print('Neptune Experiment ID: '+ str( logger.experiment.id)+" TASK NR "+str( task_nr ) )
   else:
     logger = get_tensorboard_logger(exp=exp,env=env, exp_p =exp_cfg_path, env_p = env_cfg_path)
@@ -360,7 +198,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     exp['checkpoint_load'] = exp['checkpoint_load_2']
     exp['weights_restore'] = exp['weights_restore_2']
   
-  
   # CHECKPOINT
   if exp.get('checkpoint_restore', False):
     p = os.path.join( env['base'], exp['checkpoint_load'])
@@ -373,8 +210,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     trainer = Trainer(**exp['trainer'],
       default_root_dir=model_path,
       callbacks=cb_ls,
-      logger=logger)   
-  
+      logger=logger)
   
   if exp['weights_restore'] :
     # it is not strict since the latent replay buffer is not always available
@@ -397,9 +233,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   
   tc = TaskCreator(**exp['task_generator'],output_size=exp['model']['input_size'])
   
-
-  _task_start_training = time.time()
-  _task_start_time = time.time()
   
   for idx, out in enumerate(tc):
     if idx == task_nr:
@@ -429,6 +262,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   if idx < exp['start_at_task']:
     # trainer.limit_val_batches = 1.0
     trainer.limit_train_batches = 1
+    # trainer.limit_val_batches = 1 # TODO: Jonas Frey remove this
     trainer.max_epochs = 1
     trainer.check_val_every_n_epoch = 1
     train_res = trainer.fit(model = model,
@@ -502,8 +336,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   validation_acc_plot(main_visu, logger)
   
   try:
-    if close:
-      logger.experiment.stop()
+    logger.experiment.stop()
   except:
     pass
 
