@@ -1,0 +1,1 @@
+cd /media/scratch2/jonfrey/datasets/scannet && nohup /usr/bin/python download.py --type=".sens" &

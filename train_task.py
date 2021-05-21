@@ -10,43 +10,30 @@ import datetime
 import argparse
 import coloredlogs
 import yaml
-import logging
 coloredlogs.install()
-from math import ceil
 import copy
 from pathlib import Path
-from contextlib import redirect_stdout
-from contextlib import nullcontext
-import pathlib
 import pickle
 # Frameworks
-import neptune
 import numpy as np
 import torch
-from torchvision import transforms
-from torch.utils.tensorboard import SummaryWriter
 
 from pytorch_lightning import seed_everything, Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import LearningRateMonitor
-from pytorch_lightning.callbacks import Callback
-from pytorch_lightning.profiler import AdvancedProfiler
 
-from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
+from pytorch_lightning.utilities import rank_zero_warn
 
 
 # Costume Modules
-from lightning import Network, fill_buffer
-from datasets_asl import get_dataset
+from lightning import Network
 from visu import MainVisualizer
 from callbacks import TaskSpecificEarlyStopping
-from log import _create_or_get_experiment2
-from utils_asl import flatten_list, flatten_dict
 from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
 
-from datasets_asl import eval_lists_into_dataloaders, get_dataloader_test, get_dataloader_train
+from datasets_asl import eval_lists_into_dataloaders, get_dataloader_train
 from task import TaskCreator
 __all__ = ['train_task']
 
@@ -221,6 +208,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     rm = exp_cfg_path.find('cfg/exp/') + len('cfg/exp/')
     exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
   
+  print( "exp_cfg_path: ", exp_cfg_path )
   exp = load_yaml(exp_cfg_path)
   env = load_yaml(env_cfg_path)
 
@@ -476,12 +464,19 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   if (exp.get('buffer',{}).get('fill_after_fit', False) and 
     exp.get('buffer',{}).get('mode', 'random')  == 'random'):
     global_idx_list = torch.tensor( dataloader_buffer.dataset.global_to_local_idx, device=model.device)
-    selected = torch.randperm( global_idx_list, device = model.device )[:model._rssb.bins.shape[1]]
+    print("USE RSSB NOW IS ACTIVE")
+    print( global_idx_list.shape, model._rssb.bins.shape)
+    selected = torch.randperm( global_idx_list.shape[0], device = model.device )[:model._rssb.bins.shape[1]]
     ret_globale_indices = global_idx_list[selected]
     if exp['buffer'].get('sync_back', True):
           if model._rssb_active:
             model._rssb.bins[ model._task_count,:] = ret_globale_indices
             model._rssb.valid[ model._task_count,:] = True
+
+            print( "BINS: ", model._rssb.bins[ model._task_count,:])
+            print( "VALID: ", model._rssb.valid[ model._task_count,:])
+            checkpoint_callback.save_checkpoint(trainer, model)
+            
 
   # START THE COMPLEX REPLAY BUFFER FILLING BY ITERATING OVER THE FULL DATASET
   elif exp.get('buffer',{}).get('fill_after_fit', False):

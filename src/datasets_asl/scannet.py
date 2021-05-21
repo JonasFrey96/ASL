@@ -1,17 +1,10 @@
-import torch.utils.data as data
 import numpy as np
 import torch
-import pandas as pd
 from torchvision import transforms as tf
-from torchvision.transforms import functional as F
-import PIL
 import random
-import scipy
 import os
 from pathlib import Path
-from PIL import Image
 import copy 
-import time
 try:
     from .helper import AugmentationList
     from .replay_base import StaticReplayDataset
@@ -116,11 +109,21 @@ class ScanNet(StaticReplayDataset):
         label = [label]
 
         if self.aux_labels:
-            aux_label = imageio.imread(self.aux_label_pths[global_idx])
-            
-            aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
-                torch.float32)[None, :, :]
-            label.append(aux_label)
+            # TODO: Jonas FREY this is very sketchy
+            # How to manage the labels for replayed and new tasks differently.
+            # Maybe totally refactor and always instead of using a single dataset use
+            # A wrapper around it that builds an ensamble of the individual datasets
+            # Might be the cleanest option.
+            # Main problem what do we want to do if we want to do if we want to treat the replayed 
+            # labels differently for each task.
+
+            if replayed != -1:
+                label.append(label[0].clone())
+            else:
+                aux_label = imageio.imread(self.aux_label_pths[global_idx])
+                aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
+                    torch.float32)[None, :, :]
+                label.append(aux_label)
         
         img = imageio.imread(self.image_pths[global_idx])
         img = torch.from_numpy(img).type(
