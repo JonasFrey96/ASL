@@ -1,17 +1,19 @@
-from .cityscapes import Cityscapes
-from .nyu_v2 import NYUv2
-from .ml_hypersim import MLHypersim
-from .coco import COCo
+#from .cityscapes import Cityscapes
+#from .nyu_v2 import NYUv2
+#from .ml_hypersim import MLHypersim
+#from .coco import COCo
+#from .labdata import LabData
 from .scannet import ScanNet
-from .labdata import LabData
 datasets = {
-    'cityscapes': Cityscapes,
-    'nyuv2': NYUv2,
-    'mlhypersim': MLHypersim,
-    'coco': COCo,
-    'scannet': ScanNet,
-    'labdata': LabData
+    # 'cityscapes': Cityscapes,
+    # 'nyuv2': NYUv2,
+    # 'mlhypersim': MLHypersim,
+    # 'coco': COCo,
+    # 'labdata': LabData,
+    'scannet': ScanNet
 }
+
+__all__ = ['get_dataset']
 
 def get_dataset(name, env, **kwargs):
     """Segmentation Datasets"""

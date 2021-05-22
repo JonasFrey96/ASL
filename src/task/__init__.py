@@ -1,2 +1,2 @@
 from .task import *
-__all__ = ['Task', 'TaskCreator']
+from .task_generator_scannet import *

@@ -11,7 +11,7 @@ sys.path.append( ASL )
 sys.path.append( src )
 
 from utils_asl import load_yaml
-from task import TaskCreator
+from task import TaskGenerator
 
 DEVICE = "cuda:0"
 name = os.getenv('ENV_WORKSTATION_NAME')
@@ -28,11 +28,11 @@ else:
   exp = load_yaml(exp_cfg_path)
 
 # SETUP DATALOADERS
-from task import TaskCreator
+from task import TaskGenerator
 from datasets_asl import get_dataset
 from math import ceil
 import torch
-tc = TaskCreator(**exp['task_generator'] )
+tc = TaskGenerator(**exp['task_generator'] )
 
 
 use_tc = True
