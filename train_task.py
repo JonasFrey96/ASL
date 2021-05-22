@@ -32,7 +32,7 @@ from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
 
 from datasets_asl import eval_lists_into_dataloaders, get_dataloader_train
-from task import TaskCreator
+from task import TaskGenerator
 __all__ = ['train_task']
 
 def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=None):
@@ -231,10 +231,10 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             logger=logger, epoch=0, store=True, num_classes=exp['model']['cfg']['num_classes']+1)
   
-  tc = TaskCreator(**exp['task_generator'],output_size=exp['model']['input_size'])
+  tg = TaskGenerator(**exp['task_generator'],output_size=exp['model']['input_size'])
   
   
-  for idx, out in enumerate(tc):
+  for idx, out in enumerate(tg):
     if idx == task_nr:
       break 
   

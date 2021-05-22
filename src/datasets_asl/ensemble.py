@@ -9,6 +9,8 @@ import numpy as np
 
 eps = 0.0001
 
+__all__ = ['Ensemble']
+
 class Ensemble(Dataset):
 	def __init__(self, main_dataset, replay_datasets, probs):
 		"""Initalizes the datasets
@@ -22,12 +24,12 @@ class Ensemble(Dataset):
 		
 		# Quick Systematic Problem Explained:
 		# Define a new length based on the probs !
-		assert np.abs(np.array(probs).sum() -1 ) < eps
+		assert np.abs(self.probs.sum() -1 ) < eps
 
-		self._length = len(main_dataset) *(1+ (1/(1-probs)))
+		self._length = len(main_dataset) *(1/self.probs[-1])
 		
 		self.replayed = [False]*len(main_dataset) # either_get_from_main_dataset
-		self.replayed += [True]*( len(main_dataset)*1/(1-probs))  # either_get_from_main_dataset
+		self.replayed += [True]*( self._length-len(main_dataset) )  # either_get_from_main_dataset
 
 		def __getitem__(self,index):
 			if not self.replayed[index]:
