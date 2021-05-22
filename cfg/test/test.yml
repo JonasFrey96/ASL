@@ -45,9 +45,9 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 1.0
-  limit_val_batches: 1.0
-  limit_test_batches: 1.0
+  limit_train_batches: 10
+  limit_val_batches: 10
+  limit_test_batches: 10
   progress_bar_refresh_rate: 10
   max_epochs: 1000
   gpus: -1
@@ -85,7 +85,7 @@ model:
       - false 
       - false
 replay:
-  cfg:
+  cfg_ensemble:
     active: True
     probs: 0.2
 
@@ -100,7 +100,7 @@ task_generator:
       output_size: 
       - 320
       - 640
-      label_setting: iteration/0/map_onehot_label
+      label_setting: default #iteration/0/map_onehot_label
 
 cb_early_stopping:
   active: false

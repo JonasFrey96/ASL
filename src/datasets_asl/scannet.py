@@ -48,7 +48,7 @@ class ScanNet(Dataset):
     mode : str, option ['train','val]
     """
 
-    super(Dataset, self).__init__()
+    super(ScanNet, self).__init__()
 
     if mode.find('val') != -1:
       mode = mode.replace('val', 'test')

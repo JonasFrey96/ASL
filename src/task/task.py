@@ -18,6 +18,7 @@ class TaskGenerator():
   def __init__(self):
     self._task_list = []
     self._current_task = 0
+    self._total_tasks = 0
       
   def __iter__(self):
     return self
@@ -38,6 +39,9 @@ class TaskGenerator():
       p += f'  {j:02d} Name: '+ t.name + ' ' + '\n'
     p += '='*90
     return p
+
+  def __len__(self):
+    return self._total_tasks
 
 
 def test():
