@@ -27,12 +27,12 @@ from pytorch_lightning.loggers.neptune import NeptuneLogger
 # Costume Modules
 from lightning import Network
 from visu import MainVisualizer, plot_from_pkl, validation_acc_plot, plot_from_neptune
-from callbacks import TaskSpecificEarlyStopping
+from callbacks import TaskSpecificEarlyStopping, VisuCallback, FreezeCallback, ReplayCallback
 from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
+from datasets_asl import adapter_tg_to_dataloader
+from task import TaskGeneratorScannet
 
-from datasets_asl import eval_lists_into_dataloaders, get_dataloader_train
-from task import TaskGenerator
 __all__ = ['train_task']
 
 def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=None):
@@ -122,9 +122,17 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     exp['trainer']['gpus'] = -1
   
 
+  # TASK GENERATOR 
+  tg = TaskGeneratorScannet( 
+    mode = exp['task_generator']['mode'], 
+    cfg = exp['task_generator']['cfg'] )
+  if exp['replay']['cfg_rssb']['bins'] == -1:
+    exp['replay']['cfg_rssb']['bins'] = len(tg)
+
   # MODEL
   model = Network(exp=exp, env=env)
   
+  # TODO: Jonas Frey implement collect callbacks
   # COLLECT CALLBACKS
   lr_monitor = LearningRateMonitor(
     **exp['lr_monitor']['cfg'])
@@ -152,7 +160,12 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
           **dic
         )
         cb_ls.append( checkpoint_callback )
-  
+  cb_ls.append( VisuCallback( exp ) ) 
+  cb_ls.append( ReplayCallback(  ) ) 
+  cb_ls.append( FreezeCallback( **exp['model']['freeze'] ) )
+
+
+
   # GET LOGGER
   if not exp.get('offline_mode', False):
     if  logger_pass is None and exp.get('experiment_id',None) is None:
@@ -174,10 +187,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     logger = get_tensorboard_logger(exp=exp,env=env, exp_p =exp_cfg_path, env_p = env_cfg_path)
   
 
-  weight_restore = exp.get('weights_restore', False) 
-  checkpoint_load = exp['checkpoint_load']
-
-
+  # TODO: Jonas Frey check if we can move the fullt blog to an earlyer stage
   if local_rank == 0 and init:
     # write back the exp file with the correct name set to the model_path!
     # other ddp-task dont need to care about timestamps
@@ -212,7 +222,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       callbacks=cb_ls,
       logger=logger)
   
-  if exp['weights_restore'] :
+  if exp['weights_restore']:
     # it is not strict since the latent replay buffer is not always available
     p = os.path.join( env['base'],exp['checkpoint_load'])
     if os.path.isfile( p ):
@@ -227,59 +237,49 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
       print('Restoring weights: ' + str(res))
     else:
       raise Exception('Checkpoint not a file')
-  
+
+
+  # What we can do now here is reinitalizing the datasets
+  train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(tg, task_nr, exp['loader'], exp['replay']['cfg_ensemble'], env )
+
+
+
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             logger=logger, epoch=0, store=True, num_classes=exp['model']['cfg']['num_classes']+1)
-  
-  tg = TaskGenerator(**exp['task_generator'],output_size=exp['model']['input_size'])
-  
-  
-  for idx, out in enumerate(tg):
-    if idx == task_nr:
-      break 
-  
-  task, eval_lists = out
-  main_visu.epoch = idx
-  # New Logger
-  print( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' >>>>>>>>>>>>>' )
+  main_visu.epoch = task_nr
 
-  model._task_name = task.name
-  model._task_count = idx
-  # Normal Validation datloader is ignored !
-  dataloader_train, dataloader_buffer= get_dataloader_train(d_train= task.dataset_train_cfg,
-                                                              env=env,exp = exp)
-  print(str(dataloader_train.dataset))
-  print(str(dataloader_buffer.dataset))
-  dataloader_list_test = eval_lists_into_dataloaders(eval_lists, env=env, exp=exp)
+
+  # New Logger
+  print( f'<<<<<<<<<<<< TASK IDX {task_nr} TASK NAME : '+task_name+ ' >>>>>>>>>>>>>' )
+
+  model._task_name = task_name
+  model._task_count = task_nr
   print( f'<<<<<<<<<<<< All Datasets are loaded and set up >>>>>>>>>>>>>' )
+  
   #Training the model
   trainer.should_stop = False
-  # print("GLOBAL STEP ", model.global_step)
-  for d in dataloader_list_test:
-    print(str(d.dataset))
   
-  
-  if idx < exp['start_at_task']:
+  if task_nr < exp['start_at_task']:
+    # VALIDATION
+
     # trainer.limit_val_batches = 1.0
     trainer.limit_train_batches = 1
     # trainer.limit_val_batches = 1 # TODO: Jonas Frey remove this
     trainer.max_epochs = 1
     trainer.check_val_every_n_epoch = 1
     train_res = trainer.fit(model = model,
-                            train_dataloader= dataloader_train,
-                            val_dataloaders= dataloader_list_test)
-    
+                            train_dataloader= train_dataloader,
+                            val_dataloaders= val_dataloaders)
     trainer.max_epochs = exp['trainer']['max_epochs']
     trainer.check_val_every_n_epoch =  exp['trainer']['check_val_every_n_epoch']
     trainer.limit_val_batches = exp['trainer']['limit_val_batches']
     trainer.limit_train_batches = exp['trainer']['limit_train_batches']
   else:
-    print('Train', dataloader_train)
-    print('Val', dataloader_list_test)
-    
+    # FULL TRAINING
     train_res = trainer.fit(model = model,
-                            train_dataloader= dataloader_train,
-                            val_dataloaders= dataloader_list_test)
+                            train_dataloader= train_dataloader,
+                            val_dataloaders= val_dataloaders)
+  
   res = trainer.logger_connector.callback_metrics
   res_store = {}
   for k in res.keys():
@@ -291,49 +291,50 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   with open(f"{base_path}/res{task_nr}.pkl", "wb") as f:
     pickle.dump(res_store, f)
   
-  print( f'<<<<<<<<<<<< TASK IDX {idx} TASK NAME : '+task.name+ ' Trained >>>>>>>>>>>>>' )
+  print( f'<<<<<<<<<<<< TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
 
 
-  # SET THE REPLAY BUFFER FAST RANDOMLY !
-  if (exp.get('buffer',{}).get('fill_after_fit', False) and 
-    exp.get('buffer',{}).get('mode', 'random')  == 'random'):
-    global_idx_list = torch.tensor( dataloader_buffer.dataset.global_to_local_idx, device=model.device)
-    print("USE RSSB NOW IS ACTIVE")
-    print( global_idx_list.shape, model._rssb.bins.shape)
-    selected = torch.randperm( global_idx_list.shape[0], device = model.device )[:model._rssb.bins.shape[1]]
-    ret_globale_indices = global_idx_list[selected]
-    if exp['buffer'].get('sync_back', True):
-          if model._rssb_active:
-            model._rssb.bins[ model._task_count,:] = ret_globale_indices
-            model._rssb.valid[ model._task_count,:] = True
+  # TODO SET REPLAY BUFFER
+  # # SET THE REPLAY BUFFER FAST RANDOMLY !
+  # if (exp.get('buffer',{}).get('fill_after_fit', False) and 
+  #   exp.get('buffer',{}).get('mode', 'random')  == 'random'):
+  #   global_idx_list = torch.tensor( dataloader_buffer.dataset.global_to_local_idx, device=model.device)
+  #   print("USE RSSB NOW IS ACTIVE")
+  #   print( global_idx_list.shape, model._rssb.bins.shape)
+  #   selected = torch.randperm( global_idx_list.shape[0], device = model.device )[:model._rssb.bins.shape[1]]
+  #   ret_globale_indices = global_idx_list[selected]
+  #   if exp['buffer'].get('sync_back', True):
+  #         if model._rssb_active:
+  #           model._rssb.bins[ model._task_count,:] = ret_globale_indices
+  #           model._rssb.valid[ model._task_count,:] = True
 
-            print( "BINS: ", model._rssb.bins[ model._task_count,:])
-            print( "VALID: ", model._rssb.valid[ model._task_count,:])
-            checkpoint_callback.save_checkpoint(trainer, model)
+  #           print( "BINS: ", model._rssb.bins[ model._task_count,:])
+  #           print( "VALID: ", model._rssb.valid[ model._task_count,:])
+  #           checkpoint_callback.save_checkpoint(trainer, model)
             
 
-  # START THE COMPLEX REPLAY BUFFER FILLING BY ITERATING OVER THE FULL DATASET
-  elif exp.get('buffer',{}).get('fill_after_fit', False):
-    print( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
-    trainer.test(model=model,
-                test_dataloaders= dataloader_buffer)
+  # # START THE COMPLEX REPLAY BUFFER FILLING BY ITERATING OVER THE FULL DATASET
+  # elif exp.get('buffer',{}).get('fill_after_fit', False):
+  #   print( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
+  #   trainer.test(model=model,
+  #               test_dataloaders= dataloader_buffer)
   
-    checkpoint_callback.save_checkpoint(trainer, model)
-    print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
+  #   checkpoint_callback.save_checkpoint(trainer, model)
+  #   print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
   
-  number_validation_dataloaders = len( dataloader_list_test )
-  if model._rssb_active:
-    # visualize rssb
-    bins, valids = model._rssb.get()
-    fill_status = (bins != 0).sum(axis=1)
-    main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
+  # number_validation_dataloaders = len( dataloader_list_test )
+  # if model._rssb_active:
+  #   # visualize rssb
+  #   bins, valids = model._rssb.get()
+  #   fill_status = (bins != 0).sum(axis=1)
+  #   main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
   
-  try:
-    plot_from_pkl(main_visu, base_path, task_nr)
-  except:
-    print("Failde because not implemented when restarting training")
+  # try:
+  #   plot_from_pkl(main_visu, base_path, task_nr)
+  # except:
+  #   print("Failde because not implemented when restarting training")
   
-  validation_acc_plot(main_visu, logger)
+  # validation_acc_plot(main_visu, logger)
   
   try:
     logger.experiment.stop()

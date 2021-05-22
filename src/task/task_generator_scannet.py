@@ -42,6 +42,8 @@ class TaskGeneratorScannet( TaskGenerator ):
                 dataset_val_cfg= copy.deepcopy(val))
       self._task_list.append(t)
       start_scene_train += scenes_per_task
+    
+    self._total_tasks = number_of_tasks
 
 
 def test():

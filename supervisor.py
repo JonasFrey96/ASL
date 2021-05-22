@@ -28,7 +28,7 @@ from utils_asl import get_neptune_logger
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/train_first_scene/train_first_scene.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/debug.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')
@@ -42,7 +42,7 @@ if __name__ == "__main__":
     print('Max Tasks larger then total tasks -> Setting max_tasks to total_tasks')
     exp['max_tasks'] = exp['task_generator']['total_tasks']
   
-  if args.mode != 'sell':
+  if args.mode != 'shell':
     sys.path.append(os.path.join(os.getcwd() + '/train_task.py'))
 
     logger = get_neptune_logger(exp,env, args.exp, env_cfg_path)
