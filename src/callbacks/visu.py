@@ -26,14 +26,15 @@ class VisuCallback(Callback):
       'test': 0
     }
 
+  def on_train_start(self, trainer, pl_module):
+    # Set the Logger given that on init not initalized yet-
+    self.visualizer.logger= pl_module.logger
+    
   def on_epoch_start(self, trainer, pl_module):
     self.visualizer.epoch = pl_module.current_epoch
     # reset logged images counter
     self.logged_images = dict.fromkeys(self.logged_images, 0)
 
-  def on_train_start(self, trainer, pl_module):
-    # Set the Logger given that on init not initalized yet-
-    self.visualizer.logger= pl_module.logger
 
   def training_step_end(self, trainer, pl_module, outputs):
     # Logging + Visu

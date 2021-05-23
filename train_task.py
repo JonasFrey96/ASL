@@ -35,8 +35,9 @@ from task import TaskGeneratorScannet
 
 __all__ = ['train_task']
 
-def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=None):
-  
+def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, logger_pass=None):
+  # skip flag indicates to not perform full fit but just validate the dataset 
+
   seed_everything(42)
   local_rank = int(os.environ.get('LOCAL_RANK', 0))
 
@@ -145,12 +146,12 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
     cb_ls = [lr_monitor]
   if exp['task_specific_early_stopping']['active']:
     tses = TaskSpecificEarlyStopping(
-      nr_tasks=exp['task_generator']['total_tasks'] , 
+      nr_tasks=  len(tg)  , 
       **exp['task_specific_early_stopping']['cfg']
     )
     cb_ls.append(tses)
   if exp['cb_checkpoint']['active']:
-    for i in range(exp['task_generator']['total_tasks']):
+    for i in range( len(tg) ):
       if i == task_nr:
         m = '/'.join( [a for a in model_path.split('/') if a.find('rank') == -1])
         dic = copy.deepcopy( exp['cb_checkpoint']['cfg'])
@@ -259,7 +260,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   #Training the model
   trainer.should_stop = False
   
-  if task_nr < exp['start_at_task']:
+  if skip:
     # VALIDATION
 
     # trainer.limit_val_batches = 1.0
@@ -280,6 +281,9 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
                             train_dataloader= train_dataloader,
                             val_dataloaders= val_dataloaders)
   
+  checkpoint_callback.save_checkpoint(trainer, model)
+  
+
   res = trainer.logger_connector.callback_metrics
   res_store = {}
   for k in res.keys():
@@ -291,7 +295,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, logger_pass=No
   with open(f"{base_path}/res{task_nr}.pkl", "wb") as f:
     pickle.dump(res_store, f)
   
-  print( f'<<<<<<<<<<<< TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
+  print( f'<<<<<<<<<<<< FINISHED TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
 
 
   # TODO SET REPLAY BUFFER

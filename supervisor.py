@@ -37,23 +37,20 @@ if __name__ == "__main__":
   exp = load_yaml(args.exp)
   env_cfg_path = os.path.join('cfg/env', os.environ['ENV_WORKSTATION_NAME']+ '.yml')
   env = load_yaml(env_cfg_path)
-  
-  if exp['max_tasks'] > exp['task_generator']['total_tasks']:
-    print('Max Tasks larger then total tasks -> Setting max_tasks to total_tasks')
-    exp['max_tasks'] = exp['task_generator']['total_tasks']
+
   
   if args.mode != 'shell':
     sys.path.append(os.path.join(os.getcwd() + '/train_task.py'))
 
     logger = get_neptune_logger(exp,env, args.exp, env_cfg_path)
   
-  sta = 0 #exp['start_at_task']
-  end = exp['max_tasks']-1
-  print(f"SUPERVISOR: Execute Task {sta}-{end}")
-  for i in range(int(sta), exp['max_tasks'] ):
+  sta = exp['supervisor']['start_task'] #exp['start_at_task']
+  sto = exp['supervisor']['stop_task']
+  print(f"SUPERVISOR: Execute Task {sta}-{sto}")
+  for i in range( 0, sto+1 ):
     
     init = int(bool(i== 0 ))
-    close = int(bool(i==exp['max_tasks']-1))
+    close = int(bool(i==sto))
     
     if args.mode == 'shell':
       if env['workstation']:
@@ -65,7 +62,10 @@ if __name__ == "__main__":
       print("Execute script: " , cmd)
       os.system(cmd)
     else:
+
       print("SUPERVISOR: CALLING train_task:", init, close, args.exp, env_cfg_path, i)
-      train_task( init, close, args.exp, env_cfg_path, i, logger_pass=None)
+      
+      skip = i < sta
+      train_task( init, close, args.exp, env_cfg_path, i, skip = skip, logger_pass=None)
       torch.cuda.empty_cache()
 
