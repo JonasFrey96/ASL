@@ -69,7 +69,7 @@ def adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env):
       output_trafo = output_transform,
     ))
 
-  replay_datasets = train_dataset_list[:-2]
+  replay_datasets = train_dataset_list[:-1]
   
   probs = replay_cfg_to_probs( replay_cfg_ensemble, len(train_dataset_list) )
   train_dataset = Ensemble( main_dataset = train_dataset_list[-1], 

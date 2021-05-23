@@ -70,16 +70,41 @@ class ScanNet(Dataset):
     
     self._scenes_loaded = scenes
     self.unique = False
+    self.aux_labels_fake = False
+  
+  def set_aux_labels_fake(self, flag):
+    self.aux_labels_fake = True
+    self.aux_labels = True
 
   def __getitem__(self, index):
     """
     Returns
     -------
-    img [torch.tensor]: CxHxW, torch.float
-    label [torch.tensor]: HxW, torch.int64
-    img_ori [torch.tensor]: CxHxW, torch.float
-    replayed [torch.tensor]: 1 torch.float32 
-    global_idx [int]: global_index in dataset
+    Option 1 (FAILED):
+      False: Unique is set and label is invalid
+
+    Option 2 (VANILLA):
+    img
+    label
+
+    Option 3 (VANILLA + VISU):
+    img
+    label
+    img_orginal
+
+    Option 4 (AUX_LABEL):
+    img
+    label
+    aux_label
+    aux_valid
+
+    Option 5 (AUX_LABEL + VISU):
+    img
+    label
+    aux_label
+    aux_valid
+    img_orginal
+
     """
     global_idx = self.global_to_local_idx[index]
     
@@ -88,18 +113,17 @@ class ScanNet(Dataset):
     label = torch.from_numpy(label.astype(np.int32)).type(
       torch.float32)[None, :, :]  # C H W
     label = [label]
-    
     if self.aux_labels:
       aux_label = imageio.imread(self.aux_label_pths[global_idx])
       aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
         torch.float32)[None, :, :]
+      # appending this to the list so we can apply the same augmentation to all labels! 
       label.append(aux_label)
     
     img = imageio.imread(self.image_pths[global_idx])
     img = torch.from_numpy(img).type(
       torch.float32).permute(
       2, 0, 1)/255  # C H W range 0-1
-
 
     if self._mode.find('train') != -1 and self._data_augmentation :
       img, label = self._augmenter.apply(img, label)
@@ -115,11 +139,10 @@ class ScanNet(Dataset):
     label[0] = label[0].flatten()
     label[0] = self.mapping[label[0].type(torch.int64)] 
     label[0] = label[0].reshape(sa)
-    label[0] = label[0] - 1  # 0 == chairs 39 other prop  -1 invalid
     
-    if len(label) > 1:
-      for k in range(1,len(label)):
-        label[k] = label[k]-1 # 0 == chairs 39 other prop  -1 invalid
+
+    for k in range(len(label)):
+      label[k] = label[k]-1 # 0 == chairs 39 other prop  -1 invalid
 
     # REJECT LABEL
     if (label[0] != -1).sum() < 10:
@@ -129,13 +152,19 @@ class ScanNet(Dataset):
       else:
         return False
 
-    if len(label) > 1:
-      return (img, 
-          label[0].type(torch.int64)[0, :, :], 
-          img_ori, 
-          label[1].type(torch.int64)[0, :, :])
-    else:
-      return img, label[0].type(torch.int64)[0, :, :], img_ori
+    ret = (img, 
+          label[0].type(torch.int64)[0, :, :])
+    if self.aux_labels:
+      if self.aux_labels_fake:
+        ret += ( label[0].type(torch.int64)[0, :, :],
+                  torch.tensor( False ) )
+      else:
+        ret += ( label[1].type(torch.int64)[0, :, :],
+                 torch.tensor( True ) )
+
+    ret += ( img_ori, )
+    
+    return ret 
 
   def __len__(self):
     return self.length
