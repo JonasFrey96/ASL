@@ -1,11 +1,6 @@
-# TODO: Move buffer filling to callback
-# TODO: Move visualization to callback! -> maybe not cant be acces by callback !!!
-# TODO: Refactor RSSB
-
 # STD
 import copy
 import time
-from pathlib import Path
 
 # MISC 
 import numpy as np
@@ -18,12 +13,11 @@ from torchvision import transforms
 from pytorch_lightning import metrics as pl_metrics
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
 from torch.nn import functional as F
+import datetime
+
 # MODULES
 from models_asl import FastSCNN, ReplayStateSyncBack
 
-#from .metrices import IoU, PixAcc
-from lightning import meanIoUTorchCorrect
-import datetime
 
 
 __all__ = ['Network']
@@ -50,22 +44,19 @@ class Network(LightningModule):
     self._rssb = ReplayStateSyncBack( **exp['replay']['cfg_rssb'] )
 
     self._mode = 'train'
-    max_tests = 4
-    self.test_acc = pl_metrics.classification.Accuracy()
+    
     self.train_acc = pl_metrics.classification.Accuracy()
     self.train_aux_acc = pl_metrics.classification.Accuracy()
     self.train_aux_vs_gt_acc = pl_metrics.classification.Accuracy()
-    self.val_aux_acc = pl_metrics.classification.Accuracy()    
 
-
-    self.val_acc = torch.nn.ModuleList( 
-      [pl_metrics.classification.Accuracy() for i in range(max_tests)] )
-
-    self.test_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
-    self.train_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
     
-    self.val_mIoU = torch.nn.ModuleList( 
-      [meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes']) for i in range(max_tests)] )
+    self.val_acc = torch.nn.ModuleList( 
+      [pl_metrics.classification.Accuracy() for i in range(exp['replay']['cfg_rssb']['bins'])] )
+    self.val_aux_acc = torch.nn.ModuleList( 
+      [pl_metrics.classification.Accuracy() for i in range(exp['replay']['cfg_rssb']['bins'])] ) 
+    self.val_aux_vs_gt_acc = torch.nn.ModuleList( 
+      [pl_metrics.classification.Accuracy() for i in range(exp['replay']['cfg_rssb']['bins'])] ) 
+
 
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
     self._task_count = 0 # so this here might be a bad idea. Decide if we know the task or not
@@ -76,7 +67,11 @@ class Network(LightningModule):
     self._replayed_samples = 0
     self._real_samples = 0
     self._val_results = {} 
-      
+
+    self._visu_callback = None
+    self._ltmene = self._exp['visu'].get('log_training_metric_every_n_epoch',9999)
+
+
   def forward(self, batch, **kwargs):    
     if kwargs.get('replayed', None) is not None:
       injection_mask = kwargs['replayed'] != -1
@@ -148,6 +143,15 @@ class Network(LightningModule):
   #### TRAINING ####
   ##################
   
+  def on_fit_start(self):
+    print(" ================ START FITTING ==================")
+    print(f" TASK NAME: {self._task_name } ")
+    print(f" TASK COUNT: {self._task_count } ")
+    print(f" CURRENT EPOCH: {self.current_epoch } ")
+    print(f" CURRENT EPOCH: {self.global_step } ")
+    print(f" RSSB STATE: ", self._rssb.valid.sum(dim=1) )
+    print(" ================ START FITTING ==================")
+
   def on_train_epoch_start(self):
     self._mode = 'train'
     
@@ -159,11 +163,9 @@ class Network(LightningModule):
       ba['aux_valid'] = torch.zeros( (ba['images'].shape[0]), 
                                       device=ba['images'].device, 
                                       dtype=torch.bool)
-
     loss = self.compute_loss(  
                 pred = outputs[0], 
                 **ba)
-
     self.log('train_loss', loss, on_step=False, on_epoch=True)
     ret = {'loss': loss, 'pred': outputs[0], 'label': ba['label'], 'ori_img': ba['ori_img']  }
     
@@ -174,24 +176,24 @@ class Network(LightningModule):
     return ret
   
   def training_step_end(self, outputs):
-    # Log replay buffer stats
+    self._visu_callback.training_step_end(self.trainer, self, outputs)
+
+    # LOG REPLAY / REAL
     self.logger.log_metrics( 
       metrics = { 'real': torch.tensor(self._real_samples),
                   'replayed': torch.tensor(self._replayed_samples)},
       step = self.global_step)
-  
+
+    if self.current_epoch % self._ltmene == 0 :
+      # LOG ACCURRACY
+      self._acc_cal( outputs, 
+                  self.train_acc ,
+                  self.train_aux_acc ,
+                  self.train_aux_vs_gt_acc )
+
     return {'loss': outputs['loss']}
   
-  # TODO: Jonas Frey can we remove this
-  # def on_train_epoch_end(self, outputs):
-  #   if self.current_epoch % self.trainer.check_val_every_n_epoch != 0:
-  #     val_acc_epoch = torch.tensor( 999, device=self.device)
-  #     val_mIoU_epoch = torch.tensor( 999, device=self.device)
-  #     val_loss = torch.tensor( 999, device=self.device)
-  #     self.log('val_acc_epoch',val_acc_epoch)
-  #     self.log('val_mIoU_epoch',val_mIoU_epoch,)
-  #     self.log('val_loss',val_loss)
-  
+
   ####################
   #### VALIDATION ####
   ####################
@@ -200,32 +202,53 @@ class Network(LightningModule):
     self._mode = 'val'
     
   def validation_step(self, batch, batch_idx, dataloader_idx=0):
-    images, label, ori_img = batch
+    images, label = batch[:2]
 
     outputs = self(images)
    
     loss = F.cross_entropy(outputs[0], label , ignore_index=-1 ) 
-    pred = torch.argmax(outputs[0], 1)
 
-    return {'pred': pred, 'label': label, 
-            'ori_img': ori_img, 
+    ret = {'pred': outputs[0], 'label': label,
             'dataloader_idx': dataloader_idx, 'loss_ret': loss }
 
-  def validation_step_end( self, outputs ):
-    # Logging + Visu
-    dataloader_idx = outputs['dataloader_idx']
-    pred, label = outputs['pred'] ,outputs['label']
-
-    self.val_mIoU[dataloader_idx] (pred,label)
+    if len(batch) == 3:
+      ret['ori_img'] = batch[2]
+    if len(batch) > 3 :
+      ret['aux_label'] = batch[2]
+      ret['aux_valid'] = batch[3]
+      ret['ori_img'] = batch[4]
     
-    m  =  label > -1
-    self.val_acc[dataloader_idx] (pred[m], label[m])
-    self.log(f'val_acc', self.val_acc[dataloader_idx] , on_epoch=True, prog_bar=False)
-    self.log(f'val_mIoU', self.val_mIoU[dataloader_idx] , on_epoch=True, prog_bar=False)
-    self.log(f'task_count', self._task_count, on_epoch=True, prog_bar=False)
-    self.log('val_loss', outputs['loss_ret'], on_epoch=True)
-  
+    return ret
+
+  def validation_step_end( self, outputs ):
+    self._visu_callback.validation_step_end(self.trainer, self, outputs)
+    dataloader_idx = outputs['dataloader_idx']
+    self._acc_cal( outputs, 
+                  self.val_acc[dataloader_idx],
+                  self.val_aux_acc[dataloader_idx],
+                  self.val_aux_vs_gt_acc[dataloader_idx] )
+
+  def _acc_cal(self, outputs, acc, aux_acc, aux_vs_gt_acc ):
+    pred = torch.argmax(outputs['pred'], 1)
+
+    m = outputs['label'] > -1
+    acc( pred[m], outputs['label'][m])
+    self.log(f'{self._mode}_acc', acc, on_step=False, on_epoch=True)
+
+    if 'aux_valid' in outputs.keys():
+      aux_m = outputs['aux_label'] > -1
+      aux_acc( pred[aux_m], outputs['aux_label'][aux_m])
+      self.log(f'{self._mode}_aux_acc', aux_acc, on_step=False, on_epoch=True)
+
+      aux_m2 = aux_m * m
+      aux_vs_gt_acc( pred[aux_m2], outputs['aux_label'][aux_m2])
+      self.log(f'{self._mode}_aux_vs_gt_acc', aux_vs_gt_acc, on_step=False, on_epoch=True)
+
+
   def validation_epoch_end(self, outputs):
+    self.log(f'task_count', self._task_count, on_step=False, on_epoch=True, prog_bar=False)
+
+
     metrics = self.trainer.logger_connector.callback_metrics
     me =  copy.deepcopy ( metrics ) 
     for k in me.keys():
@@ -236,16 +259,15 @@ class Network(LightningModule):
     
     t_l = me.get('train_loss', 'NotDef')
     v_acc = me.get('val_acc', 'NotDef')
-    v_mIoU = me.get('val_mIoU', 'NotDef')  
     
     try:
       # only works when multiple val-dataloader are set!
       if len( self._val_results ) == 0:
-        for i in range(self._exp['max_tasks']):
+        for i in range(self._exp['replay']['cfg_rssb']['bins']):
           self._val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
       else:
         val_results = {}
-        for i in range(self._exp['max_tasks']):
+        for i in range(self._exp['replay']['cfg_rssb']['bins']):
           val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
           res = (self._val_results[f'val_acc/dataloader_idx_{i}'] -
             val_results[f'val_acc/dataloader_idx_{i}'])
@@ -280,16 +302,14 @@ class Network(LightningModule):
       epoch =  wrap(epoch,3)
       t_l = wrap(t_l,6)
       v_acc = wrap(v_acc,6)
-      v_mIoU = wrap(v_mIoU,6)
       
       print('VALIDATION_EPOCH_END: '+ 
-        f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
+        f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc} <<<"
       )
     self._epoch_start_time = time.time()
     print( "SELF TRAINER SHOULD STOP", self.trainer.should_stop, self.device )
 
   def on_save_checkpoint(self, params):
-    #TODO: RSSB
     pass
 
   def configure_optimizers(self):

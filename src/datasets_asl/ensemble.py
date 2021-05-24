@@ -3,7 +3,7 @@
 # Allows internally masking a dataset such that only a subset of elements is accessible via filtering
 # Fully replace the memory thing
 
-
+# TODO: Jonas Frey added atomatically switching on aux labels if needed
 from torch.utils.data import Dataset
 import numpy as np
 import torch
@@ -25,10 +25,23 @@ class Ensemble(Dataset):
 		self.probs = np.array( probs )
 
 		assert len(self.replay_datasets) == len(probs)-1
-		
 		# Quick Systematic Problem Explained:
 		# Define a new length based on the probs !
 		assert np.abs(self.probs.sum() -1 ) < eps
+
+
+		aux_needed = self.main_dataset.aux_labels 
+		for d in self.replay_datasets:
+			aux_needed = aux_needed or d.aux_labels
+		if aux_needed:
+			if not self.main_dataset.aux_labels:
+				self.main_dataset.aux_labels = True
+				self.main_dataset.aux_labels_fake = True
+			for d in self.replay_datasets:
+				if not d.aux_labels:
+					d.aux_labels = True
+					d.aux_labels_fake = True
+	
 
 		self._length = int( len(main_dataset) *(1/self.probs[-1]) )
 		

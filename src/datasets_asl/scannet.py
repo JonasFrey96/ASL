@@ -113,7 +113,7 @@ class ScanNet(Dataset):
     label = torch.from_numpy(label.astype(np.int32)).type(
       torch.float32)[None, :, :]  # C H W
     label = [label]
-    if self.aux_labels:
+    if self.aux_labels and not self.aux_labels_fake:
       aux_label = imageio.imread(self.aux_label_pths[global_idx])
       aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
         torch.float32)[None, :, :]

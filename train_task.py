@@ -127,8 +127,13 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   tg = TaskGeneratorScannet( 
     mode = exp['task_generator']['mode'], 
     cfg = exp['task_generator']['cfg'] )
+
   if exp['replay']['cfg_rssb']['bins'] == -1:
     exp['replay']['cfg_rssb']['bins'] = len(tg)
+
+  if task_nr >= len(tg):
+    print("ERROR SPECIFIED supervisor stop_task is too high") 
+    return
 
   # MODEL
   model = Network(exp=exp, env=env)
@@ -262,10 +267,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   
   if skip:
     # VALIDATION
-
-    # trainer.limit_val_batches = 1.0
     trainer.limit_train_batches = 1
-    # trainer.limit_val_batches = 1 # TODO: Jonas Frey remove this
+    # trainer.limit_val_batches = 1
     trainer.max_epochs = 1
     trainer.check_val_every_n_epoch = 1
     train_res = trainer.fit(model = model,
@@ -282,7 +285,10 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
                             val_dataloaders= val_dataloaders)
   
   checkpoint_callback.save_checkpoint(trainer, model)
-  
+  print("???????????==============FIT====================??????????????????")
+  model.on_fit_start()
+  print("???????????==============FIT====================??????????????????")
+
 
   res = trainer.logger_connector.callback_metrics
   res_store = {}
@@ -298,25 +304,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   print( f'<<<<<<<<<<<< FINISHED TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
 
 
-  # TODO SET REPLAY BUFFER
-  # # SET THE REPLAY BUFFER FAST RANDOMLY !
-  # if (exp.get('buffer',{}).get('fill_after_fit', False) and 
-  #   exp.get('buffer',{}).get('mode', 'random')  == 'random'):
-  #   global_idx_list = torch.tensor( dataloader_buffer.dataset.global_to_local_idx, device=model.device)
-  #   print("USE RSSB NOW IS ACTIVE")
-  #   print( global_idx_list.shape, model._rssb.bins.shape)
-  #   selected = torch.randperm( global_idx_list.shape[0], device = model.device )[:model._rssb.bins.shape[1]]
-  #   ret_globale_indices = global_idx_list[selected]
-  #   if exp['buffer'].get('sync_back', True):
-  #         if model._rssb_active:
-  #           model._rssb.bins[ model._task_count,:] = ret_globale_indices
-  #           model._rssb.valid[ model._task_count,:] = True
-
-  #           print( "BINS: ", model._rssb.bins[ model._task_count,:])
-  #           print( "VALID: ", model._rssb.valid[ model._task_count,:])
-  #           checkpoint_callback.save_checkpoint(trainer, model)
-            
-
+  # TODO SET REPLAY BUFFER with a complex testing step
   # # START THE COMPLEX REPLAY BUFFER FILLING BY ITERATING OVER THE FULL DATASET
   # elif exp.get('buffer',{}).get('fill_after_fit', False):
   #   print( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
@@ -326,19 +314,19 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   #   checkpoint_callback.save_checkpoint(trainer, model)
   #   print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
   
-  # number_validation_dataloaders = len( dataloader_list_test )
-  # if model._rssb_active:
-  #   # visualize rssb
-  #   bins, valids = model._rssb.get()
-  #   fill_status = (bins != 0).sum(axis=1)
-  #   main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
+
+  if exp['replay']['cfg_rssb']['elements'] != 0:
+    # visualize rssb
+    bins, valids = model._rssb.get()
+    fill_status = (bins != 0).sum(axis=1)
+    main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
   
   # try:
   #   plot_from_pkl(main_visu, base_path, task_nr)
   # except:
   #   print("Failde because not implemented when restarting training")
   
-  # validation_acc_plot(main_visu, logger)
+  validation_acc_plot(main_visu, logger)
   
   try:
     logger.experiment.stop()
@@ -356,10 +344,13 @@ if __name__ == "__main__":
                       help='Task nr.')
   parser.add_argument('--close', type=int, default=1,
                       help='Task nr.')  
+  parser.add_argument('--skip', type=int, default=0,
+                    help='Task nr.') 
+
   args = parser.parse_args()
 
   print('Train Task called as MAIN with the following arguments: '+ str(args))  
   env_cfg_path = os.path.join('cfg/env', os.environ['ENV_WORKSTATION_NAME']+ '.yml')
   
-  train_task( bool(args.init),  bool(args.close), args.exp, env_cfg_path, args.task_nr)
+  train_task( bool(args.init),  bool(args.close), args.exp, env_cfg_path, args.task_nr, skip=bool(args.skip))
   

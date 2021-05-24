@@ -20,11 +20,66 @@ class TaskGeneratorScannet( TaskGenerator ):
     for k in cfg['copy_to_template'].keys():
        scannet_template_dict[k] = cfg['copy_to_template'][k]
 
+    mode_cfg = cfg.get(mode,{})
     if mode == 'scannet_scenes':
-      self._scannet_scenes( **cfg['scannet_scenes'])
+      self._scannet_scenes( **mode_cfg )
+      
+    elif mode == 'scannet_pretrain':
+      self._scannet_pretrain( **mode_cfg )
+
+    elif mode == 'scannet_auxilary_labels':
+      self._scannet_auxilary_labels( **mode_cfg )
+
     else:
       raise AssertionError('TaskGeneratorScannet: Undefined Mode')
     self._current_task = 0
+    self._total_tasks = len(self._task_list)
+  
+  def _scannet_auxilary_labels( self ):
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    train['mode'] = 'train'
+    val['mode'] = 'val'
+    
+    # Define the first pretrain task
+    train['scenes'] = [f'scene{s:04d}' for s in range(10,60)]
+    val['scenes'] = train['scenes']
+    i = 0
+    t = Task(name = f'Train_{i}',
+              dataset_train_cfg= copy.deepcopy(train),
+              dataset_val_cfg= copy.deepcopy(val))
+    self._task_list.append(t)
+
+    start_scene_train = 0
+    scenes_per_task = 1
+    for i in range( 1 ):
+      # GENERATE TRAIN TASK        
+      train['scenes'] = [f'scene{s:04d}' for s in range(start_scene_train, start_scene_train+scenes_per_task )]
+      train['label_setting'] = "label_detectron2"
+
+      val['scenes'] = train['scenes']
+      val['label_setting'] = "label_detectron2"
+
+      t = Task(name = f'Train_{i+1}',
+                dataset_train_cfg= copy.deepcopy(train),
+                dataset_val_cfg= copy.deepcopy(val))
+      self._task_list.append(t)
+      start_scene_train += scenes_per_task
+
+
+
+  def _scannet_pretrain( self ):
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    train['mode'] = 'train'
+    val['mode'] = 'val'
+    
+    train['scenes'] = [f'scene{s:04d}' for s in range(10,60)]
+    val['scenes'] = train['scenes']
+    t = Task(name = f'Train_{i}',
+              dataset_train_cfg= copy.deepcopy(train),
+              dataset_val_cfg= copy.deepcopy(val))
+    self._task_list.append(t)
 
   def _scannet_scenes(self, number_of_tasks, scenes_per_task):
     train = copy.deepcopy( scannet_template_dict )
@@ -43,8 +98,6 @@ class TaskGeneratorScannet( TaskGenerator ):
       self._task_list.append(t)
       start_scene_train += scenes_per_task
     
-    self._total_tasks = number_of_tasks
-
 
 def test():
   import sys, os
