@@ -1,10 +1,8 @@
-# TODO: Problem in replay buffer now we dont store global indices but local ones.
-# We migth need to change this for more reliability
-# TODO: Jonas Frey make sure the global_to_local_list is deterministically generated !!!
+# TODO: Write a test and verify replaycallback always acts strictly contracting.
+
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.utilities import rank_zero_warn
 import torch
-
 
 __all__ = ['VisuCallback']
 

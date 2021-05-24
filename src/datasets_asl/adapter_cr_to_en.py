@@ -43,8 +43,6 @@ def replay_cfg_to_probs(replay_cfg_ensemble, nr):
   return probs
 
 def adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env):
-  # TODO: Jonas Frey decide if we should stick with the generator implementation here
-
   # accumulate train datasets and then wrap them together
   name = ""
   train_dataset_list = []
