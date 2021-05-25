@@ -29,8 +29,8 @@ from math import ceil
 import torch
 
 from utils_asl import load_yaml
-from task import TaskCreator
-from task import TaskCreator
+from task import TaskGenerator
+from task import TaskGenerator
 from datasets_asl import get_dataset
 
 ASL = os.path.join( str(Path.home()), "ASL" )
@@ -49,7 +49,7 @@ else:
 
 # SETUP DATALOADERS
 
-tc = TaskCreator(**exp['task_generator'], output_size=(640,1280) )
+tc = TaskGenerator(**exp['task_generator'], output_size=(640,1280) )
 
 use_tc = True
 if use_tc:    

@@ -89,19 +89,3 @@ class TaskSpecificEarlyStopping(Callback):
     else:
       if self.verbose:
         rank_zero_info('Visited twice at same epoch')
-  # def _validate_condition_metric(self, logs):
-  #   monitor_val = logs.get(self.monitor)
-
-  #   error_msg = (f'Early stopping conditioned on metric `{self.monitor}`'
-  #          f' which is not available. Pass in or modify your `EarlyStopping` callback to use any of the'
-  #          f' following: `{"`, `".join(list(logs.keys()))}`')
-
-  #   if monitor_val is None:
-  #     if self.strict:
-  #       raise RuntimeError(error_msg)
-  #     if self.verbose > 0:
-  #       rank_zero_warn(error_msg, RuntimeWarning)
-
-  #     return False
-
-  #   return True
