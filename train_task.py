@@ -50,7 +50,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   exp = load_yaml(exp_cfg_path)
   env = load_yaml(env_cfg_path)
 
-  # CREATE EXPERIMENTS FOLDER + MOVE THE CONFIG FILES
+  # CREATE EXPERIMENTS FOLDER + MOVE THE CONFIG FILES + STORE TMP FILE
   if local_rank == 0 and init:
     # Set in name the correct model path
     if exp.get('timestamp',True):
@@ -73,11 +73,30 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     shutil.copy(exp_cfg_path, f'{model_path}/{exp_cfg_fn}')
     shutil.copy(env_cfg_path, f'{model_path}/{env_cfg_fn}')
     exp['name'] = model_path
+
+    # Store checpoint and restore config !
+    exp['weights_restore_2'] = False
+    exp['checkpoint_restore_2'] = True
+    exp['checkpoint_load_2'] = os.path.join( model_path,'last.ckpt') 
+    rm = exp_cfg_path.find('cfg/exp/') + len('cfg/exp/')
+    exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
+    Path(exp_cfg_path).parent.mkdir(parents=True, exist_ok=True) 
+    with open(exp_cfg_path, 'w+') as f:
+      yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
+
   else:
     # the correct model path has already been written to the yaml file.
     model_path = os.path.join( exp['name'], f'rank_{local_rank}_{task_nr}')
     # Create the directory
     Path(model_path).mkdir(parents=True, exist_ok=True)
+
+  if not init:
+    # Overwrite checkpoint and restore config !
+    exp['checkpoint_restore'] = exp['checkpoint_restore_2']
+    exp['checkpoint_load'] = exp['checkpoint_load_2']
+    exp['weights_restore'] = exp['weights_restore_2']
+  
+
 
   # COPY DATASET
   if env['workstation'] == False:
@@ -192,28 +211,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   else:
     logger = get_tensorboard_logger(exp=exp,env=env, exp_p =exp_cfg_path, env_p = env_cfg_path)
   
-
-  # TODO: Jonas Frey check if we can move the fullt blog to an earlyer stage
-  if local_rank == 0 and init:
-    # write back the exp file with the correct name set to the model_path!
-    # other ddp-task dont need to care about timestamps
-    # also storeing the path to the latest.ckpt that downstream tasks can restore the model state
-    exp['weights_restore_2'] = False
-    exp['checkpoint_restore_2'] = True
-    exp['checkpoint_load_2'] = os.path.join( model_path,'last.ckpt')
-    
-    rm = exp_cfg_path.find('cfg/exp/') + len('cfg/exp/')
-    exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
-    Path(exp_cfg_path).parent.mkdir(parents=True, exist_ok=True) 
-    with open(exp_cfg_path, 'w+') as f:
-      yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
-  
-  if not init:
-    # restore model state from previous task.
-    exp['checkpoint_restore'] = exp['checkpoint_restore_2']
-    exp['checkpoint_load'] = exp['checkpoint_load_2']
-    exp['weights_restore'] = exp['weights_restore_2']
-  
   # CHECKPOINT
   if exp.get('checkpoint_restore', False):
     p = os.path.join( env['base'], exp['checkpoint_load'])
@@ -222,6 +219,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
       callbacks=cb_ls, 
       resume_from_checkpoint = p,
       logger=logger)
+    res = model.load_state_dict( torch.load(p)['state_dict'], strict=True)
+    print("Weight restore", res)
   else:
     trainer = Trainer(**exp['trainer'],
       default_root_dir=model_path,
@@ -249,12 +248,10 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(tg, task_nr, exp['loader'], exp['replay']['cfg_ensemble'], env )
 
 
-
   main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
                             logger=logger, epoch=0, store=True, num_classes=exp['model']['cfg']['num_classes']+1)
   main_visu.epoch = task_nr
-
-
+  
   # New Logger
   print( f'<<<<<<<<<<<< TASK IDX {task_nr} TASK NAME : '+task_name+ ' >>>>>>>>>>>>>' )
 
@@ -268,7 +265,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   if skip:
     # VALIDATION
     trainer.limit_train_batches = 1
-    # trainer.limit_val_batches = 1
+    trainer.limit_val_batches = 1.0
     trainer.max_epochs = 1
     trainer.check_val_every_n_epoch = 1
     train_res = trainer.fit(model = model,
@@ -283,12 +280,9 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     train_res = trainer.fit(model = model,
                             train_dataloader= train_dataloader,
                             val_dataloaders= val_dataloaders)
-  
-  checkpoint_callback.save_checkpoint(trainer, model)
-  print("???????????==============FIT====================??????????????????")
-  model.on_fit_start()
-  print("???????????==============FIT====================??????????????????")
 
+  checkpoint_callback._last_global_step_saved = -999
+  checkpoint_callback.save_checkpoint(trainer, model)
 
   res = trainer.logger_connector.callback_metrics
   res_store = {}
@@ -303,28 +297,12 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   
   print( f'<<<<<<<<<<<< FINISHED TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
 
-
-  # TODO SET REPLAY BUFFER with a complex testing step
-  # # START THE COMPLEX REPLAY BUFFER FILLING BY ITERATING OVER THE FULL DATASET
-  # elif exp.get('buffer',{}).get('fill_after_fit', False):
-  #   print( f'<<<<<<<<<<<< Performance Test to Get Buffer >>>>>>>>>>>>>' )
-  #   trainer.test(model=model,
-  #               test_dataloaders= dataloader_buffer)
-  
-  #   checkpoint_callback.save_checkpoint(trainer, model)
-  #   print( f'<<<<<<<<<<<< Performance Test DONE >>>>>>>>>>>>>' )
-  
-
   if exp['replay']['cfg_rssb']['elements'] != 0:
     # visualize rssb
     bins, valids = model._rssb.get()
     fill_status = (bins != 0).sum(axis=1)
     main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
   
-  # try:
-  #   plot_from_pkl(main_visu, base_path, task_nr)
-  # except:
-  #   print("Failde because not implemented when restarting training")
   
   validation_acc_plot(main_visu, logger)
   

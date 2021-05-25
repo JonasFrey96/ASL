@@ -35,7 +35,7 @@ class TaskGeneratorScannet( TaskGenerator ):
     self._current_task = 0
     self._total_tasks = len(self._task_list)
   
-  def _scannet_auxilary_labels( self ):
+  def _scannet_auxilary_labels( self, label_setting="default" ):
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
     train['mode'] = 'train'
@@ -55,10 +55,10 @@ class TaskGeneratorScannet( TaskGenerator ):
     for i in range( 1 ):
       # GENERATE TRAIN TASK        
       train['scenes'] = [f'scene{s:04d}' for s in range(start_scene_train, start_scene_train+scenes_per_task )]
-      train['label_setting'] = "label_detectron2"
+      train['label_setting'] = label_setting
 
       val['scenes'] = train['scenes']
-      val['label_setting'] = "label_detectron2"
+      val['label_setting'] = label_setting
 
       t = Task(name = f'Train_{i+1}',
                 dataset_train_cfg= copy.deepcopy(train),

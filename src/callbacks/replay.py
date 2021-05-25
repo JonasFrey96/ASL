@@ -40,17 +40,3 @@ class ReplayCallback(Callback):
       else:
         pl_module._rssb.bins[bin, :] = torch_ls[ torch.randperm( len(ls) )[:el] ] 
         pl_module._rssb.valid[bin, :] = True
-
-        
-
-  # def on_train_start(self, trainer, pl_module):
-  #   pass
- 
-  # def training_step_end(self, trainer, pl_module, outputs):
-  #   pass
- 
-  # def validation_step(self, trainer, pl_module, batch, batch_idx, dataloader_idx=0):
-  #   pass
- 
-  # def validation_step_end( self, trainer, pl_module, outputs ):
-  #   pass
