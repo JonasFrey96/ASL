@@ -1,0 +1,131 @@
+name: test/debug
+offline_mode: false
+timestamp: false
+weights_restore: false
+checkpoint_restore: false
+checkpoint_load: base_models/ml_hypersim_4_tasks/task0-epoch=99--step=012399.ckpt
+tramac_restore: false
+lr: 0.002
+tag_list:
+  - scannet
+  - replay
+  - half_res
+  - non_strict
+  - debug
+
+# Experiment Settings
+start_at_task: 0
+max_tasks: 1
+task_specific_early_stopping:
+  active: True
+  cfg:
+    patience: 2000
+    timelimit_in_min: 30
+    verbose: True
+
+teaching:
+  active: False
+  soft_labels: False
+  soft_labels_weight: 10
+  loss_function: MSE
+
+# Standard Setting
+lr_scheduler:
+  active: true
+  cfg:
+    power: 0.9
+    max_epochs: 2000
+    target_lr: 1.0e-05
+optimizer:
+  name: ADAM
+  sgd_cfg:
+    momentum: 0.9
+    weight_decay: 4.0e-05
+trainer:
+  precision: 16
+  accumulate_grad_batches: 1
+  fast_dev_run: false
+  limit_train_batches: 10
+  limit_val_batches: 10
+  limit_test_batches: 10
+  progress_bar_refresh_rate: 10
+  max_epochs: 1000
+  gpus: -1
+  num_sanity_val_steps: 0
+  check_val_every_n_epoch: 1
+loader:
+  pin_memory: true
+  batch_size: 2
+  shuffle: true
+  num_workers: 2
+visu:
+  every_n_epochs: 1
+  log_training_metric_every_n_epoch: 1
+  train_images: 1
+  val_images: 1
+  test_images: 1
+  log_ref_weights_grad_every_n_steps: 10000
+
+model:
+  name: Fast-SCNN
+  input_size:
+    - 320
+    - 640
+  cfg:
+    num_classes: 40
+    aux: false
+    extraction:
+      active: false
+      layer: 'learn_to_down'
+  freeze:
+    active: false
+    mask:
+      - false
+      - false
+      - false 
+      - false
+replay:
+  cfg_ensemble:
+    active: True
+    probs: 0.2
+
+task_generator:
+  mode: scannet_scenes
+  cfg:
+    scannet_scenes:
+      number_of_tasks: 4
+      scenes_per_task: 5
+      
+    copy_to_template:
+      output_size: 
+      - 320
+      - 640
+      label_setting: default #iteration/0/map_onehot_label
+
+cb_early_stopping:
+  active: false
+  cfg:
+    monitor: val_loss_epoch
+    patience: 10000
+    strict: true
+    verbose: true
+    mode: min
+    min_delta: -0.0001
+cb_checkpoint:
+  active: true
+  nameing: 1
+  cfg:
+    verbose: true
+    monitor: train_loss
+    mode: min
+    prefix: ''
+    save_last: true
+    save_top_k: 1
+lr_monitor:
+  cfg:
+    logging_interval: step
+
+move_datasets:
+  # - env_var: coco
+  - env_var: scannet
+  - env_var: label_v1_detectron

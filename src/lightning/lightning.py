@@ -1,19 +1,6 @@
 # STD
 import copy
-import sys
-import os
 import time
-import shutil
-import argparse
-import logging
-import signal
-import pickle
-import math
-from pathlib import Path
-import random 
-from math import pi
-from math import ceil
-import logging
 
 # MISC 
 import numpy as np
@@ -22,32 +9,16 @@ import pandas as pd
 # DL-framework
 import torch
 from pytorch_lightning.core.lightning import LightningModule
-from pytorch_lightning import Trainer
-import pytorch_lightning as pl
 from torchvision import transforms
 from pytorch_lightning import metrics as pl_metrics
 from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
-from torchvision.utils import make_grid
 from torch.nn import functional as F
-# MODULES
-from models_asl import FastSCNN, Teacher, ReplayStateSyncBack
-from datasets_asl import get_dataset
-from loss import cross_entropy_soft
-
-#from .metrices import IoU, PixAcc
-from visu import Visualizer
-from lightning import meanIoUTorchCorrect
 import datetime
-from math import ceil
 
-from uncertainty import get_softmax_uncertainty_max, get_softmax_uncertainty_distance
-from uncertainty import get_image_indices
-from uncertainty import distribution_matching
-from uncertainty import get_kMeans_indices
-from uncertainty import interclass_dissimilarity
-from uncertainty import gradient_dissimilarity
-from uncertainty import hierarchical_dissimilarity
-from gradient_helper import * # get_weights, get_grad, set_grad, gem_project, sum_project, random_project
+# MODULES
+from models_asl import FastSCNN, ReplayStateSyncBack
+
+
 
 __all__ = ['Network']
 def wrap(s,length, hard=False):
@@ -70,83 +41,37 @@ class Network(LightningModule):
     else:
       raise Exception('Model name not implemented')
     
-    p_visu = os.path.join( self._exp['name'], 'visu')
-    
-    self.visualizer = Visualizer(
-      p_visu=p_visu,
-      logger=None,
-      num_classes=self._exp['model']['cfg']['num_classes']+1)
+    self._rssb = ReplayStateSyncBack( **exp['replay']['cfg_rssb'] )
+
     self._mode = 'train'
-    max_tests = 4
-    self.test_acc = pl_metrics.classification.Accuracy()
+    
     self.train_acc = pl_metrics.classification.Accuracy()
     self.train_aux_acc = pl_metrics.classification.Accuracy()
     self.train_aux_vs_gt_acc = pl_metrics.classification.Accuracy()
-    self.val_aux_acc = pl_metrics.classification.Accuracy()    
 
-
+    
     self.val_acc = torch.nn.ModuleList( 
-      [pl_metrics.classification.Accuracy() for i in range(max_tests)] )
+      [pl_metrics.classification.Accuracy() for i in range(exp['replay']['cfg_rssb']['bins'])] )
+    self.val_aux_acc = torch.nn.ModuleList( 
+      [pl_metrics.classification.Accuracy() for i in range(exp['replay']['cfg_rssb']['bins'])] ) 
+    self.val_aux_vs_gt_acc = torch.nn.ModuleList( 
+      [pl_metrics.classification.Accuracy() for i in range(exp['replay']['cfg_rssb']['bins'])] ) 
 
-    self.test_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
-    self.train_mIoU = meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes'])
-    
-    self.val_mIoU = torch.nn.ModuleList( 
-      [meanIoUTorchCorrect(self._exp['model']['cfg']['num_classes']) for i in range(max_tests)] )
 
-    self.logged_images_train = 0
-    self.logged_images_val = 0
-    self.logged_images_test = 0
-    self._dataloader_index_store = 0
-    
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
     self._task_count = 0 # so this here might be a bad idea. Decide if we know the task or not
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
     self._train_start_time = time.time()
     
-      
-    # set correct teaching mode.
-    self._teaching = (self._exp.get('teaching',{}).get('active',False) or 
-                      self._exp.get('latent_replay',{}).get('active',False))
-    if self._teaching: 
-      if self._exp['task_generator']['total_tasks'] == 1:
-        self._teaching = False
-      if not (self._exp['task_generator']).get('replay',False):
-        self._teaching = False
-    
-    if self._teaching: 
-      self.teacher = Teacher(
-        num_classes= self._exp['model']['cfg']['num_classes'],
-        n_teacher= self._exp['task_generator']['total_tasks']-1,
-        soft_labels= self._exp['teaching']['soft_labels'],
-        fast_params = self._exp['model']['cfg'])
-    
+
     self._replayed_samples = 0
     self._real_samples = 0
     self._val_results = {} 
-    # resetted on_train_end. filled in validation_epoch_end
-    
-    self._buffer_elements = 0 
-    if self._exp['replay_state_sync_back']['active']:
-      self._rssb_active = True
-      self._rssb_last_epoch = -1
-      if self._exp['replay_state_sync_back']['get_size_from_task_generator']:
-        bins = self._exp['task_generator']['copy_to_template']['cfg_replay']['bins']
-        self._buffer_elements = self._exp['task_generator']['copy_to_template']['cfg_replay']['elements']
-      else:
-        raise Exception('Not Implemented something else')
-      self._rssb = ReplayStateSyncBack(bins=bins, elements=self._buffer_elements)
-    else:
-      self._rssb_active = False
+
+    self._visu_callback = None
+    self._ltmene = self._exp['visu'].get('log_training_metric_every_n_epoch',9999)
 
 
-    self._gem = self._exp.get('gem',{}).get('active', False)
-    self._store_reference_gradient = False
-
-    # if self._gem:
-    #   # register BUFFER 
-    #   pass
-  
   def forward(self, batch, **kwargs):    
     if kwargs.get('replayed', None) is not None:
       injection_mask = kwargs['replayed'] != -1
@@ -157,387 +82,173 @@ class Network(LightningModule):
     else:
       outputs = self.model(batch)
     return outputs
-  
-  def on_after_backward(self):
-    # TRACK WEIGHT MOVEMENT
-    if hasattr(self, 'reference_weights'):
-      if self.trainer.global_step % self._exp['visu'].get('log_ref_weights_grad_every_n_steps',10) == 0: 
-          cur = get_weights( self.model.named_parameters() )
-          dif = torch.abs( self.reference_weights - cur )
-          mean = torch.mean( dif )
-          std = torch.std( dif )
-          self.log('mean_weight_movement', mean.detach(), on_step=True, on_epoch=True)
-          self.log('std_weight_movement', std.detach(), on_step=True, on_epoch=True)
-    else:
-      # INIT WEIGHTS
-      self.reference_weights = get_weights( self.model.named_parameters() )
-      print("Created weight reference for this epoch")
-    
-    # TRACK GRADIENT MOVEMENT FOR INITAL SAMPLE -> INIT REFERENCE GRADIENT
-    if not hasattr(self, 'reference_gradient'):
-      self.reference_gradient = get_grad( self.model.named_parameters() )
-    
-    # AGEM
-    if self._gem and hasattr(self, 'reference_gradient_agem'):
-      g = get_grad( self.model.named_parameters() )
-      if self._exp['gem']['method'] == 'agem':
-        g = gem_project(g, self.reference_gradient_agem)
-      elif self._exp['gem']['method'] == 'sum':
-        g = sum_project(g, self.reference_gradient_agem)
-      elif self.__exp['gem']['method'] == 'mean_sum':
-        g = mean_sum_project(g, self.reference_gradient_agem)
-      elif self._exp['gem']['method'] == 'random':
-        g = random_project(g, self.reference_gradient_agem)
-      
-      set_grad(g, self.model.named_parameters() )
         
-  def on_train_epoch_start(self):
-    # Reset the weight refernce
-    if hasattr(self, 'reference_weights'):  
-      del self.reference_weights
-      print("Resetted weight reference for this epoch")
+  def compute_loss(self, pred, label, aux_valid, replayed, aux_label=None, **kwargs):
+    """
+    Args:
+        pred (torch.tensor): BSxCxHxW.
+        label (torch.tensor]): BSxHxW.
+        aux_label (torch.tensor): BSxHxW or BSxCxHxW.
+        replayed (torch.long): BS wheater a sampled is replayed or not.
+        use_aux (torch.bool): Wheater to use aux_label or label to calculate the loss.
+        not_reduce (bool, optional): reduce the loss or return for each element in batch.
+    Returns:
+        [type]: [description]
+    """
+    use_soft = len(label.shape) == 4
     
-    if hasattr(self, 'reference_gradient_batch'):
-      del reference_gradient_batch
-      
-        
-    self._mode = 'train'
-     
-  def on_train_start(self):
-    print('Start')
-    self.visualizer.logger= self.logger
-      
-    if (self._task_count != 0 and
-        self.model.extract):
-      self.model.freeze_module(layer=self.model.extract_layer)
-      rank_zero_warn( 'ON_TRAIN_START: Freezed the model given that we start to extract data from teacher')
-      rank_zero_warn( 'ON_TRAIN_START: Therefore not training upper layers')
-    
-    if self._rssb_active:
-      self.rssb_to_dataset()
-      bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
-  
-  def rssb_to_dataset(self):
-    if self._rssb_active:
-      bins, valids = self._rssb.get()
-      print( 'RSSB_TO_DATASET: Reload saved buffer state to dataset')
-      for i in range(self._task_count):
-        s = f'Restored for task {i}: \n' + str(bins[i])
-        print( 'RSSB_TO_DATASET: ' + s )
-        
-      self.trainer.train_dataloader.dataset.datasets.set_full_state( 
-        bins=bins, 
-        valids=valids,
-        bin= self._task_count)
-      
-  def on_save_checkpoint(self, params):
-    if self._rssb_active:
-      if self.current_epoch != self._rssb_last_epoch and self.trainer.train_dataloader.dataset.datasets.replay:
-        self._rssb_last_epoch = self.current_epoch
-        print( 'ON_SAVE_CHECKPOINT: Before saving checkpoint sync-back buffer state')
-        bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
-        if self._mode != 'test':
-          pass
-          # self._rssb.absorbe(bins,valids)
-
-  def on_fit_end(self):
-    if self._mode != 'test':
-      print('ON_FIT_END: Called')
-      if self._rssb_active and self.trainer.train_dataloader.dataset.datasets.replay:
-        self._rssb_last_epoch = self.current_epoch
-        print( 'ON_FIT_END: Before finishing training sync-back buffer state')
-        bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
-        # self._rssb.absorbe(bins,valids)
-        
-      print('ON_FIT_END: Training end reset val_results.')
-      self._val_results = {} # reset the buffer for the next task
-    
-  def on_train_end(self):
-    pass
-    # bins, valids = self.trainer.train_dataloader.dataset.datasets.get_full_state()
-    
-  def on_epoch_start(self):
-    self.visualizer.epoch = self.current_epoch
-    
-    if self._exp['model'].get('freeze',{}).get('active', False):
-      mask = self._exp['model']['freeze']['mask']
-      self.model.freeze_module(mask)
-      print(f'ON_EPOCH_START: Model Freeze Following Layers {mask}') 
-       
-    self.logged_images_train = 0
-    self.logged_images_val = 0
-    self.logged_images_test = 0
-
-    if self._teaching:
-      self.teacher.print_weight_summary()
-    
-    string = ''
-    sum = 0
-    for i in self.model.parameters():
-      sum += i[0].sum()
-    string += f'   CurrentModel: WeightSum == {sum}\n'
-    print('ON_EPOCH_START:\n' + string)
-      
-  def compute_loss(self, pred, target, teacher_targets, replayed, not_reduce = False):
     nr_replayed = (replayed != -1).sum()
     BS = replayed.shape[0]
     self._replayed_samples += int( nr_replayed )
     self._real_samples += int( BS - nr_replayed )
     
-    if self._teaching and (replayed != -1).sum() != 0:
-      
-      if self._exp['teaching']['soft_labels']:
-        # MSE for soft labels. CategoricalCrossEntropy for gt-labels
-        
-        if self._exp['teaching'].get('loss_function', 'MSE') == 'MSE':
-          loss_soft = F.mse_loss( torch.nn.functional.softmax(pred, dim=1),teacher_targets,reduction='none').mean(dim=[1,2,3])
-        else: 
-          raise Exception('Invalid Input for loss_function')
-        loss = F.cross_entropy(pred, target, ignore_index=-1,reduction='none').mean(dim=[1,2])
-        loss = loss * (replayed[:,0]== -1) + loss_soft * (replayed[:,0]!= -1) * self._exp['teaching']['soft_labels_weight']
-        loss = loss.mean()
-        
-      else: 
-        target = target * (replayed[:,0]== -1)[:,None,None].repeat(1,target.shape[1],target.shape[2]) + teacher_targets * (replayed[:,0] != -1)[:,None,None].repeat(1,target.shape[1],target.shape[2])
-        loss = F.cross_entropy(pred, target, ignore_index=-1)
-    else:
-      loss = F.cross_entropy(pred, target, ignore_index=-1,reduction='none').mean(dim=[1,2])
-      try:
-        self.log('train_loss_memory', ((loss * (replayed != -1)[:,0]))/((replayed != -1).sum()), on_step=False, on_epoch=True)
-      except:
-        pass
-      try:
-        self.log('train_loss_new', ((loss * (replayed == -1)[:,0]))/((replayed == -1).sum()), on_step=False, on_epoch=True)
-      except:
-        pass
-      
-      # use gt labels
-      if not self._gem or (replayed == -1).sum() == 0 :
-        loss = loss.mean()
+    if aux_valid.sum() != 0:        
+      # compute auxillary loss
+      if use_soft: 
+        aux_loss = F.mse_loss( torch.nn.functional.softmax(pred, dim=1), aux_label,reduction='none').mean(dim=[1,2,3])
       else:
-        if not_reduce:
-          return loss
-        # caclulate loss only over new samples
-        loss = loss * (replayed == -1)[:,0]
-        loss = loss.sum() / (replayed == -1).sum()
-    return loss
+        aux_loss = F.cross_entropy(pred, aux_label, ignore_index=-1, reduction='none').mean(dim=[1,2])
+    else:
+      aux_loss = torch.zeros( (BS), device= pred.device)
+
+
+    if aux_valid.sum() != BS:
+      # compute normal loss on labels
+      non_aux_loss = F.cross_entropy(pred, label, ignore_index=-1, reduction='none').mean(dim=[1,2])
+    else:
+      non_aux_loss = torch.zeros( (BS), device= pred.device)
+    
+    # return the reduce mean
+    return ( (aux_loss * aux_valid).sum() + (non_aux_loss * ~aux_valid).sum() ) / BS 
   
+  def parse_batch(self, batch):
+    ba = {}
+    if len( batch ) == 1:
+      raise Exception("Dataloader is set to unique and not implemented")
+    ba['images'] = batch[0]
+    ba['label'] = batch[1]
+    ba['replayed'] = batch[2]
+    if len(batch) == 4:
+      ba['ori_img'] = batch[3]
+    if len(batch) == 5:
+      ba['aux_label'] = batch[3]
+      ba['aux_valid'] = batch[4]
+    if len(batch) == 6:
+      ba['aux_label'] = batch[3]
+      ba['aux_valid'] = batch[4]
+      ba['ori_img'] = batch[5]
+    return ba
+
+  ##################
+  #### TRAINING ####
+  ##################
+  
+  def on_fit_start(self):
+    print(" ================ START FITTING ==================")
+    print(f" TASK NAME: {self._task_name } ")
+    print(f" TASK COUNT: {self._task_count } ")
+    print(f" CURRENT EPOCH: {self.current_epoch } ")
+    print(f" CURRENT EPOCH: {self.global_step } ")
+    print(f" RSSB STATE: ", self._rssb.valid.sum(dim=1) )
+    print(" ================ START FITTING ==================")
+
+  def on_train_epoch_start(self):
+    self._mode = 'train'
+    
   def training_step(self, batch, batch_idx):
-    images = batch[0]
-    target = batch[1]
-    ori_img = batch[2]
-    replayed = batch[3]
-    BS = images.shape[0]
-    teacher_targets = None
-    
-    # IF REFERENCE GRADIENT IMAGES ARE AVAILABLE COMPUTE GRADIENT AT CURRENT STEP
-    if self._store_reference_gradient:
-      if (hasattr(self, 'reference_gradient_images') and
-        self.trainer.global_step % self._exp['visu'].get('log_ref_weights_grad_every_n_steps',10) == 0):
-        o = self(self.reference_gradient_images)
-        l = self.compute_loss(  
-                pred = o[0], 
-                target = self.reference_gradient_target,
-                teacher_targets = self.reference_teacher_targets,
-                replayed = self.reference_replayed)
-        l.backward()
-        current_gradient = get_grad( self.model.named_parameters() )
-        dif = torch.abs( self.reference_gradient - current_gradient )
-        mean = torch.mean( dif )
-        std = torch.std( dif )
-        self.log('mean_gradient_movement', mean.detach(), on_step=True, on_epoch=True)
-        self.log('std_gradient_movement', std.detach(), on_step=True, on_epoch=True)
-        self.model.zero_grad()
-        
-      
-    # IF AGEM COMPUTE GRADIENT OVER REPLAYED SAMPLES
-    if (replayed != -1).sum() > 0 and self._gem:
-      o = self( images)
-      l = self.compute_loss(  
-        pred = o[0], 
-        target = target,
-        teacher_targets = target,
-        replayed = replayed,
-        not_reduce = True)
-      l = (( l * (replayed != -1)[:,0] ).sum())/((replayed != -1).sum()) 
-      l.backward()
-      self.reference_gradient_agem = get_grad( self.model.named_parameters() )
-      self.model.zero_grad()
-      
-    # ACTUAL FORWARD PASS
-    if ( (replayed != -1).sum() != 0 and
-      ( self._exp.get('latent_replay',{}).get('active',False) or self._teaching)):
-        teacher_targets, injection_features = self.teacher.get_latent_replay(images, replayed)
-        
-        if self._exp.get('latent_replay',{}).get('active',False):
-          outputs = self(batch = images, 
-                        injection_features = injection_features, 
-                        replayed = replayed)
-        else:
-          outputs = self(batch = images) 
-    else:
-      outputs = self(batch = images)
+    ba = self.parse_batch( batch )
+    outputs = self(batch = ba['images'])
 
-    # SET REFERENCE IMAGES AND GRADIENTS FOR GRADIENT TRACKING !
-    if not hasattr(self, 'reference_gradient_images'):
-        self.reference_gradient_images = images
-        self.reference_gradient_target = target
-        self.reference_replayed = replayed
-        self.reference_teacher_targets = teacher_targets 
-    
-    
-    if len(batch) == 6:
-      loss = self.compute_loss(  
+    if not ('aux_valid' in ba.keys()):
+      ba['aux_valid'] = torch.zeros( (ba['images'].shape[0]), 
+                                      device=ba['images'].device, 
+                                      dtype=torch.bool)
+    loss = self.compute_loss(  
                 pred = outputs[0], 
-                target = batch[5],
-                teacher_targets = None,
-                replayed = replayed)
-    else:
-      loss = self.compute_loss(  
-                pred = outputs[0], 
-                target = target,
-                teacher_targets = teacher_targets,
-              replayed = replayed)
-
-    loss.mean()
+                **ba)
     self.log('train_loss', loss, on_step=False, on_epoch=True)
-    ret = {'loss': loss, 'pred': outputs[0], 'target': target, 'ori_img': ori_img  }
-    if len(batch) == 6:
-      ret["aux_target"] = batch[5]
+    ret = {'loss': loss, 'pred': outputs[0], 'label': ba['label'], 'ori_img': ba['ori_img']  }
+    
+    if 'aux_label' in ba.keys():
+      ret["aux_label"] = ba['aux_label']
+      ret["aux_vaild"] = ba['aux_valid']
+    
     return ret
   
   def training_step_end(self, outputs):
-    # Log replay buffer stats
+    self._visu_callback.training_step_end(self.trainer, self, outputs)
+
+    # LOG REPLAY / REAL
     self.logger.log_metrics( 
       metrics = { 'real': torch.tensor(self._real_samples),
                   'replayed': torch.tensor(self._replayed_samples)},
       step = self.global_step)
-  
-    # Logging + Visu
-    if self.current_epoch % self._exp['visu'].get('log_training_metric_every_n_epoch',9999) == 0 : 
-      pred = torch.argmax(outputs['pred'], 1)
-      target = outputs['target']
-      train_mIoU = self.train_mIoU(pred,target)
-      # calculates acc only for valid labels
-      m  =  target > -1
-      train_acc = self.train_acc(pred[m], target[m])
-      self.log('train_acc_epoch', self.train_acc, on_step=False, on_epoch=True, prog_bar = True)
-      self.log('train_mIoU_epoch', self.train_mIoU, on_step=False, on_epoch=True, prog_bar = True)
-      
-      if "aux_target" in outputs:
-        m2 = m* (outputs['aux_target']>-1)
-        self.train_aux_acc(pred[m2], outputs['aux_target'][m2])
-        self.train_aux_vs_gt_acc(target[m2], outputs['aux_target'][m2])
-        self.log('train_PRED_VS_AUX_acc_epoch', self.train_aux_acc )
-        self.log('train_GT_VS_AUX_acc_epoch', self.train_aux_vs_gt_acc )
 
+    if self.current_epoch % self._ltmene == 0 :
+      # LOG ACCURRACY
+      self._acc_cal( outputs, 
+                  self.train_acc ,
+                  self.train_aux_acc ,
+                  self.train_aux_vs_gt_acc )
 
-    if ( self._exp['visu'].get('train_images',0) > self.logged_images_train and 
-         self.current_epoch % self._exp['visu'].get('every_n_epochs',1) == 0):
-      pred = torch.argmax(outputs['pred'], 1).clone().detach()
-      target = outputs['target'].clone().detach()
-      
-      pred[ target == -1 ] = -1
-      pred += 1
-      target += 1
-      self.logged_images_train += 1
-      BS = pred.shape[0]
-      rows = int( BS**0.5 )
-      grid_pred = make_grid(pred[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
-              scale_each = False, pad_value = 0)
-      grid_target = make_grid(target[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
-              scale_each = False, pad_value = 0)
-      grid_image = make_grid(outputs['ori_img'],nrow = rows,padding = 2,
-              scale_each = False, pad_value = 0)
-
-      if "aux_target" in outputs:
-        aux_target = outputs['aux_target'].clone().detach()
-        grid_aux_target = make_grid(aux_target[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
-              scale_each = False, pad_value = 0)
-        self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
-        self.visualizer.plot_segmentation(tag=f'{self._mode}_AUX_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=grid_aux_target[0], method='left')  
-
-        self.visualizer.plot_segmentation(tag=f'', seg=grid_target[0], method='right')
-        self.visualizer.plot_segmentation(tag=f'{self._mode}_AUX_left_GT_right_{self._task_name}_{self.logged_images_train}', seg=grid_aux_target[0], method='left')  
-      
-
-      print(grid_pred.shape, grid_target.shape, grid_image.shape)
-      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'{self._mode}_gt_left_pred_right_{self._task_name}_{self.logged_images_train}', seg=grid_target[0], method='left')  
-      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
-      self.visualizer.plot_image(tag=f'{self._mode}_img_ori_left_pred_right_{self._task_name}_{self.logged_images_train}', img=grid_image, method='left')
-    
     return {'loss': outputs['loss']}
-        
-  def on_train_epoch_end(self, outputs):
-    if self.current_epoch % self.trainer.check_val_every_n_epoch != 0:
-      val_acc_epoch = torch.tensor( 999, device=self.device)
-      val_mIoU_epoch = torch.tensor( 999, device=self.device)
-      val_loss = torch.tensor( 999, device=self.device)
-      self.log('val_acc_epoch',val_acc_epoch)
-      self.log('val_mIoU_epoch',val_mIoU_epoch,)
-      self.log('val_loss',val_loss)
   
-  def validation_step(self, batch, batch_idx, dataloader_idx=0):
-    if self._dataloader_index_store != dataloader_idx:
-      self._dataloader_index_store = dataloader_idx
-      self.logged_images_val = 0
-      
-    images = batch[0]
-    target = batch[1]    #[-1,n] labeled with -1 should not induce a loss
-    outputs = self(images)
-    
-    loss = F.cross_entropy(outputs[0], target, ignore_index=-1 ) 
-    pred = torch.argmax(outputs[0], 1)
 
-    return {'pred': pred, 'target': target, 'ori_img': batch[2], 'dataloader_idx': dataloader_idx, 'loss_ret': loss }
+  ####################
+  #### VALIDATION ####
+  ####################
 
-  def validation_step_end( self, outputs ):
-    # Logging + Visu
-    dataloader_idx = outputs['dataloader_idx']
-    pred, target = outputs['pred'],outputs['target']
-    if ( self._exp['visu'].get('val_images',0) > self.logged_images_val and 
-         self.current_epoch % self._exp['visu'].get('every_n_epochs',1)== 0) :
-      self.logged_images_val += 1
-      pred_c = pred.clone().detach()
-      target_c = target.clone().detach()
-      
-      pred_c[ target_c == -1 ] = -1
-      pred_c += 1
-      target_c += 1
-      BS = pred_c.shape[0]
-      rows = int( BS**0.5 )
-      grid_pred = make_grid(pred_c[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
-              scale_each = False, pad_value = 0)
-      grid_target = make_grid(target_c[:,None].repeat(1,3,1,1),nrow = rows,padding = 2,
-              scale_each = False, pad_value = 0)
-      grid_image = make_grid(outputs['ori_img'],nrow = rows,padding = 2,
-              scale_each = False, pad_value = 0)
-      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
-      self.visualizer.plot_segmentation(tag=f'val_gt_left_pred_right__Name_{self._task_name}__Val_Task_{dataloader_idx}__Sample_{self.logged_images_val}', seg=grid_target[0], method='left')
-      self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
-      self.visualizer.plot_image(tag=f'val_img_ori_left_pred_right__Name_{self._task_name}_Val_Task_{dataloader_idx}__Sample_{self.logged_images_train}', img=grid_image, method='left')
-      
-      
-    self.val_mIoU[dataloader_idx] (pred,target)
-    # calculates acc only for valid labels
-    m  =  target > -1
-    self.val_acc[dataloader_idx] (pred[m], target[m])
-    self.log(f'val_acc', self.val_acc[dataloader_idx] , on_epoch=True, prog_bar=False)
-    self.log(f'val_mIoU', self.val_mIoU[dataloader_idx] , on_epoch=True, prog_bar=False)
-    self.log(f'task_count', self._task_count, on_epoch=True, prog_bar=False)
-    self.log('val_loss', outputs['loss_ret'], on_epoch=True)
-    # self.log(f'val_acc/dataloader_idx_{dataloader_idx}', self.val_acc[dataloader_idx] , on_epoch=True, prog_bar=False)
-    # self.log(f'val_mIoU/dataloader_idx_{dataloader_idx}', self.val_mIoU[dataloader_idx] , on_epoch=True, prog_bar=False)
-    # self.log(f'task_count/dataloader_idx_{dataloader_idx}', self._task_count, on_epoch=True, prog_bar=False)
-    # self.log(f'val_loss/dataloader_idx_{dataloader_idx}', outputs['loss_ret'], on_epoch=True)
-    
-    # self.log('task_name', self._task_name, on_epoch=True)
-  
   def on_validation_epoch_start(self):
     self._mode = 'val'
-  
+    
+  def validation_step(self, batch, batch_idx, dataloader_idx=0):
+    images, label = batch[:2]
+
+    outputs = self(images)
+   
+    loss = F.cross_entropy(outputs[0], label , ignore_index=-1 ) 
+
+    ret = {'pred': outputs[0], 'label': label,
+            'dataloader_idx': dataloader_idx, 'loss_ret': loss }
+
+    if len(batch) == 3:
+      ret['ori_img'] = batch[2]
+    if len(batch) > 3 :
+      ret['aux_label'] = batch[2]
+      ret['aux_valid'] = batch[3]
+      ret['ori_img'] = batch[4]
+    
+    return ret
+
+  def validation_step_end( self, outputs ):
+    self._visu_callback.validation_step_end(self.trainer, self, outputs)
+    dataloader_idx = outputs['dataloader_idx']
+    self._acc_cal( outputs, 
+                  self.val_acc[dataloader_idx],
+                  self.val_aux_acc[dataloader_idx],
+                  self.val_aux_vs_gt_acc[dataloader_idx] )
+
+  def _acc_cal(self, outputs, acc, aux_acc, aux_vs_gt_acc ):
+    pred = torch.argmax(outputs['pred'], 1)
+
+    m = outputs['label'] > -1
+    acc( pred[m], outputs['label'][m])
+    self.log(f'{self._mode}_acc', acc, on_step=False, on_epoch=True)
+
+    if 'aux_valid' in outputs.keys():
+      aux_m = outputs['aux_label'] > -1
+      aux_acc( pred[aux_m], outputs['aux_label'][aux_m])
+      self.log(f'{self._mode}_aux_acc', aux_acc, on_step=False, on_epoch=True)
+
+      aux_m2 = aux_m * m
+      aux_vs_gt_acc( outputs['label'][aux_m2], outputs['aux_label'][aux_m2])
+      self.log(f'{self._mode}_aux_vs_gt_acc', aux_vs_gt_acc, on_step=False, on_epoch=True)
+
+
   def validation_epoch_end(self, outputs):
+    self.log(f'task_count', self._task_count, on_step=False, on_epoch=True, prog_bar=False)
+
+
     metrics = self.trainer.logger_connector.callback_metrics
     me =  copy.deepcopy ( metrics ) 
     for k in me.keys():
@@ -548,16 +259,15 @@ class Network(LightningModule):
     
     t_l = me.get('train_loss', 'NotDef')
     v_acc = me.get('val_acc', 'NotDef')
-    v_mIoU = me.get('val_mIoU', 'NotDef')  
     
     try:
       # only works when multiple val-dataloader are set!
       if len( self._val_results ) == 0:
-        for i in range(self._exp['max_tasks']):
+        for i in range(self._exp['replay']['cfg_rssb']['bins']):
           self._val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
       else:
         val_results = {}
-        for i in range(self._exp['max_tasks']):
+        for i in range(self._exp['replay']['cfg_rssb']['bins']):
           val_results[f'val_acc/dataloader_idx_{i}'] = float(metrics[f'val_acc/dataloader_idx_{i}'])
           res = (self._val_results[f'val_acc/dataloader_idx_{i}'] -
             val_results[f'val_acc/dataloader_idx_{i}'])
@@ -592,18 +302,50 @@ class Network(LightningModule):
       epoch =  wrap(epoch,3)
       t_l = wrap(t_l,6)
       v_acc = wrap(v_acc,6)
-      v_mIoU = wrap(v_mIoU,6)
       
       print('VALIDATION_EPOCH_END: '+ 
-        f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc}, Val-mIoU: {v_mIoU} <<<"
+        f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc} <<<"
       )
     self._epoch_start_time = time.time()
-    
-    # if self.current_epoch == self.trainer.max_epochs:
-      
-    # if ( self.trainer.should_stop and
-    #  
     print( "SELF TRAINER SHOULD STOP", self.trainer.should_stop, self.device )
+
+  def on_save_checkpoint(self, params):
+    pass
+
+  def configure_optimizers(self):
+    if self._exp['optimizer']['name'] == 'ADAM':
+      optimizer = torch.optim.Adam(
+          [{'params': self.model.parameters()}], lr=self.hparams['lr'])
+    elif self._exp['optimizer']['name'] == 'SGD':
+      optimizer = torch.optim.SGD(
+          [{'params': self.model.parameters()}], lr=self.hparams['lr'],
+          **self._exp['optimizer']['sgd_cfg'] )
+    else:
+      raise Exception
+
+    if self._exp.get('lr_scheduler',{}).get('active', False):
+      #polynomial lr-scheduler
+      init_lr = self.hparams['lr']
+      max_epochs = self._exp['lr_scheduler']['cfg']['max_epochs'] 
+      target_lr = self._exp['lr_scheduler']['cfg']['target_lr'] 
+      power = self._exp['lr_scheduler']['cfg']['power'] 
+      lambda_lr= lambda epoch: (((max_epochs-min(max_epochs,epoch) )/max_epochs)**(power) ) + (1-(((max_epochs -min(max_epochs,epoch))/max_epochs)**(power)))*target_lr/init_lr
+      scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr, last_epoch=-1, verbose=True)
+      ret = [optimizer], [scheduler]
+    else:
+      ret = [optimizer]
+    return ret
+
+  """
+  from uncertainty import get_softmax_uncertainty_max, get_softmax_uncertainty_distance
+  from uncertainty import get_image_indices
+  from uncertainty import distribution_matching
+  from uncertainty import get_kMeans_indices
+  from uncertainty import interclass_dissimilarity
+  from uncertainty import gradient_dissimilarity
+  from uncertainty import hierarchical_dissimilarity
+  from gradient_helper import * # get_weights, get_grad, set_grad, gem_project, sum_project, random_project
+
 
   def on_test_epoch_start(self):
     self._mode = 'test'
@@ -859,9 +601,6 @@ class Network(LightningModule):
       return ret_globale_indices
 
   def fill_step(self, batch, batch_idx):
-    """
-    Extract metric + latent features
-    """
     with torch.set_grad_enabled(True):
         
       BS = batch[0].shape[0]
@@ -895,52 +634,6 @@ class Network(LightningModule):
       
     res = torch.stack([res1,res2,res3],dim=1)
     return res.detach(), global_index.detach(), latent_feature.detach()
-  
-  def configure_optimizers(self):
-    if self._exp['optimizer']['name'] == 'ADAM':
-      optimizer = torch.optim.Adam(
-          [{'params': self.model.parameters()}], lr=self.hparams['lr'])
-    elif self._exp['optimizer']['name'] == 'SGD':
-      optimizer = torch.optim.SGD(
-          [{'params': self.model.parameters()}], lr=self.hparams['lr'],
-          **self._exp['optimizer']['sgd_cfg'] )
-    else:
-      raise Exception
+    
+  """
 
-    if self._exp.get('lr_scheduler',{}).get('active', False):
-      #polynomial lr-scheduler
-      init_lr = self.hparams['lr']
-      max_epochs = self._exp['lr_scheduler']['cfg']['max_epochs'] 
-      target_lr = self._exp['lr_scheduler']['cfg']['target_lr'] 
-      power = self._exp['lr_scheduler']['cfg']['power'] 
-      lambda_lr= lambda epoch: (((max_epochs-min(max_epochs,epoch) )/max_epochs)**(power) ) + (1-(((max_epochs -min(max_epochs,epoch))/max_epochs)**(power)))*target_lr/init_lr
-      scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr, last_epoch=-1, verbose=True)
-      ret = [optimizer], [scheduler]
-    else:
-      ret = [optimizer]
-    return ret
-  
-  
-import pytest
-
-class TestLightning:
-  def  test_iout(self):
-    output_transform = transforms.Compose([
-            transforms.ToTensor(),
-            transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-    ])
-    # dataset and dataloader
-    di = {
-      'name': 'cityscapes',
-      'base_size': 1024,
-      'crop_size': 768,
-      'split': 'val',
-      'mode': 'val'}
-    root = '/media/scratch1/jonfrey/datasets/Cityscapes'
-    self.dataset_train = get_dataset(
-      **di,
-      root = root,
-      transform = output_transform,
-    )
-    BS, H, W = 1,100,100
-    NC = 4

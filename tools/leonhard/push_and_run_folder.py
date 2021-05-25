@@ -166,7 +166,7 @@ else:
       elif args.script == 'supervisor':
         subscr = 'submit_supervisor'
           
-      cmd += f""" /cluster/home/jonfrey/miniconda3/envs/track4/bin/python supervisor.py --exp={e}"""  
+      cmd += f""" /cluster/home/jonfrey/miniconda3/envs/track4/bin/python supervisor.py --exp={e} --mode=shell """  
       cmd = cmd.replace('\n', '')
       t = ""
       cmd = """source /cluster/apps/local/env2lmod.sh && module purge && module load gcc/6.3.0 && module load hdf5 eth_proxy python_gpu/3.8.5 && cd $HOME/ASL && """ + cmd

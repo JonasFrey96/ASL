@@ -17,7 +17,9 @@ class ReplayStateSyncBack(nn.Module):
     super().__init__()
     self.register_buffer('bins', torch.zeros( (bins,elements), dtype=torch.long), persistent = True)
     self.register_buffer('valid', torch.zeros( (bins,elements), dtype=torch.bool), persistent = True)
-  
+    self.nr_elements = elements
+    self.nr_bins = bins
+
   def absorbe(self, bins, valid):
     self.bins = torch.from_numpy(bins).type( torch.long )
     self.valid = torch.from_numpy(valid).type( torch.bool )
