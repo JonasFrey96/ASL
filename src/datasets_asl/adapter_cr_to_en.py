@@ -24,11 +24,9 @@ def replay_cfg_to_probs(replay_cfg_ensemble, nr):
   probs = []
   if replay_cfg_ensemble['active']:
     if type( replay_cfg_ensemble['probs'] ) is float:
-      probs = [replay_cfg_ensemble['probs']] * (nr-1)
-      val = 1 - np.array(probs).sum()
-      assert val > 0 and val < 1
-      probs.append( val )
-      probs =  [replay_cfg_ensemble['probs']] * nr
+      assert replay_cfg_ensemble['probs'] * (nr-1) < 1
+      probs = [1-(replay_cfg_ensemble['probs'] * (nr-1)) ]
+      probs += [ replay_cfg_ensemble['probs']  for i in range(nr-1) ]
     else:
       if len(replay_cfg_ensemble['probs']) < nr:
         raise ValueError("To few user defined probs in replay cfg! Give float or add entries to list")
