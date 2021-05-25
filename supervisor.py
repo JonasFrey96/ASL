@@ -13,9 +13,7 @@ import torch
 
 # Costume Modules
 from utils_asl import file_path, load_yaml
-
 from train_task import train_task
-from utils_asl import get_neptune_logger
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
