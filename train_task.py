@@ -73,17 +73,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     shutil.copy(exp_cfg_path, f'{model_path}/{exp_cfg_fn}')
     shutil.copy(env_cfg_path, f'{model_path}/{env_cfg_fn}')
     exp['name'] = model_path
-
-    # Store checpoint and restore config !
-    exp['weights_restore_2'] = False
-    exp['checkpoint_restore_2'] = True
-    exp['checkpoint_load_2'] = os.path.join( model_path,'last.ckpt') 
-    rm = exp_cfg_path.find('cfg/exp/') + len('cfg/exp/')
-    exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
-    Path(exp_cfg_path).parent.mkdir(parents=True, exist_ok=True) 
-    with open(exp_cfg_path, 'w+') as f:
-      yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
-
   else:
     # the correct model path has already been written to the yaml file.
     model_path = os.path.join( exp['name'], f'rank_{local_rank}_{task_nr}')
@@ -96,6 +85,36 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     exp['checkpoint_load'] = exp['checkpoint_load_2']
     exp['weights_restore'] = exp['weights_restore_2']
   
+    # GET LOGGER
+  if not exp.get('offline_mode', False):
+    if  logger_pass is None and exp.get('experiment_id',None) is None:
+      logger = get_neptune_logger(exp=exp,env=env,
+        exp_p =exp_cfg_path, env_p = env_cfg_path)
+      exp['experiment_id'] = logger.experiment.id
+      print('Created Experiment ID: ' +  str( exp['experiment_id']))
+    else:
+      logger = NeptuneLogger(
+          api_key=os.environ["NEPTUNE_API_TOKEN"],
+          project_name=env['neptune_project_name'],
+          experiment_id= exp['experiment_id'],
+          close_after_fit = False,
+          upload_stdout=True,
+          upload_stderr=True
+      )
+    print('Neptune Experiment ID: '+ str( logger.experiment.id)+" TASK NR "+str( task_nr ) )
+  else:
+    logger = get_tensorboard_logger(exp=exp,env=env, exp_p =exp_cfg_path, env_p = env_cfg_path)
+
+  if local_rank == 0 and init:
+    # Store checkpoint config and 'experiment_id'
+    exp['weights_restore_2'] = False
+    exp['checkpoint_restore_2'] = True
+    exp['checkpoint_load_2'] = os.path.join( model_path,'last.ckpt') 
+    rm = exp_cfg_path.find('cfg/exp/') + len('cfg/exp/')
+    exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
+    Path(exp_cfg_path).parent.mkdir(parents=True, exist_ok=True) 
+    with open(exp_cfg_path, 'w+') as f:
+      yaml.dump(exp, f, default_flow_style=False, sort_keys=False)
 
 
   # COPY DATASET
@@ -190,27 +209,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   cb_ls.append( FreezeCallback( **exp['model']['freeze'] ) )
 
 
-
-  # GET LOGGER
-  if not exp.get('offline_mode', False):
-    if  logger_pass is None and exp.get('experiment_id',None) is None:
-      logger = get_neptune_logger(exp=exp,env=env,
-        exp_p =exp_cfg_path, env_p = env_cfg_path)
-      exp['experiment_id'] = logger.experiment.id
-      print('Created Experiment ID: ' +  str( exp['experiment_id']))
-    else:
-      logger = NeptuneLogger(
-          api_key=os.environ["NEPTUNE_API_TOKEN"],
-          project_name=env['neptune_project_name'],
-          experiment_id= exp['experiment_id'],
-          close_after_fit = False,
-          upload_stdout=True,
-          upload_stderr=True
-      )
-    print('Neptune Experiment ID: '+ str( logger.experiment.id)+" TASK NR "+str( task_nr ) )
-  else:
-    logger = get_tensorboard_logger(exp=exp,env=env, exp_p =exp_cfg_path, env_p = env_cfg_path)
-  
   # CHECKPOINT
   if exp.get('checkpoint_restore', False):
     p = os.path.join( env['base'], exp['checkpoint_load'])
@@ -264,7 +262,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   
   if skip:
     # VALIDATION
-    trainer.limit_train_batches = 1
+    trainer.limit_train_batches = 5
     trainer.limit_val_batches = 1.0
     trainer.max_epochs = 1
     trainer.check_val_every_n_epoch = 1
@@ -306,6 +304,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   
   validation_acc_plot(main_visu, logger)
   
+
   try:
     logger.experiment.stop()
   except:
@@ -331,4 +330,4 @@ if __name__ == "__main__":
   env_cfg_path = os.path.join('cfg/env', os.environ['ENV_WORKSTATION_NAME']+ '.yml')
   
   train_task( bool(args.init),  bool(args.close), args.exp, env_cfg_path, args.task_nr, skip=bool(args.skip))
-  
+  torch.cuda.empty_cache()

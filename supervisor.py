@@ -46,12 +46,11 @@ if __name__ == "__main__":
       cmd += f' --exp={args.exp} --init={init} --task_nr={i} --close={close} --skip={skip}'
       print("Execute script: " , cmd)
       os.system(cmd)
-      torch.cuda.empty_cache()
 
     else:
 
       print("SUPERVISOR: CALLING train_task:", init, close, args.exp, env_cfg_path, i)
       
       train_task( init, close, args.exp, env_cfg_path, i, skip = skip, logger_pass=None)
-      torch.cuda.empty_cache()
+    torch.cuda.empty_cache()
 
