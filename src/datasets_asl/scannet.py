@@ -163,7 +163,6 @@ class ScanNet(Dataset):
                  torch.tensor( True ) )
 
     ret += ( img_ori, )
-    
     return ret 
 
   def __len__(self):

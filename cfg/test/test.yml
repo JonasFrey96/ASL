@@ -1,6 +1,6 @@
 name: test/debug
 offline_mode: false
-timestamp: false
+timestamp:  true
 weights_restore: false
 checkpoint_restore: false
 checkpoint_load: base_models/ml_hypersim_4_tasks/task0-epoch=99--step=012399.ckpt

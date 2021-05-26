@@ -25,8 +25,9 @@ def replay_cfg_to_probs(replay_cfg_ensemble, nr):
   if replay_cfg_ensemble['active']:
     if type( replay_cfg_ensemble['probs'] ) is float:
       assert replay_cfg_ensemble['probs'] * (nr-1) < 1
-      probs = [1-(replay_cfg_ensemble['probs'] * (nr-1)) ]
-      probs += [ replay_cfg_ensemble['probs']  for i in range(nr-1) ]
+      
+      probs = [ replay_cfg_ensemble['probs']  for i in range(nr-1) ]
+      probs += [1-(replay_cfg_ensemble['probs'] * (nr-1)) ]
     else:
       if len(replay_cfg_ensemble['probs']) < nr:
         raise ValueError("To few user defined probs in replay cfg! Give float or add entries to list")
@@ -86,7 +87,7 @@ def adapter_tg_to_dataloader(tg, task_nr, loader_cfg, replay_cfg_ensemble, env )
 
   val_dataloaders = [
     DataLoader(d,
-    shuffle = loader_cfg['shuffle'],
+    shuffle = loader_cfg.get('shuffle_val',False),
     num_workers = ceil(loader_cfg['num_workers']/torch.cuda.device_count()),
     pin_memory = loader_cfg['pin_memory'],
     batch_size = loader_cfg['batch_size'], 
