@@ -32,29 +32,28 @@ def plot_from_pkl(main_visu, base_path, task_nr):
       title= m)
 
 
-def validation_acc_plot(main_visu, logger):
-  try:
-    df_acc = logger.experiment.get_numeric_channels_values('val_acc/dataloader_idx_0','val_acc/dataloader_idx_1','val_acc/dataloader_idx_2','val_acc/dataloader_idx_3','task_count/dataloader_idx_0')
-    x = np.array(df_acc['task_count/dataloader_idx_0'])
-    
-    
-    task_nrs, where = np.unique( x, return_index=True )
-    task_nrs = task_nrs.astype(np.uint8).tolist()
-    where = where.tolist()[1:]
-    where = [w-1 for w in where]
-    where += [x.shape[0]-1]*int(4-len(where))
-    
-    names = [f'val_acc_{idx}' for idx in range(4)]
-    x =  np.arange(x.shape[0])
-    y = [np.array(df_acc[f'val_acc/dataloader_idx_{idx}']  ) for idx in range(4)]
-    arr = main_visu.plot_lines_with_bachground(
-        x, y, count=where,
-        x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
-        task_names=names, tag='Validation_Accuracy_Summary')
-  except:
-    print("VALIED to generate validation_acc_plot")
-    pass
+def validation_acc_plot(main_visu, logger, nr_eval_tasks):
+  n = [f'val_acc/dataloader_idx_{i}' for i in range(nr_eval_tasks)]
+  n.append('task_count')
+  df_acc = logger.experiment.get_numeric_channels_values(*n)
+  x = np.array(df_acc['task_count'])
   
+  
+  task_nrs, where = np.unique( x, return_index=True )
+  task_nrs = task_nrs.astype(np.uint8).tolist()
+  where = where.tolist()[1:]
+  where = [w-1 for w in where]
+  where += [x.shape[0]-1]*int(nr_eval_tasks-len(where))
+  
+  names = [f'val_acc_{idx}' for idx in range(nr_eval_tasks)]
+  x =  np.arange(x.shape[0])
+  y = [np.array(df_acc[f'val_acc/dataloader_idx_{idx}']  ) for idx in range(nr_eval_tasks)]
+  arr = main_visu.plot_lines_with_bachground(
+      x, y, count=where,
+      x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
+      task_names=names, tag='Validation_Accuracy_Summary')
+
+
 def plot_from_neptune(main_visu,logger):
   try: 
     idxs = logger.experiment.get_numeric_channels_values('task_count/dataloader_idx_0')['x']

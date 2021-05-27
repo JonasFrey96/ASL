@@ -17,7 +17,7 @@ from train_task import train_task
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/rehearsel_prob/prob09.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/test_auto_gen_tar/prob09.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')
@@ -54,3 +54,16 @@ if __name__ == "__main__":
       train_task( init, close, args.exp, env_cfg_path, i, skip = skip, logger_pass=None)
     torch.cuda.empty_cache()
 
+
+  exp_cfg_path = args.exp
+  rm = exp_cfg_path.find('cfg/exp/') + len('cfg/exp/')
+  exp_cfg_path = os.path.join( exp_cfg_path[:rm],'tmp/',exp_cfg_path[rm:])
+  exp = load_yaml(exp_cfg_path)
+
+  if exp.get('label_generation', {}).get('active', False):
+    exp['checkpoint_restore'] = exp['checkpoint_restore_2']
+    exp['checkpoint_load'] = exp['checkpoint_load_2']
+    exp['weights_restore'] = exp['weights_restore_2']
+
+    from pseudo_label import label_generation
+    label_generation( **exp['label_generation'], exp =exp)
