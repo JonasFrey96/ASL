@@ -302,8 +302,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
   
   
-  validation_acc_plot(main_visu, logger)
-  
+  validation_acc_plot(main_visu, logger, nr_eval_tasks= len(val_dataloaders))
 
   try:
     logger.experiment.stop()
