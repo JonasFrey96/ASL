@@ -31,7 +31,7 @@ from callbacks import TaskSpecificEarlyStopping, VisuCallback, FreezeCallback, R
 from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
 from datasets_asl import adapter_tg_to_dataloader
-from task import TaskGeneratorScannet
+from task import get_task_generator
 
 __all__ = ['train_task']
 
@@ -162,9 +162,11 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   
 
   # TASK GENERATOR 
-  tg = TaskGeneratorScannet( 
-    mode = exp['task_generator']['mode'], 
-    cfg = exp['task_generator']['cfg'] )
+  tg = get_task_generator( 
+    name =  exp['task_generator'].get('name', 'scannet'), # select correct TaskGenerator
+    mode = exp['task_generator']['mode'], # mode for TaskGenerator
+    cfg = exp['task_generator']['cfg'] ) # cfg for TaskGenerator
+
 
   if exp['replay']['cfg_rssb']['bins'] == -1:
     exp['replay']['cfg_rssb']['bins'] = len(tg)
@@ -240,7 +242,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
       print('Restoring weights: ' + str(res))
     else:
       raise Exception('Checkpoint not a file')
-
+  
 
   # What we can do now here is reinitalizing the datasets
   train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(tg, task_nr, exp['loader'], exp['replay']['cfg_ensemble'], env )
@@ -263,7 +265,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   if skip:
     # VALIDATION
     trainer.limit_train_batches = 5
-    trainer.limit_val_batches = 1.0
+    # trainer.limit_val_batches = 1.0
     trainer.max_epochs = 1
     trainer.check_val_every_n_epoch = 1
     train_res = trainer.fit(model = model,
@@ -301,8 +303,10 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     fill_status = (bins != 0).sum(axis=1)
     main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
   
-  
-  validation_acc_plot(main_visu, logger, nr_eval_tasks= len(val_dataloaders))
+  try:
+    validation_acc_plot(main_visu, logger, nr_eval_tasks= len(val_dataloaders))
+  except Exception as e:
+    rank_zero_warn( "FAILED while validation acc plot in train task: "+ str(e) )
 
   try:
     logger.experiment.stop()

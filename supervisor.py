@@ -17,7 +17,7 @@ from train_task import train_task
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/test_auto_gen_tar/prob09.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/create_newlabels/debug.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')
@@ -66,4 +66,4 @@ if __name__ == "__main__":
     exp['weights_restore'] = exp['weights_restore_2']
 
     from pseudo_label import label_generation
-    label_generation( **exp['label_generation'], exp =exp)
+    label_generation( **exp['label_generation'], exp = exp)

@@ -1,4 +1,3 @@
-
 import torch
 from datasets_asl import get_dataset
 from torchvision import transforms

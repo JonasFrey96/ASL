@@ -70,8 +70,9 @@ class ScanNet(Dataset):
     
     self._scenes_loaded = scenes
     self.unique = False
+
     self.aux_labels_fake = False
-  
+    
   def set_aux_labels_fake(self, flag):
     self.aux_labels_fake = True
     self.aux_labels = True
