@@ -1,25 +1,18 @@
 import os
 import random
-from pathlib import Path
 
-import torch.utils.data as data
 import torch
 from torchvision import transforms as tf
-from torchvision.transforms import functional as F
-
+from torch.utils.data import Dataset
 import numpy as np
-import scipy
 from  PIL import Image
+import time
 from pycocotools.coco import COCO as COCOtool
 try:
   from .helper import Augmentation
 except Exception: #ImportError
   from helper import Augmentation
 
-try:
-    from .replay_base import StaticReplayDataset
-except Exception:  # ImportError
-    from replay_base import StaticReplayDataset
 __all__ = ['COCo']
 
 # some indexe in the coco dataset are simply skipped. This makes the objects go from 1-80 and 0 is the background class. 
@@ -35,16 +28,13 @@ for i in range(91):
   coco_id_without_skip[i] = i-minus
 
 
-class COCo(StaticReplayDataset):
+class COCo(Dataset):
   def __init__(self, root='/media/scratch2/jonfrey/datasets/coco', 
               mode='train', scenes=[], output_trafo = None, 
-              output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], squeeze_80_labels_to_40 = True,
-              replay = False,
-              cfg_replay = {'bins':4, 'elements':100, 'add_p': 0.5, 'replay_p':0.5, 'current_bin': 0},
-              data_augmentation= True, data_augmentation_for_replay=True):
+              output_size=400, degrees = 10, flip_p = 0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05], 
+              squeeze_80_labels_to_40 = True,
+              data_augmentation= True):
     """
-    TODO Filtering is not implemented. Here additional to do when creating the mask take care!
-    
     Parameters
     ----------
     root : str, path to the COCO folder
@@ -52,12 +42,12 @@ class COCo(StaticReplayDataset):
     """
     super(
       COCo,
-      self).__init__(
-      ** cfg_replay, replay=replay)
+      self).__init__()
       
     self._output_size = output_size
     self._mode = mode
     self._load(root, mode)
+
     self._augmenter = Augmentation(output_size,
                                     degrees,
                                     flip_p,
@@ -66,15 +56,16 @@ class COCo(StaticReplayDataset):
     self._squeeze_80_labels_to_40 = squeeze_80_labels_to_40
     self._output_trafo = output_trafo
     
-    self.replay = replay
     self._data_augmentation = data_augmentation
-    self._data_augmentation_for_replay = data_augmentation_for_replay
     
-    self.unique = False
+    
     
     self._resize_img = tf.Resize( size=self._output_size, interpolation=Image.BILINEAR )
     self._resize_label = tf.Resize( size=self._output_size, interpolation=Image.NEAREST)
     
+    self.unique = False
+    self.aux_labels = False # Flag accesed by Ensemble Dataset
+
    
   @staticmethod
   def get_classes(mode):
@@ -85,7 +76,6 @@ class COCo(StaticReplayDataset):
     # For replay dataset compatability
     global_idx = index
     idx = -1
-    replayed = torch.tensor( [-1] , dtype=torch.int32)
     
     # Get image
     n = self._coco.loadImgs(self._img_ids[index])[0]['file_name']
@@ -93,10 +83,13 @@ class COCo(StaticReplayDataset):
     img = np.array( Image.open( img_path ).convert('RGB') ) # H W C
     img = (torch.from_numpy( img )/255).type(torch.float32).permute(2,0,1) # C H W
     # Get label
+    import time; st = time.time()
+    print("start")
     _,H,W= img.shape
     ann_ids = self._coco.getAnnIds(imgIds=self._img_ids[index])
     anns = self._coco.loadAnns(ann_ids)
     label = np.zeros((H,W))
+    print("Anns: ", len(anns))
     for i in range(len(anns)):
       pixel_value = anns[i]['category_id']
       
@@ -109,29 +102,32 @@ class COCo(StaticReplayDataset):
     label = label.astype(np.int32)
     label = torch.from_numpy( label ).type(torch.float32).permute(0,1)[None,:,:] # C H W
     
+    print(f"Load label {time.time()-st}")
+
     # Augmentation
-    if (self._mode == 'train' and 
-        ( ( self._data_augmentation and idx == -1) or 
-          ( self._data_augmentation_for_replay and idx != -1) ) ):
-        
-        img, label = self._augmenter.apply(img, label)
+    if self._mode.find('train') != -1 and self._data_augmentation :
+      img, label = self._augmenter.apply(img, label)
     else:
-        img, label = self._augmenter.apply(img, label, only_crop=True)
+      img, label = self._augmenter.apply(img, label, only_crop=True)
     
-    # check if reject
-    if (label != -1).sum() < 10:
-        # reject this example
-        idx = random.randint(0, len(self) - 1)
-        if not self.unique:
-            return self[idx]
-        else:
-            replayed[0] = -999
-            
     img_ori = img.clone()
     if self._output_trafo is not None:
         img = self._output_trafo(img)
 
-    return img, label.type(torch.int64)[0, :, :]- 1, img_ori, replayed.type(torch.float32), global_idx
+    # REJECT LABEL
+    if (label > 0).sum() < 50:
+      idx = random.randint(0, len(self) - 1)
+      print("Failed to load, ", (label > 0).sum(), idx)
+      if not self.unique:
+        return self[idx]
+      else:
+        return False
+
+    ret = (img, 
+          label.type(torch.int64)[0, :, :])
+    ret += ( img_ori, )
+    print( ret[1].max(),ret[1].min(), ret[1].shape)
+    return ret 
 
   def __len__(self):
     return self._length

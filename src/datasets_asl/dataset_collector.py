@@ -1,14 +1,14 @@
 #from .cityscapes import Cityscapes
 #from .nyu_v2 import NYUv2
 #from .ml_hypersim import MLHypersim
-#from .coco import COCo
+from .coco import COCo
 #from .labdata import LabData
 from .scannet import ScanNet
 datasets = {
     # 'cityscapes': Cityscapes,
     # 'nyuv2': NYUv2,
     # 'mlhypersim': MLHypersim,
-    # 'coco': COCo,
+    'coco': COCo,
     # 'labdata': LabData,
     'scannet': ScanNet
 }

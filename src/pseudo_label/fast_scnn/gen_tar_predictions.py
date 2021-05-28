@@ -24,7 +24,7 @@ from torchvision import transforms as tf
 
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
-
+from utils_asl import label_to_png
 
 class FastDataset(Dataset):
   def __init__(self, paths):
@@ -45,7 +45,6 @@ class FastDataset(Dataset):
     return img, torch.tensor( index )
 
 
-  
 def label_generation(**kwargs):
     # idea:
     # load model .ckpt
@@ -69,11 +68,8 @@ def label_generation(**kwargs):
 
 
     fsh = FastSCNNHelperTorch(device='cuda:0', exp=exp)
-
     export = os.path.join(scratchdir, idfs )
-
     paths = [str(s) for s in Path(base).rglob('*.jpg') if str(s).find("color") != -1]
-
     # filter to get evey 10 image
     paths = [s for s in paths if int(s.split('/')[-1][:-4]) % 10 == 0]
 
@@ -85,8 +81,8 @@ def label_generation(**kwargs):
     dataset = FastDataset( pa)
     dataloader = DataLoader(dataset,
       shuffle = False,
-      num_workers = 2,
-      pin_memory = True,
+      num_workers = 0,
+      pin_memory = False,
       batch_size = 1)
     
     h,w,_= readImage(pa[0], H=640, W=1280, scale=False).shape
@@ -97,18 +93,20 @@ def label_generation(**kwargs):
 
         label_probs = fsh.get_label_prob( img )
         label_probs = torch.nn.functional.interpolate( label_probs.type(torch.float32)[None] , (h,w), mode='bilinear')[0]
-        label = np.uint8( torch.argmax( label_probs, axis=0 ).cpu().numpy() )
-        mask = (torch.max( label_probs, axis=0 ).values < confidence).cpu().numpy()
-        label[ mask ] = 0 # set labels with little confidence to 0
+        l = label_probs.cpu()
+        l = l.permute( (1,2,0) ).numpy()
 
         outpath = pa[index]
-
         outpath = outpath.replace("color", idfs)[:-4]+'.png'
         res = outpath[outpath.find('scans/'):]
         res = os.path.join(export, res)
-
         Path(res).parent.mkdir(exist_ok=True, parents= True)
-        Image.fromarray( label ).save(res)
+        label_to_png( l[:,:,1:], res )
+        
+        # label = np.uint8( torch.argmax( label_probs, axis=0 ).cpu().numpy() )
+        # mask = (torch.max( label_probs, axis=0 ).values < confidence).cpu().numpy()
+        # label[ mask ] = 0 # set labels with little confidence to 0
+        # Image.fromarray( label ).save(res)
 
     os.system( f"cd {scratchdir} && tar -cvf {scratchdir}/{idfs}.tar {idfs}" )
 
@@ -123,7 +121,8 @@ def test():
   label_generation(
      activate = True, identifier ="scannet_retrain50",
      confidence = 0,
-     scenes = ['scene0000']
+     scenes = ['scene0000'],
+     exp = load_yaml("/home/jonfrey/ASL/cfg/test/test.yml")
   )
 
 if __name__ == '__main__':
