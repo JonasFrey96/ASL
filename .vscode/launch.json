@@ -5,26 +5,29 @@
 	"version": "0.2.0",
 	"configurations": [
 		{
-			"name": "Python: Current File",
+			"name": "ASL: Current File",
 			"type": "python",
 			"request": "launch",
 			"program": "${file}",
-			"console": "integratedTerminal"
+			"python": "/home/jonfrey/miniconda3/envs/track4/bin/python", 
+			"console": "integratedTerminal",
+			"cwd": "${env:HOME}/ASL"
 		},
 		{
-			"name": "Eval",
+			"name": "ASL: Supervisor",
 			"type": "python",
 			"request": "launch",
-			"program": "${env:HOME}/ASL/eval.py",
-			"console": "integratedTerminal"
-		},
-		{
-			"name": "Supervisor",
-			"type": "python",
-			"python.pythonPath": "/home/jonfrey/miniconda3/envs/track4/bin/python", 
-			"request": "launch",
+			"python": "/home/jonfrey/miniconda3/envs/track4/bin/python", 
 			"program": "${env:HOME}/ASL/supervisor.py",
 			"console": "integratedTerminal"
+		},
+		{
+			"name": "Current File",
+			"type": "python",
+			"request": "launch",
+			"python": "/home/jonfrey/miniconda3/envs/track4/bin/python", 
+			"program": "${file}",
+			"console": "integratedTerminal",
 		}
 	]
 }

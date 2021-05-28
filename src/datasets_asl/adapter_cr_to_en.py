@@ -45,9 +45,7 @@ def adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env):
   # accumulate train datasets and then wrap them together
   name = ""
   train_dataset_list = []
-  output_transform = transforms.Compose([
-        transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-  ])
+  output_transform = transforms.Normalize([.485, .456, .406], [.229, .224, .225])
 
   train_dataset_list = [] 
   val_datasets = []

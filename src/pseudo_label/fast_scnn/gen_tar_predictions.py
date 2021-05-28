@@ -59,9 +59,12 @@ def label_generation(**kwargs):
     exp = kwargs["exp"]
 
 
-    if env['workstation']:
+    if os.environ['ENV_WORKSTATION_NAME'] == 'ptarmigan':
       base = os.path.join(env['scannet'], 'scans')
       scratchdir = "/media/scratch1/jonfrey/labels_generated"
+    elif os.environ['ENV_WORKSTATION_NAME'] == 'ws': 
+      base = os.path.join(env['scannet'], 'scans')
+      scratchdir = "/home/jonfrey/Datasets/labels_generated"
     else:      
       scratchdir = os.getenv('TMPDIR')
       base = os.path.join(scratchdir, 'scannet', 'scans')
