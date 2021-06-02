@@ -133,6 +133,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
           try:
             if tar.find('labels') != -1:
               target = "$TMPDIR/scannet/scans/"
+            elif tar.find("scannet_frames_25k") != -1:
+              target = "$TMPDIR/scannet/"
             else:
               target = "$TMPDIR"
 
@@ -167,14 +169,16 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     mode = exp['task_generator']['mode'], # mode for TaskGenerator
     cfg = exp['task_generator']['cfg'] ) # cfg for TaskGenerator
 
-
+  
+  print( tg )
+  
   if exp['replay']['cfg_rssb']['bins'] == -1:
     exp['replay']['cfg_rssb']['bins'] = len(tg)
 
   if task_nr >= len(tg):
     print("ERROR SPECIFIED supervisor stop_task is too high") 
     return
-
+  
   # MODEL
   model = Network(exp=exp, env=env)
   

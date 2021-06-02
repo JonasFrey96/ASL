@@ -23,13 +23,15 @@ class TaskGeneratorScannet( TaskGenerator ):
     mode_cfg = cfg.get(mode,{})
     if mode == 'scannet_scenes':
       self._scannet_scenes( **mode_cfg )
-      
     elif mode == 'scannet_pretrain':
       self._scannet_pretrain( **mode_cfg )
-
     elif mode == 'scannet_auxilary_labels':
       self._scannet_auxilary_labels( **mode_cfg )
-
+    elif mode == 'scannet_25k':
+      self._scannet_25k( **mode_cfg )
+    elif mode == 'scannet_25k_individual':
+      self._scannet_25k_individual( **mode_cfg )
+       
     else:
       raise AssertionError('TaskGeneratorScannet: Undefined Mode')
     self._current_task = 0
@@ -67,7 +69,22 @@ class TaskGeneratorScannet( TaskGenerator ):
       start_scene_train += scenes_per_task
 
 
-
+  def _scannet_25k( self ):
+    train = copy.deepcopy( scannet_template_dict )
+    val = copy.deepcopy( scannet_template_dict )
+    train['mode'] = 'train_25k'
+    val['mode'] = 'val_25k'
+    
+    t = Task(name = f'Train_25k',
+              dataset_train_cfg= copy.deepcopy(train),
+              dataset_val_cfg= copy.deepcopy(val))
+    self._task_list.append(t)
+    
+    
+  def _scannet_25k_individual( self, number_of_tasks, scenes_per_task, label_setting):
+    self._scannet_25k()
+    self._scannet_scenes( number_of_tasks, scenes_per_task, label_setting)
+    
   def _scannet_pretrain( self ):
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
@@ -81,11 +98,14 @@ class TaskGeneratorScannet( TaskGenerator ):
               dataset_val_cfg= copy.deepcopy(val))
     self._task_list.append(t)
 
-  def _scannet_scenes(self, number_of_tasks, scenes_per_task):
+  def _scannet_scenes(self, number_of_tasks, scenes_per_task, label_setting="default" ):
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
     train['mode'] = 'train'
     val['mode'] = 'val'
+    train['label_setting'] = label_setting
+    val['label_setting'] = label_setting
+    
     
     start_scene_train = 0
     for i in range( number_of_tasks ):
@@ -110,6 +130,10 @@ def test():
 
   tg = TaskGeneratorScannet( 
     mode = exp['task_generator']['mode'], 
+    cfg = exp['task_generator']['cfg'] )
+  
+  tg = TaskGeneratorScannet( 
+    mode = "scannet_25k", 
     cfg = exp['task_generator']['cfg'] )
   
   print(tg)

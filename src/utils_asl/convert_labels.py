@@ -1,34 +1,36 @@
 import imageio
 import numpy as np
-
+import torch
 __all__ = ['label_to_png', 'png_to_label']
 
 def label_to_png(label, path, max_classes = 40):
   assert len(label.shape) == 3
   assert label.shape[2] == max_classes
   H,W,_ = label.shape 
-  idxs = np.zeros( (3, H,W) ,dtype=np.uint8 )
-  values = np.zeros( (3, H,W) )
-  label_c = np.copy( label )
+  idxs = torch.zeros( (3, H,W) ,dtype=torch.uint8, device=label.device )
+  values = torch.zeros( (3, H,W) , device=label.device)
+  label_c = label.clone()
   max_val_10bit = 1023
   
   for i in range(3):
-    idx = np.argmax( label_c, axis=2 )
-    idxs[i] = np.uint8(idx)
+    idx = torch.argmax( label_c, dim=2 )
+    idxs[i] = idx.type(torch.uint8)
     
-    m = np.eye(max_classes)[idx] == 1
-    values[i] = np.uint16( (label_c[m] *  max_val_10bit)).reshape(H,W)
+    m = torch.eye(max_classes)[idx] == 1
+    values[i] = ( (label_c[m] *  max_val_10bit).reshape(H,W)).type(torch.int32)
     values[i][values[i] > max_val_10bit] = max_val_10bit
     label_c[m] = 0
-    
-  png = np.zeros( (H,W,4), dtype=np.uint16)
   
+  values = values.cpu().numpy().astype(np.uint16)
+  idxs = idxs.cpu().numpy().astype(np.uint8)
+  
+  png = np.zeros( (H,W,4), dtype=np.uint16)
   for i in range(3):
     png[:,:,i] = values[i]
     png[:,:,i] = np.bitwise_or( png[:,:,i], np.left_shift( idxs[i] ,10, dtype=np.uint16))
     
-  imageio.imwrite(path, png,  format='PNG-FI') 
-  
+  imageio.imwrite(path, png,  format='PNG-FI', compression=0) 
+
 
 def png_to_label(path, max_classes = 40):
   png = imageio.imread(path,  format='PNG-FI')

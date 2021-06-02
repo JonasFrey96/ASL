@@ -1,8 +1,12 @@
 workstation: False
+neptune_project_name: jonasfrey96/CLS
 base: /cluster/scratch/jonfrey/models/master_thesis
 cityscapes: /cluster/scratch/jonfrey/datasets/cityscapes
 nyuv2: /cluster/scratch/jonfrey/datasets/nyuv2
 coco: /cluster/scratch/jonfrey/datasets/coco
 mlhypersim: /cluster/scratch/jonfrey/datasets/mlhypersim
-tramac_weights: /cluster/scratch/jonfrey/models/master_thesis/fast_scnn/fast_scnn_citys.pth
 scannet: /cluster/scratch/jonfrey/datasets/scannet
+label_v1_detectron: /cluster/scratch/jonfrey/datasets/scannet
+scannet_labels_iteration_0: /cluster/scratch/jonfrey/datasets/scannet_labels_iteration_0
+
+
