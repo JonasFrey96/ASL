@@ -48,7 +48,7 @@ def test():
   import sys, os
   sys.path.insert(0, os.getcwd())
   sys.path.append(os.path.join(os.getcwd() + '/src'))
-
+  
   tg = TaskGenerator()
   print(tg)
 

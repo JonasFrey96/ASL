@@ -56,9 +56,16 @@ class ScanNet(Dataset):
     self._sub = sub
     self._mode = mode
 
-    self._load(root, mode, label_setting=label_setting )
     
-    self._filter_scene(scenes)
+    
+    if mode.find('_25k') == -1:
+      self._load(root, mode, label_setting=label_setting )
+      self._filter_scene(scenes)
+      
+    else:
+      self._load_25k(root, mode)
+      self.aux_labels = False
+      
 
     self._augmenter = AugmentationList( output_size,
                                         degrees,
@@ -73,9 +80,27 @@ class ScanNet(Dataset):
 
     self.aux_labels_fake = False
     
-  def set_aux_labels_fake(self, flag):
-    self.aux_labels_fake = True
-    self.aux_labels = True
+    
+  def _load_25k(self, root, mode, ratio= 0.8):
+    self._get_mapping(root)
+    pa = Path( os.path.join(root, "scannet_frames_25k") )
+    paths = [ str(s) for s in pa.rglob('*.jpg') if str(s).find("color") != -1 ]
+    fun = lambda x:  int( x.split("/")[-3][5:9] ) * 100000 \
+          + int( x.split("/")[-3][10:] ) * 10000 \
+          + int( x.split("/")[-1][:-4] )
+    paths.sort(key=fun)
+    self.image_pths = paths
+    self.label_pths = [p.replace("color","label").replace("jpg", "png") for p in paths]
+    idx_train = int(ratio*len(self.image_pths))
+    if mode.find("train") != -1:
+      self.global_to_local_idx = np.arange( idx_train )
+    else:
+      self.global_to_local_idx = np.arange( idx_train, len(self.label_pths) )
+    self.length = len(self.global_to_local_idx)
+    
+  def set_aux_labels_fake(self, flag = True):
+    self.aux_labels_fake = flag
+    self.aux_labels = flag
 
   def __getitem__(self, index):
     """
@@ -107,6 +132,11 @@ class ScanNet(Dataset):
     img_orginal
 
     """
+    # TESTING IF IO BOUND
+    # return (torch.zeros( (3, 320,640) ),
+    #        torch.ones( (320,640) ) .type(torch.int64),
+    #        torch.zeros( (3, 320,640) ))
+    
     global_idx = self.global_to_local_idx[index]
     
     # Read Image and Label
@@ -180,8 +210,8 @@ class ScanNet(Dataset):
     string += f"  »  DataAug Replay: {self._data_augmentation_for_replay}\n"
     string += "="*90
     return string
-    
-  def _load(self, root, mode, train_val_split=0.2, label_setting="default"):
+  
+  def _get_mapping(self, root):
     tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
     df = pandas.read_csv(tsv, sep='\t')
     self.df =df
@@ -191,7 +221,8 @@ class ScanNet(Dataset):
     self.mapping = torch.zeros( ( int(mapping_source.max()+1) ),dtype=torch.int64)
     for so,ta in zip(mapping_source, mapping_target):
       self.mapping[so] = ta 
-    
+  def _load(self, root, mode, train_val_split=0.2, label_setting="default"):
+    self._get_mapping(root)
     
     self.train_test, self.scenes, self.image_pths, self.label_pths = self._load_cfg(root, train_val_split)
     self.image_pths = [ os.path.join(root,i[1:]) for i in self.image_pths if i.find("scene0088_03") == -1 ]

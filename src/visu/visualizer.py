@@ -460,7 +460,7 @@ class Visualizer():
     label = label.astype(np.long) 
     detectronVisualizer = DetectronVisu( torch.from_numpy(img).type(torch.uint8), self._meta_data, scale=1)
 
-    out = detectronVisualizer.draw_sem_seg( label, area_threshold=None, alpha=0.85).get_image()
+    out = detectronVisualizer.draw_sem_seg( label, area_threshold=None, alpha=kwargs.get('alpha',0.85)).get_image()
     return out
 
   @property
@@ -491,8 +491,8 @@ class Visualizer():
     img = flow_to_image(flow)
     return self.plot_image(img=img, **kwargs)
 
-  def plot_depth(self, depth, **kwargs):
-    img = colorize(depth)
+  def plot_depth(self, depth, vmin=0.1, vmax= 10, **kwargs):
+    img = colorize(depth, vmin=vmin, vmax=vmax)
     return self.plot_image(img=img, **kwargs )
 
   @image_functionality
@@ -634,5 +634,4 @@ def test():
   # vis.plot_lines_with_bachground(x,y, count=[5,55,60,100], task_names=['a', 'b', 'c', 'd'])
   
 if __name__ == "__main__":
-  
   test()

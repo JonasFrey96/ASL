@@ -55,7 +55,6 @@ def label_generation(**kwargs):
     idfs = str( kwargs["identifier"])
     confidence = kwargs["confidence"]
     scenes = kwargs["scenes"]
-
     exp = kwargs["exp"]
 
 
@@ -95,9 +94,11 @@ def label_generation(**kwargs):
         index = int(batch[1])
 
         label_probs = fsh.get_label_prob( img )
+        
+        
         label_probs = torch.nn.functional.interpolate( label_probs.type(torch.float32)[None] , (h,w), mode='bilinear')[0]
-        l = label_probs.cpu()
-        l = l.permute( (1,2,0) ).numpy()
+        l = label_probs
+        l = l.permute( (1,2,0) )
 
         outpath = pa[index]
         outpath = outpath.replace("color", idfs)[:-4]+'.png'
@@ -106,11 +107,6 @@ def label_generation(**kwargs):
         Path(res).parent.mkdir(exist_ok=True, parents= True)
         label_to_png( l[:,:,1:], res )
         
-        # label = np.uint8( torch.argmax( label_probs, axis=0 ).cpu().numpy() )
-        # mask = (torch.max( label_probs, axis=0 ).values < confidence).cpu().numpy()
-        # label[ mask ] = 0 # set labels with little confidence to 0
-        # Image.fromarray( label ).save(res)
-
     os.system( f"cd {scratchdir} && tar -cvf {scratchdir}/{idfs}.tar {idfs}" )
 
     
@@ -120,14 +116,18 @@ def label_generation(**kwargs):
       print(f"On cluster execute: ", "cd {scratchdir} && mv {idfs}.tar $DATASETS")
 
 
-def test():
+def test(exp_cfg_path):
+  exp = load_yaml(exp_cfg_path)
   label_generation(
-     activate = True, identifier ="scannet_retrain50",
-     confidence = 0,
-     scenes = ['scene0000'],
-     exp = load_yaml("/home/jonfrey/ASL/cfg/test/test.yml")
+     **exp["label_generation"],
+     exp = exp
   )
 
 if __name__ == '__main__':
-  test()
+  import argparse
+  parser = argparse.ArgumentParser()
+  parser.add_argument('--exp', default='/home/jonfrey/ASL/cfg/exp/create_newlabels/debug.yml',
+                      help='The main experiment yaml file.')
+  args = parser.parse_args()
+  test( args.exp )
   

@@ -23,15 +23,40 @@ def replay_cfg_to_probs(replay_cfg_ensemble, nr):
 
   probs = []
   if replay_cfg_ensemble['active']:
-    if type( replay_cfg_ensemble['probs'] ) is float:
-      assert replay_cfg_ensemble['probs'] * (nr-1) < 1
+    m = replay_cfg_ensemble.get('mode', "simple")
+    cfg = replay_cfg_ensemble['cfg_'+ m]
+    
+    if m == "simple":
+      # replay each task eactly with the given ratio
+      # inference the prob. for the current task
+      assert cfg["ratio_per_task"] * (nr-1) < 1
+      probs = [cfg["ratio_per_task"]  for i in range(nr-1) ]
+    
+    elif m == "fixed_total_replay_ratio":
+      # ratio_replay defines the total replay probability
+      # each past task is replayed with same prob
+      assert cfg["ratio_replay"] < 1 and cfg["ratio_replay"] >= 0
+      probs = [cfg["ratio_replay"]/(nr-1)  for i in range(nr-1) ]
       
-      probs = [ replay_cfg_ensemble['probs']  for i in range(nr-1) ]
-      probs += [1-(replay_cfg_ensemble['probs'] * (nr-1)) ]
-    else:
-      if len(replay_cfg_ensemble['probs']) < nr:
-        raise ValueError("To few user defined probs in replay cfg! Give float or add entries to list")
-      probs = replay_cfg_ensemble['probs'][:nr]
+    elif m == "focus_task_0":
+      assert ( cfg["ratio_replay_task_0"] + cfg["ratio_replay_task_1_N"] * (nr-2) ) < 1
+      probs = [ cfg["ratio_replay_task_0"] ] 
+      probs +=  [ cfg["ratio_replay_task_1_N"] ] * (nr-2)
+      
+    elif m == "individual_simple": 
+      assert sum(cfg['probs']) < 1 
+      assert len(cfg['probs']) >= (nr-1)
+      probs = cfg['probs'][:(nr-1)]
+    
+    elif m == "individual_ratios":
+      assert cfg["ratio_replay"] < 1
+      assert len(cfg['importance']) >= (nr-1)
+      imp = cfg['importance'][:(nr-1)] 
+      # normalize and weight
+      probs = [ i/sum(imp)*cfg["ratio_replay"] for i in imp]
+      
+    probs += [1-sum(probs)]
+        
   else:
     # dont use replay at all
     probs = [0] * nr

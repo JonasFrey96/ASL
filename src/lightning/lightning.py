@@ -185,7 +185,8 @@ class Network(LightningModule):
                   'replayed': torch.tensor(self._replayed_samples)},
       step = self.global_step)
 
-    if self.current_epoch % self._ltmene == 0 :
+    if ( self.current_epoch % self._ltmene == 0 and 
+      (self.current_epoch!= 0 or self._ltmene == 0 )) :
       # LOG ACCURRACY
       self._acc_cal( outputs, 
                   self.train_acc ,
