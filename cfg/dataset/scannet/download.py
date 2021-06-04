@@ -121,7 +121,7 @@ def download_label_map(out_dir):
 def main():
     
     parser = argparse.ArgumentParser(description='Downloads ScanNet public data release.')
-    parser.add_argument('-o', '--out_dir', default='/home/jonfrey/datasets/scannet', help='directory in which to download')
+    parser.add_argument('-o', '--out_dir', default='/home/jonfrey/Datasets/tmp', help='directory in which to download')
     parser.add_argument('--task_data', action='store_true', help='download task data (v1)')
     parser.add_argument('--label_map', action='store_true', help='download label map file')
     parser.add_argument('--v1', action='store_true', help='download ScanNet v1 instead of v2')

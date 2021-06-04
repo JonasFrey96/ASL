@@ -10,4 +10,6 @@ scannet: /cluster/work/riner/users/jonfrey/datasets/scannet
 label_v1_detectron: /cluster/work/riner/users/jonfrey/datasets/scannet
 scannet_frames_25k: /cluster/work/riner/users/jonfrey/datasets/scannet_frames_25k
 
+label_pretrain25k: /cluster/work/riner/users/jonfrey/datasets/
+
 scannet_labels_iteration_0: /cluster/work/riner/users/jonfrey/datasets/scannet_labels_iteration_0

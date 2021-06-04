@@ -1,0 +1,19 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../catkin_ws/src/Kimera-Interfacer"
+		},
+		{
+			"path": "../catkin_ws/src/Kimera-Semantics"
+		},
+		{
+			"path": "../Repos/ScanNet"
+		}
+	],
+	"settings": {
+		"python.pythonPath": "/home/jonfrey/miniconda3/envs/track4/bin/python"
+	}
+}

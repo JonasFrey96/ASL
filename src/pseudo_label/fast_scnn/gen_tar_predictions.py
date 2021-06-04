@@ -83,7 +83,7 @@ def label_generation(**kwargs):
     dataset = FastDataset( pa)
     dataloader = DataLoader(dataset,
       shuffle = False,
-      num_workers = 0,
+      num_workers = 4,
       pin_memory = False,
       batch_size = 1)
     
@@ -98,6 +98,8 @@ def label_generation(**kwargs):
         
         label_probs = torch.nn.functional.interpolate( label_probs.type(torch.float32)[None] , (h,w), mode='bilinear')[0]
         l = label_probs
+        
+        
         l = l.permute( (1,2,0) )
 
         outpath = pa[index]

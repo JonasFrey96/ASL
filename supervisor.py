@@ -17,7 +17,7 @@ from train_task import train_task
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/coco/debug.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/scannet25k_individual_labels/scannet25k_individual_labels.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')

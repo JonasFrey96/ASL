@@ -35,10 +35,12 @@ class ReplayCallback(Callback):
 
         torch_ls = torch.tensor( ls, dtype=torch.long)
 
-        if el > len(ls):
+        if el >= len(ls):
           pl_module._rssb.bins[bin, :len(ls)] = torch_ls[ torch.range( 0, len(ls)-1, dtype=torch.long) ]
           pl_module._rssb.valid[bin, :len(ls)] = True
           pl_module._rssb.valid[bin, len(ls):] = False
         else:
           pl_module._rssb.bins[bin, :] = torch_ls[ torch.randperm( len(ls) )[:el] ] 
           pl_module._rssb.valid[bin, :] = True
+        val = min(el,10)
+        print( f"Set for bin {bin} following indices: ",  pl_module._rssb.bins[bin, :val])
