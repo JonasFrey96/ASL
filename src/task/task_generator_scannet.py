@@ -5,11 +5,12 @@ __all__ = ['TaskGeneratorScannet']
 
 scannet_template_dict = { 
     'name': 'scannet',
-    'mode': 'train', 
+    'mode': 'train',
     'output_size': [320,640],
-    'scenes': [],    
+    'scenes': [],
     'data_augmentation': True,
-    'label_setting': "default"
+    'label_setting': "default",
+    "confidence_aux": 0
 }
 
 class TaskGeneratorScannet( TaskGenerator ):
@@ -81,9 +82,9 @@ class TaskGeneratorScannet( TaskGenerator ):
     self._task_list.append(t)
     
     
-  def _scannet_25k_individual( self, number_of_tasks, scenes_per_task, label_setting):
+  def _scannet_25k_individual( self, number_of_tasks, scenes_per_task, label_setting, confidence_aux = 0):
     self._scannet_25k()
-    self._scannet_scenes( number_of_tasks, scenes_per_task, label_setting)
+    self._scannet_scenes( number_of_tasks, scenes_per_task, label_setting, confidence_aux)
     
   def _scannet_pretrain( self ):
     train = copy.deepcopy( scannet_template_dict )
@@ -98,12 +99,14 @@ class TaskGeneratorScannet( TaskGenerator ):
               dataset_val_cfg= copy.deepcopy(val))
     self._task_list.append(t)
 
-  def _scannet_scenes(self, number_of_tasks, scenes_per_task, label_setting="default" ):
+  def _scannet_scenes(self, number_of_tasks, scenes_per_task, label_setting="default", confidence_aux = 0 ):
     train = copy.deepcopy( scannet_template_dict )
     val = copy.deepcopy( scannet_template_dict )
     train['mode'] = 'train'
     val['mode'] = 'val'
     train['label_setting'] = label_setting
+    train['confidence_aux'] = confidence_aux
+    
     val['label_setting'] = label_setting
     
     

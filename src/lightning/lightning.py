@@ -71,7 +71,23 @@ class Network(LightningModule):
     self._visu_callback = None
     self._ltmene = self._exp['visu'].get('log_training_metric_every_n_epoch',9999)
 
-
+    self._val_epoch_results = [ ]   
+  
+  def append_training_epoch_results(self, results):
+    if len(self._val_epoch_results) == 0:
+      for r in results:
+        self._val_epoch_results.append( [r] )
+      self._val_epoch_results.append( [self.current_epoch] )
+      self._val_epoch_results.append( [self._task_count] )
+    else:
+      assert len(self._val_epoch_results)-2 == len(results)
+      for j,r in enumerate(results):
+        self._val_epoch_results[j].append(r)
+      self._val_epoch_results[-2].append(self.current_epoch)
+      self._val_epoch_results[-1].append(self._task_count)
+      
+      
+      
   def forward(self, batch, **kwargs):    
     if kwargs.get('replayed', None) is not None:
       injection_mask = kwargs['replayed'] != -1
@@ -236,11 +252,17 @@ class Network(LightningModule):
     pred = torch.argmax(outputs['pred'], 1)
 
     m = outputs['label'] > -1
+    self.log(f'{self._mode}_gt_label_valid_ratio', m.sum()/torch.numel(m) , on_step=False, on_epoch=True)
+    
     acc( pred[m], outputs['label'][m])
     self.log(f'{self._mode}_acc', acc, on_step=False, on_epoch=True)
 
+    
+    
     if 'aux_valid' in outputs.keys():
       aux_m = outputs['aux_label'] > -1
+      self.log(f'{self._mode}_aux_label_valid_ratio', aux_m.sum()/torch.numel(aux_m) , on_step=False, on_epoch=True)
+      
       aux_acc( pred[aux_m], outputs['aux_label'][aux_m])
       self.log(f'{self._mode}_aux_acc', aux_acc, on_step=False, on_epoch=True)
 
@@ -252,7 +274,6 @@ class Network(LightningModule):
   def validation_epoch_end(self, outputs):
     self.log(f'task_count', self._task_count, on_step=False, on_epoch=True, prog_bar=False)
 
-
     metrics = self.trainer.logger_connector.callback_metrics
     me =  copy.deepcopy ( metrics ) 
     for k in me.keys():
@@ -263,6 +284,14 @@ class Network(LightningModule):
     
     t_l = me.get('train_loss', 'NotDef')
     v_acc = me.get('val_acc', 'NotDef')
+    
+    nr = 0
+    for m in metrics.keys():
+      if m.find("val_acc/dataloader") != -1:
+        nr += 1
+    
+    results = [ float( self.val_acc[i].compute()) for i in range(nr) ]
+    self.append_training_epoch_results( results )
     
     try:
       # only works when multiple val-dataloader are set!

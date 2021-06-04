@@ -1,3 +1,5 @@
+#TODO: Jonas Frey integrate the correct label loading using the written class for it 
+
 from torch.utils.data import Dataset
 
 import numpy as np
@@ -16,6 +18,7 @@ import imageio
 import pandas
 
 import pickle
+from utils_asl import LabelLoaderAuto
 __all__ = ['ScanNet']
 
 class ScanNet(Dataset):
@@ -35,7 +38,9 @@ class ScanNet(Dataset):
         0.05],
       sub = 10,
       data_augmentation= True,
-      label_setting = "default"):
+      label_setting = "default", 
+      confidence_aux = 0, 
+      preprocessing_check = True):
 
     """
     Dataset dosent know if it contains replayed or normal samples !
@@ -55,8 +60,10 @@ class ScanNet(Dataset):
 
     self._sub = sub
     self._mode = mode
-
     
+    self._confidence_aux = confidence_aux
+    
+    self._label_setting = label_setting
     
     if mode.find('_25k') == -1:
       self._load(root, mode, label_setting=label_setting )
@@ -80,6 +87,23 @@ class ScanNet(Dataset):
 
     self.aux_labels_fake = False
     
+    
+    self._label_loader = LabelLoaderAuto(root_scannet = root, confidence = self._confidence_aux)
+    if self.aux_labels:  
+      self._preprocessing_hack()
+    
+  def _preprocessing_hack(self, force=False):
+    # check if this has already been performed
+    aux_label, method = self._label_loader.get(self.aux_label_pths[self.global_to_local_idx[0]])
+    if method == "RGBA":
+      if self.aux_label_pths[self.global_to_local_idx[0]].find("_.png") != 0:
+        if os.path.isfile(self.aux_label_pths[self.global_to_local_idx[0]].replace('.png','_.png')) and not force:
+          self.aux_label_pths = [ a.replace('.png','_.png') for a in self.aux_label_pths]
+        else:
+          for i in self.global_to_local_idx:
+            aux_label, method = self._label_loader.get(self.aux_label_pths[i])
+            imageio.imwrite( self.aux_label_pths[i].replace('.png','_.png'), np.uint8( aux_label ))
+          self.aux_label_pths = [ a.replace('.png','._png') for a in self.aux_label_pths]
     
   def _load_25k(self, root, mode, ratio= 0.8):
     self._get_mapping(root)
@@ -140,16 +164,14 @@ class ScanNet(Dataset):
     global_idx = self.global_to_local_idx[index]
     
     # Read Image and Label
-    label = imageio.imread(self.label_pths[global_idx])
-    label = torch.from_numpy(label.astype(np.int32)).type(
-      torch.float32)[None, :, :]  # C H W
+    label, _ = self._label_loader.get(self.label_pths[global_idx])
+    label = torch.from_numpy( label ).type(torch.float32)[None, :, :]  # C H W -> contains 0-40 
     label = [label]
     if self.aux_labels and not self.aux_labels_fake:
-      aux_label = imageio.imread(self.aux_label_pths[global_idx])
-      aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
-        torch.float32)[None, :, :]
-      # appending this to the list so we can apply the same augmentation to all labels! 
+      aux_label, _ = self._label_loader.get( self.aux_label_pths[global_idx] )
+      aux_label = torch.from_numpy(aux_label ).type(torch.float32)[None, :, :]
       label.append(aux_label)
+    
     
     img = imageio.imread(self.image_pths[global_idx])
     img = torch.from_numpy(img).type(
@@ -164,13 +186,6 @@ class ScanNet(Dataset):
     img_ori = img.clone()
     if self._output_trafo is not None:
       img = self._output_trafo(img)
-
-    # scannet to nyu40 for GT LABEL
-    sa = label[0].shape
-    label[0] = label[0].flatten()
-    label[0] = self.mapping[label[0].type(torch.int64)] 
-    label[0] = label[0].reshape(sa)
-    
 
     for k in range(len(label)):
       label[k] = label[k]-1 # 0 == chairs 39 other prop  -1 invalid
@@ -230,6 +245,10 @@ class ScanNet(Dataset):
 
     if label_setting != "default":
       self.aux_label_pths = [ i.replace("label-filt", label_setting) for i in self.label_pths]
+      if not os.path.isfile(self.aux_label_pths[0]): 
+        #TODO: Jonas Frey might need
+        print( "LABEL FILE DOSENT EXIST -> MAYBE ON JONAS LOCAL PC")
+      self.aux_label_pths = [ i.replace("/home/jonfrey/Datasets/scannet/", f"/home/jonfrey/Datasets/labels_generated/{label_setting}/") for i in self.aux_label_pths]
       self.aux_labels = True
     else:
       self.aux_labels = False

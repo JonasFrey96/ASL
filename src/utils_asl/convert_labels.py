@@ -29,7 +29,7 @@ def label_to_png(label, path, max_classes = 40):
     png[:,:,i] = values[i]
     png[:,:,i] = np.bitwise_or( png[:,:,i], np.left_shift( idxs[i] ,10, dtype=np.uint16))
     
-  imageio.imwrite(path, png,  format='PNG-FI', compression=0) 
+  imageio.imwrite(path, png,  format='PNG-FI', compression=9) 
 
 
 def png_to_label(path, max_classes = 40):
@@ -56,8 +56,9 @@ def test():
   # Fully working
   H,W = 480,640 
   label = np.random.random( (H,W,40))
-  label_to_png(label, path='test.png')
+  label_to_png(torch.from_numpy( label ), path='test.png')
   lo = png_to_label(path= 'test.png', max_classes = 40)
+  
   print( np.mean( np.abs(  lo[lo != 0] - label[lo != 0] )  ) )
   
   
