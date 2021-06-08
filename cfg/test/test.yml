@@ -91,8 +91,23 @@ replay:
 
 task_generator:
   name: scannet
-  mode: scannet_scenes
+  mode: scannet_25k_individual
   cfg:
+    scannet_auxilary_labels:
+      label_setting: default
+
+    scannet_25k_individual:
+      number_of_tasks: 4
+      scenes_per_task: 1 
+      label_setting: pretrain25k
+      confidence_aux: 0.5
+
+    scannet_25k_alternating:
+      number_of_tasks: 4
+      scenes_per_task: 1 
+      label_setting: pretrain25k
+      confidence_aux: 0.5
+
     scannet_scenes:
       number_of_tasks: 4
       scenes_per_task: 5
@@ -101,7 +116,7 @@ task_generator:
       output_size: 
       - 320
       - 640
-      label_setting: default #iteration/0/map_onehot_label
+      label_setting: default
 
 cb_early_stopping:
   active: false

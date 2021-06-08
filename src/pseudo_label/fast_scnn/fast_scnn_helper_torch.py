@@ -25,7 +25,8 @@ class FastSCNNHelperTorch():
         
         p = os.path.join( env_cfg['base'], exp['checkpoint_load'])
         if os.path.isfile( p ):
-            res = torch.load(p)
+            res = torch.load(p, map_location=lambda storage, loc: storage)
+            
             new_statedict = {}
             for k in res['state_dict'].keys():
                 if k.find('model.') != -1: 
@@ -34,12 +35,10 @@ class FastSCNNHelperTorch():
             print('Restoring weights: ' + str(res))
         else:
             raise Exception('Checkpoint not a file')
+        del res 
+        torch.cuda.empty_cache()
         self.model.to(device)
         self.model.eval()
-
-        self.output_transform = tf.Compose([
-          tf.Normalize([.485, .456, .406], [.229, .224, .225])
-        ])
         
     def get_label(self, img):
         with torch.no_grad():
@@ -51,7 +50,7 @@ class FastSCNNHelperTorch():
         with torch.no_grad():
             # H,W,C 0-255 uint8 np
             outputs = self.model( img )
-
+            assert torch.isnan( outputs[0] ).any() == False
             pred = F.softmax(outputs[0] , dim=1)[0]
             label = torch.zeros( (41,pred.shape[1],pred.shape[2]), device=pred.device, dtype= pred.dtype )
             label[1:] = pred

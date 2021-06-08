@@ -32,6 +32,9 @@ class TaskGeneratorScannet( TaskGenerator ):
       self._scannet_25k( **mode_cfg )
     elif mode == 'scannet_25k_individual':
       self._scannet_25k_individual( **mode_cfg )
+      
+    elif mode == 'scannet_25k_alternating':
+      self._scannet_25k_alternating( **mode_cfg )
        
     else:
       raise AssertionError('TaskGeneratorScannet: Undefined Mode')
@@ -80,6 +83,15 @@ class TaskGeneratorScannet( TaskGenerator ):
               dataset_train_cfg= copy.deepcopy(train),
               dataset_val_cfg= copy.deepcopy(val))
     self._task_list.append(t)
+    
+  def _scannet_25k_alternating( self, number_of_tasks, scenes_per_task, label_setting, confidence_aux = 0):
+    self._scannet_25k()
+    self._scannet_scenes( number_of_tasks, scenes_per_task, label_setting, confidence_aux)
+    
+    idx = 2
+    while idx < len(self._task_list):  
+      self._task_list.insert(idx, copy.deepcopy(self._task_list[0]))
+      idx += 2
     
     
   def _scannet_25k_individual( self, number_of_tasks, scenes_per_task, label_setting, confidence_aux = 0):
@@ -134,9 +146,13 @@ def test():
   tg = TaskGeneratorScannet( 
     mode = exp['task_generator']['mode'], 
     cfg = exp['task_generator']['cfg'] )
-  
+  print(tg)
   tg = TaskGeneratorScannet( 
     mode = "scannet_25k", 
+    cfg = exp['task_generator']['cfg'] )
+  print(tg)
+  tg = TaskGeneratorScannet( 
+    mode = "scannet_25k_alternating", 
     cfg = exp['task_generator']['cfg'] )
   
   print(tg)

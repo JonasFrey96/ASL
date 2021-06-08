@@ -95,15 +95,35 @@ class ScanNet(Dataset):
   def _preprocessing_hack(self, force=False):
     # check if this has already been performed
     aux_label, method = self._label_loader.get(self.aux_label_pths[self.global_to_local_idx[0]])
+    print("Meethod ", method)
+    print("self.global_to_local_idx[0] ", self.global_to_local_idx[0], self.aux_label_pths[self.global_to_local_idx[0]])
     if method == "RGBA":
-      if self.aux_label_pths[self.global_to_local_idx[0]].find("_.png") != 0:
+      
+      # This should always evaluate to true
+      if self.aux_label_pths[self.global_to_local_idx[0]].find("_.png") == -1:
+        
         if os.path.isfile(self.aux_label_pths[self.global_to_local_idx[0]].replace('.png','_.png')) and not force:
+          # only perform simple renaming
+          print("Only do renanming")
           self.aux_label_pths = [ a.replace('.png','_.png') for a in self.aux_label_pths]
         else:
-          for i in self.global_to_local_idx:
-            aux_label, method = self._label_loader.get(self.aux_label_pths[i])
-            imageio.imwrite( self.aux_label_pths[i].replace('.png','_.png'), np.uint8( aux_label ))
-          self.aux_label_pths = [ a.replace('.png','._png') for a in self.aux_label_pths]
+          print ("Start multithread preprocessing of images")
+          def parallel( gtli, aux_label_pths, label_loader):
+            print("Start take care of: ", gtli[0], ' - ',  gtli[-1] )
+            for i in gtli:
+              aux_label, method = label_loader.get(aux_label_pths[i])
+              imageio.imwrite( aux_label_pths[i].replace('.png','_.png'), np.uint8( aux_label ))
+
+          cores = 16
+          tasks = [t.tolist() for t in np.array_split(np.array(self.global_to_local_idx), cores)]
+          
+          from multiprocessing import Process
+          for i in range(cores):
+            p = Process( target=parallel, args=(tasks[i],self.aux_label_pths, self._label_loader) )
+            p.start()
+          p.join()
+          print ("Done multithread preprocessing of images")
+          self.aux_label_pths = [ a.replace('.png','_.png') for a in self.aux_label_pths]
     
   def _load_25k(self, root, mode, ratio= 0.8):
     self._get_mapping(root)
@@ -168,9 +188,20 @@ class ScanNet(Dataset):
     label = torch.from_numpy( label ).type(torch.float32)[None, :, :]  # C H W -> contains 0-40 
     label = [label]
     if self.aux_labels and not self.aux_labels_fake:
-      aux_label, _ = self._label_loader.get( self.aux_label_pths[global_idx] )
-      aux_label = torch.from_numpy(aux_label ).type(torch.float32)[None, :, :]
-      label.append(aux_label)
+      _p = self.aux_label_pths[global_idx]
+      if os.path.isfile(_p):
+        aux_label, _ = self._label_loader.get( _p )
+        aux_label = torch.from_numpy(aux_label ).type(torch.float32)[None, :, :]
+        label.append(aux_label)
+      else:
+        # TODO: Remove when this offline preprocessing failed
+        if _p.find("_.png") != -1:
+          print("Processed not found")
+          _p = _p.replace( "_.png", ".png" )
+          aux_label, _ = self._label_loader.get( _p )
+          aux_label = torch.from_numpy(aux_label ).type(torch.float32)[None, :, :]
+          label.append(aux_label)
+          
     
     
     img = imageio.imread(self.image_pths[global_idx])

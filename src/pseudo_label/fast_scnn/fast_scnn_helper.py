@@ -23,10 +23,9 @@ class FastSCNNHelper():
         eval_cfg = load_yaml(eval_cfg_path)
         self.device= device
         self.model = FastSCNN(**eval_cfg['model']['cfg'])
-        
         p = os.path.join( env_cfg['base'], eval_cfg['checkpoint_load'])
         if os.path.isfile( p ):
-            res = torch.load(p)
+            res = torch.load(p, map_location=lambda storage, loc: storage)
             new_statedict = {}
             for k in res['state_dict'].keys():
                 if k.find('model.') != -1: 
@@ -35,6 +34,8 @@ class FastSCNNHelper():
             print('Restoring weights: ' + str(res))
         else:
             raise Exception('Checkpoint not a file')
+        del res 
+        torch.cuda.empty_cache()
         self.model.to(device)
         self.model.eval()
 

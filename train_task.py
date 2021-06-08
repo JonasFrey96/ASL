@@ -130,7 +130,13 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
         tar = os.path.join( env[env_var],f'{env_var}.tar')
         name = (tar.split('/')[-1]).split('.')[0]
         # TODO: JONAS FREY is now not working for the labels in interactive session !!
-        if not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ):
+        if (
+            not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ) and
+            not ( dataset['env_var'] == "label_pretrain25k" and 
+                os.path.exists(os.path.join(scratchdir,'scannet/scans/scene0000_00/pretrain25k'))) and
+            not ( dataset['env_var'] == "scannet_frames_25k" and 
+                os.path.exists(os.path.join(scratchdir,'scannet/scannet_frames_25k')))
+        ):
           try:
             if tar.find('label') != -1:
               target = "$TMPDIR/scannet/"

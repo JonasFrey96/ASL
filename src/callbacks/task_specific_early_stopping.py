@@ -11,7 +11,8 @@ class TaskSpecificEarlyStopping(Callback):
     patience = 5,
     timelimit_in_min = 60,
     verbose = True,
-    minimal_increase = 0.0
+    minimal_increase = 0.0,
+    max_epoch_count = -1
   ):
     super().__init__()
     
@@ -23,6 +24,8 @@ class TaskSpecificEarlyStopping(Callback):
     self.best_metric_buffer = [0]*nr_tasks
     self.k_not_in_best_buffer = [0]*nr_tasks
     self.minimal_increase = minimal_increase
+    self.training_start_epoch = 0
+    self.max_epoch_count = max_epoch_count
     
     if self.verbose:
       rank_zero_info(f'TimeLimitCallback is set to {self.timelimit_in_min}min')
@@ -43,6 +46,8 @@ class TaskSpecificEarlyStopping(Callback):
     nr = pl_module._task_count
     # set task start time
     self.time_buffer[nr] = time.time()
+    
+    self.training_start_epoch = pl_module.current_epoch
       
   def _run_early_stopping_check(self, trainer, pl_module):
     should_stop = False
@@ -51,7 +56,8 @@ class TaskSpecificEarlyStopping(Callback):
     if  self.epoch != trainer.current_epoch:
       self.epoch = trainer.current_epoch
       # check time 
-      if (time.time() - self.time_buffer[nr])/60 > self.timelimit_in_min:
+      if ((time.time() - self.time_buffer[nr])/60 > self.timelimit_in_min or 
+        ( self.max_epoch_count != -1 and self.epoch - self.training_start_epoch > self.max_epoch_count )):
         # time limit reached
         should_stop = True
         rank_zero_info('STOPPED due to timelimit reached!')

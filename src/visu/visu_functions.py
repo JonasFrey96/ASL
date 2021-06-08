@@ -66,7 +66,7 @@ def validation_acc_plot_stored(main_visu, res):
   y = [np.array(res[i]) for i in range( task_nr) ]
 
   arr = main_visu.plot_lines_with_background(
-      x, y, count=count,
+      x, y, count=(task_indices-1).tolist()[1:]+[len(res[-1])],
       x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
       task_names=names, tag='Validation_Accuracy_Summary')
 
@@ -134,3 +134,25 @@ def plot_from_neptune(main_visu,logger):
   except:
     print("VALIED TO PLOT FROM PICKLE")
     pass 
+  
+  
+def test():
+  import os
+  import pickle
+  from visualizer import MainVisualizer
+  main_visu = MainVisualizer(p_visu = os.path.join( os.getenv("HOME"),"tmp"), store=True, num_classes = 40)
+  
+  fn = "/home/jonfrey/Results/large_run/2021-06-06T14:16:23_4h_individual_buffer_100_gt/val_res.pkl"
+  if os.path.exists(fn):
+    with open(fn, 'rb') as handle:
+      res = pickle.load(handle)
+    validation_acc_plot_stored(main_visu, res)
+  else:
+    return -1
+  
+  print(res)
+  
+  
+  
+if __name__ == '__main__':
+  test()
