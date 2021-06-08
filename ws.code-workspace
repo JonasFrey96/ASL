@@ -11,6 +11,9 @@
 		},
 		{
 			"path": "../Repos/ScanNet"
+		},
+		{
+			"path": "../catkin_ws/src/voxblox"
 		}
 	],
 	"settings": {

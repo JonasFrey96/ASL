@@ -299,8 +299,10 @@ class MainVisualizer():
           plt.axvspan((i)*length/nr_tasks, (i+1)*length/nr_tasks, facecolor=np.array( COL_DICT[keys[i]])/255, alpha=0.2)
     else:
       start = x.min()
-      for i in range(0, min( nr_tasks, len(count)) ):
+      for i in range(0, len(count) ):
+       
         stop = count[i]
+        print( "mi ma", max(start,x.min()) , min(stop,x.max()), np.array( COL_DICT[keys[i]])/255)
         plt.axvspan( max(start,x.min()) , min(stop,x.max()) , facecolor=np.array( COL_DICT[keys[i]])/255, alpha=0.2)
         start = stop
       

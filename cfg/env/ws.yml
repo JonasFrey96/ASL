@@ -6,3 +6,10 @@ coco: /home/jonfrey/Datasets/coco
 scannet: /home/jonfrey/Datasets/scannet
 
 scannet_frames_25k: /home/jonfrey/Datasets/scannet/scannet_frames_25k
+
+
+labels_pretrain25k: /home/jonfrey/Datasets/labels_generated/pretrain25k
+labels_detectron: /home/jonfrey/Datasets/labels_generated/detectron_test_new_format
+labels_pretrain25k_reprojected: /home/jonfrey/Datasets/labels_generated/label_pretrain25k_reprojected
+
+labels_pretrain25k_correct_mapping_reprojected: /home/jonfrey/Datasets/labels_generated/labels_pretrain25k_correct_mapping_reprojected

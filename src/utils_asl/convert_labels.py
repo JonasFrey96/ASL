@@ -4,6 +4,7 @@ import torch
 __all__ = ['label_to_png', 'png_to_label']
 
 def label_to_png(label, path, max_classes = 40):
+  # label has do be provied as label.shape == 0-39 0 = class 0 and 39 class 39
   assert len(label.shape) == 3
   assert label.shape[2] == max_classes
   H,W,_ = label.shape 
@@ -11,7 +12,8 @@ def label_to_png(label, path, max_classes = 40):
   values = torch.zeros( (3, H,W) , device=label.device)
   label_c = label.clone()
   max_val_10bit = 1023
-  
+  import time
+  st = time.time()
   for i in range(3):
     idx = torch.argmax( label_c, dim=2 )
     idxs[i] = idx.type(torch.uint8)
@@ -21,15 +23,17 @@ def label_to_png(label, path, max_classes = 40):
     values[i][values[i] > max_val_10bit] = max_val_10bit
     label_c[m] = 0
   
-  values = values.cpu().numpy().astype(np.uint16)
-  idxs = idxs.cpu().numpy().astype(np.uint8)
+  values = values.type( torch.int32) # cpu().numpy().astype(np.uint16)
+  idxs = idxs.type( torch.int32) #.cpu().numpy().astype(np.uint8)
   
-  png = np.zeros( (H,W,4), dtype=np.uint16)
+  png = torch.zeros( (H,W,4), dtype=torch.int32, device = values.device)
   for i in range(3):
     png[:,:,i] = values[i]
-    png[:,:,i] = np.bitwise_or( png[:,:,i], np.left_shift( idxs[i] ,10, dtype=np.uint16))
-    
-  imageio.imwrite(path, png,  format='PNG-FI', compression=9) 
+    png[:,:,i] = torch.bitwise_or( png[:,:,i], idxs[i] << 10 )
+  print("GPU TIME", time.time()-st)  
+  imageio.imwrite(path, png.cpu().numpy().astype(np.uint16),  format='PNG-FI', compression=9) 
+  print(path)
+  print("Total TIME", time.time()-st)  
 
 
 def png_to_label(path, max_classes = 40):

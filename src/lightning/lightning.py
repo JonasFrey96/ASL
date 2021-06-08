@@ -264,10 +264,13 @@ class Network(LightningModule):
       self.log(f'{self._mode}_aux_label_valid_ratio', aux_m.sum()/torch.numel(aux_m) , on_step=False, on_epoch=True)
       
       aux_acc( pred[aux_m], outputs['aux_label'][aux_m])
+      
+      #  preds: torch.Tensor, target:
+      
       self.log(f'{self._mode}_aux_acc', aux_acc, on_step=False, on_epoch=True)
 
       aux_m2 = aux_m * m
-      aux_vs_gt_acc( outputs['label'][aux_m2], outputs['aux_label'][aux_m2])
+      aux_vs_gt_acc( outputs['aux_label'][aux_m2], outputs['label'][aux_m2])
       self.log(f'{self._mode}_aux_vs_gt_acc', aux_vs_gt_acc, on_step=False, on_epoch=True)
 
 

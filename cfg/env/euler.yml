@@ -7,9 +7,11 @@ nyuv2: /cluster/work/riner/users/jonfrey/datasets/nyuv2
 coco: /cluster/work/riner/users/jonfrey/datasets/coco
 mlhypersim: /cluster/work/riner/users/jonfrey/datasets/mlhypersim
 scannet: /cluster/work/riner/users/jonfrey/datasets/scannet
-label_v1_detectron: /cluster/work/riner/users/jonfrey/datasets/scannet
+
 scannet_frames_25k: /cluster/work/riner/users/jonfrey/datasets/scannet_frames_25k
 
-label_pretrain25k: /cluster/work/riner/users/jonfrey/datasets/
+labels_pretrain25k: /cluster/work/riner/users/jonfrey/datasets/
+labels_detectron: /cluster/work/riner/users/jonfrey/datasets/
+labels_pretrain25k_reprojected: /cluster/work/riner/users/jonfrey/datasets/
 
-scannet_labels_iteration_0: /cluster/work/riner/users/jonfrey/datasets/scannet_labels_iteration_0
+labels_pretrain25k_correct_mapping_reprojected: /cluster/work/riner/users/jonfrey/datasets/
