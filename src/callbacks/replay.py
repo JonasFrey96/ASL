@@ -4,7 +4,7 @@ from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.utilities import rank_zero_warn
 import torch
 
-__all__ = ['VisuCallback']
+__all__ = ['ReplayCallback']
 
 class ReplayCallback(Callback):
   def __init__(self ):

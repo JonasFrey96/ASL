@@ -52,6 +52,20 @@ class LabelLoaderAuto():
         raise Exception("Type not know")
     return self.label, method
   
+  def get_probs(self, path):
+    img = imageio.imread(path, format='PNG-FI')
+    assert len( img.shape) == 3
+    assert img.shape[2] == 4
+    H,W,_ = img.shape
+    probs = np.zeros( ( H,W,self.max_classes) )
+    for i in range(3):
+      prob = np.bitwise_and( img[:,:,i], self.mask_low) / 1023
+      cls = np.right_shift( img[:,:,i], 10, dtype=np.uint16)
+      m = np.eye(self.max_classes)[cls] == 1
+      probs[m] = prob.reshape(-1)
+    
+    return probs
+    
   def _get_mapping(self, root):
     tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
     df = pandas.read_csv(tsv, sep='\t')

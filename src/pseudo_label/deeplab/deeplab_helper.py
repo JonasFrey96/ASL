@@ -85,7 +85,7 @@ if __name__ == "__main__":
 
     import imageio 
     i1 = imageio.imread( "/home/jonfrey/datasets/scannet/scans/scene0033_00/color/500.jpg" )
-    yh = DeeplabHelper(device="cuda:1")
+    yh = DeeplabHelper(device="cuda:0")
     label = yh.get_label_prob( i1 )
     
     from visu import Visualizer

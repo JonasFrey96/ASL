@@ -2,14 +2,10 @@ workstation: True
 neptune_project_name: jonasfrey96/CLS
 
 base: /home/jonfrey/Results
-coco: /home/jonfrey/Datasets/coco
+coco2014: /home/jonfrey/Datasets/coco
 scannet: /home/jonfrey/Datasets/scannet
+cocostuff164k: /home/jonfrey/Datasets/cocostuff164k
 
 scannet_frames_25k: /home/jonfrey/Datasets/scannet/scannet_frames_25k
 
-
-labels_pretrain25k: /home/jonfrey/Datasets/labels_generated/pretrain25k
-labels_detectron: /home/jonfrey/Datasets/labels_generated/detectron_test_new_format
-labels_pretrain25k_reprojected: /home/jonfrey/Datasets/labels_generated/label_pretrain25k_reprojected
-
-labels_pretrain25k_correct_mapping_reprojected: /home/jonfrey/Datasets/labels_generated/labels_pretrain25k_correct_mapping_reprojected
+labels_generic: /cluster/work/riner/users/jonfrey/datasets/

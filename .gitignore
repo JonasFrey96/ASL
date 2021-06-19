@@ -1,6 +1,11 @@
 **.pt
+*ws.codeworkspace
+*launch.json
+*Untitled*
 tools/private/*
+!cfg/exp/
 cfg/exp/*
+!cfg/exp/MA_final/
 tools/private
 src/datasets/test_results/*
 notebooks/private/*
@@ -133,3 +138,5 @@ notebooks/tmp/*
 # Pyre type checker
 .pyre/
 nohup.out
+ws.code-workspace
+.vscode/launch.json

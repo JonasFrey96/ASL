@@ -80,8 +80,13 @@ def adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env):
     if idx < task_nr+1:
       # add it train_dataset_list
       task_name = task.name
+      
+      cfg_train_dataset = task.dataset_train_cfg
+      if idx < task_nr:
+        cfg_train_dataset["data_augmentation"] = replay_cfg_ensemble.get("replay_augmentation", True)  
+      
       train_dataset_list.append( get_dataset(
-        **task.dataset_train_cfg,
+        **cfg_train_dataset,
         env = env,
         output_trafo = output_transform,
       ))

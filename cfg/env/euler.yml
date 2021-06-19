@@ -4,14 +4,11 @@ neptune_project_name: jonasfrey96/CLS
 base: /cluster/work/riner/users/jonfrey/models/master_thesis
 cityscapes: /cluster/work/riner/users/jonfrey/datasets/cityscapes
 nyuv2: /cluster/work/riner/users/jonfrey/datasets/nyuv2
-coco: /cluster/work/riner/users/jonfrey/datasets/coco
+coco2014: /cluster/work/riner/users/jonfrey/datasets/coco
 mlhypersim: /cluster/work/riner/users/jonfrey/datasets/mlhypersim
 scannet: /cluster/work/riner/users/jonfrey/datasets/scannet
+cocostuff164k: /cluster/work/riner/users/jonfrey/datasets/cocostuff164k
 
 scannet_frames_25k: /cluster/work/riner/users/jonfrey/datasets/scannet_frames_25k
 
-labels_pretrain25k: /cluster/work/riner/users/jonfrey/datasets/
-labels_detectron: /cluster/work/riner/users/jonfrey/datasets/
-labels_pretrain25k_reprojected: /cluster/work/riner/users/jonfrey/datasets/
-
-labels_pretrain25k_correct_mapping_reprojected: /cluster/work/riner/users/jonfrey/datasets/
+labels_generic: /cluster/work/riner/users/jonfrey/datasets/
