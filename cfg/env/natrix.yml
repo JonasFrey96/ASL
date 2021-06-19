@@ -2,7 +2,7 @@ workstation: True
 base: /media/scratch1/jonfrey/models/master_thesis
 cityscapes: /media/scratch1/jonfrey/datasets/cityscapes
 nyuv2: /media/scratch1/jonfrey/datasets/nyuv2
-coco: /media/scratch2/jonfrey/datasets/coco
+coco2014: /media/scratch2/jonfrey/datasets/coco
 tramac_weights: /media/scratch1/jonfrey/models/master_thesis/fast_scnn/fast_scnn_citys.pth
 mlhypersim: /media/scratch2/jonfrey/datasets/mlhypersim
 scannet: /media/scratch2/jonfrey/datasets/scannet

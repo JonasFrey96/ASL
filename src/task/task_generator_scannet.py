@@ -16,7 +16,7 @@ scannet_template_dict = {
 class TaskGeneratorScannet( TaskGenerator ):
   def __init__(self, mode, cfg, *args, **kwargs):
     # SET ALL TEMPLATES CORRECT
-    super(TaskGeneratorScannet, self).__init__()
+    super(TaskGeneratorScannet, self).__init__(cfg)
     
     for k in cfg['copy_to_template'].keys():
        scannet_template_dict[k] = cfg['copy_to_template'][k]
@@ -32,14 +32,13 @@ class TaskGeneratorScannet( TaskGenerator ):
       self._scannet_25k( **mode_cfg )
     elif mode == 'scannet_25k_individual':
       self._scannet_25k_individual( **mode_cfg )
-      
     elif mode == 'scannet_25k_alternating':
       self._scannet_25k_alternating( **mode_cfg )
        
     else:
       raise AssertionError('TaskGeneratorScannet: Undefined Mode')
-    self._current_task = 0
-    self._total_tasks = len(self._task_list)
+    
+    self.init_end_routine(cfg)
   
   def _scannet_auxilary_labels( self, label_setting="default" ):
     train = copy.deepcopy( scannet_template_dict )

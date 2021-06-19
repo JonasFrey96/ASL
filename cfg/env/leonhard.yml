@@ -3,7 +3,7 @@ neptune_project_name: jonasfrey96/CLS
 base: /cluster/scratch/jonfrey/models/master_thesis
 cityscapes: /cluster/scratch/jonfrey/datasets/cityscapes
 nyuv2: /cluster/scratch/jonfrey/datasets/nyuv2
-coco: /cluster/scratch/jonfrey/datasets/coco
+coco2014: /cluster/scratch/jonfrey/datasets/coco
 mlhypersim: /cluster/scratch/jonfrey/datasets/mlhypersim
 scannet: /cluster/scratch/jonfrey/datasets/scannet
 label_v1_detectron: /cluster/scratch/jonfrey/datasets/scannet

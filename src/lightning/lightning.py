@@ -17,7 +17,7 @@ import datetime
 
 # MODULES
 from models_asl import FastSCNN, ReplayStateSyncBack
-
+from callbacks import Teacher
 
 
 __all__ = ['Network']
@@ -72,7 +72,11 @@ class Network(LightningModule):
     self._ltmene = self._exp['visu'].get('log_training_metric_every_n_epoch',9999)
 
     self._val_epoch_results = [ ]   
-  
+    
+    # If teacher is active used to generate teacher labels.
+    # Current implementation only supports a fixed teacher network.
+    self._teacher = Teacher( **exp['teacher'], base_path= env['base'])
+    
   def append_training_epoch_results(self, results):
     if len(self._val_epoch_results) == 0:
       for r in results:
@@ -104,32 +108,39 @@ class Network(LightningModule):
     Args:
         pred (torch.tensor): BSxCxHxW.
         label (torch.tensor]): BSxHxW.
-        aux_label (torch.tensor): BSxHxW or BSxCxHxW.
+        aux_label (torch.tensor): BSxHxW or BSxCxHxW.  -> aux_label might be provided by dataloader or by teacher model. Might be soft or hard
         replayed (torch.long): BS wheater a sampled is replayed or not.
         use_aux (torch.bool): Wheater to use aux_label or label to calculate the loss.
         not_reduce (bool, optional): reduce the loss or return for each element in batch.
     Returns:
         [type]: [description]
     """
-    use_soft = len(label.shape) == 4
-    
     nr_replayed = (replayed != -1).sum()
     BS = replayed.shape[0]
     self._replayed_samples += int( nr_replayed )
     self._real_samples += int( BS - nr_replayed )
     
+    # compute auxillary loss
     if aux_valid.sum() != 0:        
-      # compute auxillary loss
-      if use_soft: 
-        aux_loss = F.mse_loss( torch.nn.functional.softmax(pred, dim=1), aux_label,reduction='none').mean(dim=[1,2,3])
+      if len(aux_label.shape) == 4:
+        # soft labels provided 
+        aux_loss = F.mse_loss( torch.nn.functional.softmax(pred, dim=1), 
+                              aux_label,reduction='none')
+        aux_loss = aux_loss.mean(dim=[1,2,3])
+        aux_loss *= self._exp.get('loss',{}).get('soft_aux_label_factor',1)
       else:
-        aux_loss = F.cross_entropy(pred, aux_label, ignore_index=-1, reduction='none').mean(dim=[1,2])
+        # hard labels provided
+        aux_loss = F.cross_entropy(pred, 
+                                   aux_label, 
+                                   ignore_index=-1, 
+                                   reduction='none')
+        aux_loss = aux_loss.mean(dim=[1,2])
     else:
       aux_loss = torch.zeros( (BS), device= pred.device)
+    aux_loss *= self._exp.get('loss',{}).get('aux_label_factor',1)
 
-
-    if aux_valid.sum() != BS:
-      # compute normal loss on labels
+    # compute normal loss on labels
+    if aux_valid.sum() != BS:      
       non_aux_loss = F.cross_entropy(pred, label, ignore_index=-1, reduction='none').mean(dim=[1,2])
     else:
       non_aux_loss = torch.zeros( (BS), device= pred.device)
@@ -138,6 +149,7 @@ class Network(LightningModule):
     return ( (aux_loss * aux_valid).sum() + (non_aux_loss * ~aux_valid).sum() ) / BS 
   
   def parse_batch(self, batch):
+    batch = self._teacher.modify_batch( batch )
     ba = {}
     if len( batch ) == 1:
       raise Exception("Dataloader is set to unique and not implemented")
@@ -208,7 +220,7 @@ class Network(LightningModule):
                   self.train_acc ,
                   self.train_aux_acc ,
                   self.train_aux_vs_gt_acc )
-
+      
     return {'loss': outputs['loss']}
   
 
@@ -257,18 +269,14 @@ class Network(LightningModule):
     acc( pred[m], outputs['label'][m])
     self.log(f'{self._mode}_acc', acc, on_step=False, on_epoch=True)
 
-    
-    
     if 'aux_valid' in outputs.keys():
       aux_m = outputs['aux_label'] > -1
       self.log(f'{self._mode}_aux_label_valid_ratio', aux_m.sum()/torch.numel(aux_m) , on_step=False, on_epoch=True)
       
       aux_acc( pred[aux_m], outputs['aux_label'][aux_m])
       
-      #  preds: torch.Tensor, target:
-      
       self.log(f'{self._mode}_aux_acc', aux_acc, on_step=False, on_epoch=True)
-
+      
       aux_m2 = aux_m * m
       aux_vs_gt_acc( outputs['aux_label'][aux_m2], outputs['label'][aux_m2])
       self.log(f'{self._mode}_aux_vs_gt_acc', aux_vs_gt_acc, on_step=False, on_epoch=True)

@@ -101,8 +101,9 @@ class ScanNet(Dataset):
       
       # This should always evaluate to true
       if self.aux_label_pths[self.global_to_local_idx[0]].find("_.png") == -1:
-        
-        if os.path.isfile(self.aux_label_pths[self.global_to_local_idx[0]].replace('.png','_.png')) and not force:
+        print("self.aux_label_pths[self.global_to_local_idx[0]]",self.aux_label_pths[self.global_to_local_idx[0]], self.global_to_local_idx[0])
+        if (os.path.isfile(self.aux_label_pths[self.global_to_local_idx[0]].replace('.png','_.png')) and 
+          os.path.isfile(self.aux_label_pths[self.global_to_local_idx[-1]].replace('.png','_.png')) and not force):
           # only perform simple renaming
           print("Only do renanming")
           self.aux_label_pths = [ a.replace('.png','_.png') for a in self.aux_label_pths]
@@ -124,6 +125,8 @@ class ScanNet(Dataset):
           p.join()
           print ("Done multithread preprocessing of images")
           self.aux_label_pths = [ a.replace('.png','_.png') for a in self.aux_label_pths]
+          
+          
     
   def _load_25k(self, root, mode, ratio= 0.8):
     self._get_mapping(root)
@@ -196,6 +199,8 @@ class ScanNet(Dataset):
       else:
         # TODO: Remove when this offline preprocessing failed
         if _p.find("_.png") != -1:
+          print( _p )
+          
           print("Processed not found")
           _p = _p.replace( "_.png", ".png" )
           aux_label, _ = self._label_loader.get( _p )

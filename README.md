@@ -1,6 +1,7 @@
 # 1. ASL Master Thesis 
 
 - [1. ASL Master Thesis](#1-asl-master-thesis)
+	- [Current to TODOS for Final master thesis:](#current-to-todos-for-final-master-thesis)
 	- [1.1. Challenge](#11-challenge)
 		- [1.1.1. Similar fields in semantic segmentation:](#111-similar-fields-in-semantic-segmentation)
 	- [1.2. Use case](#12-use-case)
@@ -20,6 +21,16 @@
 	- [1.10 NeptuneAI Logger](#110-neptuneai-logger)
 	- [1.11 Uncertainty Estimation](#111-uncertainty-estimation)
 - [2. Acknowledgement](#2-acknowledgement)
+
+
+## Current to TODOS for Final master thesis:
+- Recreate each result using ScanNet Dataset
+- Create the correct cfgs for this and upload them on github
+- Complete PyTest Integration
+- Create a config pareses showing all possible configs using argparse.
+- Create config validatior to get rid of error prone configs initally with reasonable advices what to do next.
+
+
 
 ## 1.1. Challenge
 Continual learning for semantic segmentation.  

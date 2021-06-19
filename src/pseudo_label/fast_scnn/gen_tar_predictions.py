@@ -86,20 +86,20 @@ def label_generation(**kwargs):
     dataset = FastDataset( pa)
     dataloader = DataLoader(dataset,
       shuffle = False,
-      num_workers = 2,
+      num_workers = 4,
       pin_memory = False,
       batch_size = 2)
     import torch.nn.functional as F
     import time
     h,w,_= readImage(pa[0], H=640, W=1280, scale=False).shape
     
-    max_cores = 20
+    max_cores = 10
     scheduled = 0
-
-      
+    
+    ringbuffer = []
+    
     from multiprocessing import Pool
     with Pool(processes = max_cores) as pool:
-        
       for j, batch in enumerate( dataloader ):
           print(f"Progress: {j}/{len(dataloader)}")
           
@@ -150,22 +150,28 @@ def label_generation(**kwargs):
               png[:,:,i] = torch.bitwise_or( png[:,:,i], idxs[i] << 10 )
 
             if scheduled > max_cores:
-              pool.apply_async(func= imwr, args=(path,  png.cpu().numpy().astype(np.uint16), 'PNG-FI', 9 ) )
+              res = pool.apply_async(func= imwr, args=(path,  png.cpu().numpy().astype(np.uint16), 'PNG-FI', 9 ) )
+              ringbuffer.append( res )
               aro.get()
               scheduled = 0
             else:
               _res = pool.apply_async(func= imwr, args=(path,  png.cpu().numpy().astype(np.uint16), 'PNG-FI', 9 ) )
+              ringbuffer.append( _res )
               if scheduled == 0:
                 aro = _res
               scheduled += 1
-              
+          
+          if len(ringbuffer) > 25:
+            ringbuffer = ringbuffer[1:]
+            
           print("Forward Batch: ", time.time()-st)
-          
-          
-
+      for r in ringbuffer:
+        try:
+          r.get()
+        except:
+          pass    
         
     os.system( f"cd {scratchdir} && tar -cvf {scratchdir}/{idfs}.tar {idfs}" )
-
     
     if not env['workstation']:
       os.system(f"cd {scratchdir} && mv {idfs}.tar $DATASETS")

@@ -124,19 +124,34 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     # move data to ssd
     if exp['move_datasets'][0]['env_var'] != 'none':
       for dataset in exp['move_datasets']:
+        print("\n")
         scratchdir = os.getenv('TMPDIR')
-        print( 'TMPDIR directory: ', scratchdir )
+        print( f'{dataset}: TMPDIR directory: ', scratchdir )
         env_var = dataset['env_var']
-        tar = os.path.join( env[env_var],f'{env_var}.tar')
+        
+        if not( env_var in env):
+          if env_var.find("labels") != -1:
+            bp = env["labels_generic"]
+          else:
+            assert Exception("Missing Environment Variable")
+        else:
+          bp = env[env_var]
+        
+        tar = os.path.join( bp,f'{env_var}.tar')
         name = (tar.split('/')[-1]).split('.')[0]
         # TODO: JONAS FREY is now not working for the labels in interactive session !!
-        if (
-            not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ) and
-            not ( dataset['env_var'] == "label_pretrain25k" and 
-                os.path.exists(os.path.join(scratchdir,'scannet/scans/scene0000_00/pretrain25k'))) and
-            not ( dataset['env_var'] == "scannet_frames_25k" and 
-                os.path.exists(os.path.join(scratchdir,'scannet/scannet_frames_25k')))
-        ):
+        
+        
+        if dataset['env_var'] == "scannet_frames_25k":
+          check_path = os.path.join(scratchdir,'scannet', 'scannet_frames_25k')
+        elif  dataset['env_var'].find("labels") != -1:
+          check_path = os.path.join(scratchdir,'scannet','scans','scene0000_00', dataset['env_var'])
+        else:
+          check_path = os.path.join(scratchdir,dataset['env_var'])
+        
+        print(f"{dataset}: check folder exists {check_path}") 
+        
+        if not os.path.exists( check_path ) :
           try:
             if tar.find('label') != -1:
               target = "$TMPDIR/scannet/"
@@ -147,11 +162,13 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
 
             cmd = f"tar -xvf {tar} -C {target} >/dev/null 2>&1"
             st =time.time()
-            print( f'Start moveing dataset-{env_var}: {cmd}')
+            print( f'{dataset}: Start moveing dataset-{env_var}: {cmd}')
+            
             os.system(cmd)
+            
             env[env_var] = str(os.path.join(scratchdir, name))
             new_env_var = env[env_var]
-            print( f'Finished moveing dataset-{new_env_var} in {time.time()-st}s')
+            print( f'{dataset}: Finished moveing dataset-{new_env_var} in {time.time()-st}s')
               
           except:
               rank_zero_warn( 'ENV Var'+ env_var )
@@ -207,6 +224,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
       **exp['task_specific_early_stopping']['cfg']
     )
     cb_ls.append(tses)
+  
+    
   if exp['cb_checkpoint']['active']:
     for i in range( len(tg) ):
       if i == task_nr:
@@ -320,8 +339,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   with open(f"{base_path}/res{task_nr}.pkl", "wb") as f:
     pickle.dump(res_store, f)
 
-      
-  
   print( f'<<<<<<<<<<<< FINISHED TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
 
   if exp['replay']['cfg_rssb']['elements'] != 0:
