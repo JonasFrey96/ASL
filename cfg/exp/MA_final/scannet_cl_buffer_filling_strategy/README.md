@@ -1,4 +1,7 @@
 random
+
+CURRENTLY NOT SUPPORTED:
+
 loss
 soft_max_value (most uncertain)
 soft_max distance 1th to 2th best estimate (most uncertain)

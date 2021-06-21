@@ -24,12 +24,26 @@
 
 
 ## Current to TODOS for Final master thesis:
-- Recreate each result using ScanNet Dataset
-- Create the correct cfgs for this and upload them on github
-- Complete PyTest Integration
-- Create a config pareses showing all possible configs using argparse.
-- Create config validatior to get rid of error prone configs initally with reasonable advices what to do next.
 
+CL:
+  - Recreate each result using ScanNet Dataset
+  		- NOT working currently:
+    		- buffer filling strategy
+    		- more complex loss based sampling strategies
+
+  - Create the correct cfgs for this and upload them on github
+
+  Quality:
+    - Complete PyTest Integration
+    - Create a config pareses showing all possible configs using argparse.
+    - Create config validator to get rid of error prone configs initially with reasonable advices what to do next.
+
+Supervision:
+  - Reproduce Optical Flow supervision results
+
+
+Robot Real Data:
+	- ROS Wrapper
 
 
 ## 1.1. Challenge
