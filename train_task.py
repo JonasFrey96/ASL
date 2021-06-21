@@ -26,7 +26,7 @@ from pytorch_lightning.loggers.neptune import NeptuneLogger
 
 # Costume Modules
 from lightning import Network
-from visu import MainVisualizer, plot_from_pkl, validation_acc_plot, plot_from_neptune
+from visu import MainVisualizer, plot_from_pkl, validation_acc_plot,  validation_acc_plot_stored
 from callbacks import TaskSpecificEarlyStopping, VisuCallback, FreezeCallback, ReplayCallback
 from utils_asl import load_yaml, file_path
 from utils_asl import get_neptune_logger, get_tensorboard_logger
@@ -87,7 +87,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   
     # GET LOGGER
   if not exp.get('offline_mode', False):
-    if  logger_pass is None and exp.get('experiment_id',None) is None:
+    if  True or ( logger_pass is None and exp.get('experiment_id',None) is None):
       logger = get_neptune_logger(exp=exp,env=env,
         exp_p =exp_cfg_path, env_p = env_cfg_path)
       exp['experiment_id'] = logger.experiment.id
@@ -105,6 +105,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   else:
     logger = get_tensorboard_logger(exp=exp,env=env, exp_p =exp_cfg_path, env_p = env_cfg_path)
 
+  print(local_rank, init)
   if local_rank == 0 and init:
     # Store checkpoint config and 'experiment_id'
     exp['weights_restore_2'] = False
@@ -123,26 +124,52 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     # move data to ssd
     if exp['move_datasets'][0]['env_var'] != 'none':
       for dataset in exp['move_datasets']:
+        print("\n")
         scratchdir = os.getenv('TMPDIR')
-        print( 'TMPDIR directory: ', scratchdir )
+        print( f'{dataset}: TMPDIR directory: ', scratchdir )
         env_var = dataset['env_var']
-        tar = os.path.join( env[env_var],f'{env_var}.tar')
+        
+        if not( env_var in env):
+          if env_var.find("labels") != -1:
+            bp = env["labels_generic"]
+          else:
+            assert Exception("Missing Environment Variable")
+        else:
+          bp = env[env_var]
+        
+        tar = os.path.join( bp,f'{env_var}.tar')
         name = (tar.split('/')[-1]).split('.')[0]
-          
-        if not os.path.exists(os.path.join(scratchdir,dataset['env_var']) ):
+        # TODO: JONAS FREY is now not working for the labels in interactive session !!
+        
+        
+        if dataset['env_var'] == "scannet_frames_25k":
+          check_path = os.path.join(scratchdir,'scannet', 'scannet_frames_25k')
+        elif  dataset['env_var'].find("labels") != -1:
+          check_path = os.path.join(scratchdir,'scannet','scans','scene0000_00', dataset['env_var'])
+        else:
+          check_path = os.path.join(scratchdir,dataset['env_var'])
+        
+        print(f"{dataset}: check folder exists {check_path}") 
+        
+        if not os.path.exists( check_path ) :
           try:
-            if tar.find('labels') != -1:
-              target = "$TMPDIR/scannet/scans/"
+            if tar.find('label') != -1:
+              target = "$TMPDIR/scannet/"
+            elif tar.find("scannet_frames_25k") != -1:
+              target = "$TMPDIR/scannet/"
             else:
               target = "$TMPDIR"
 
             cmd = f"tar -xvf {tar} -C {target} >/dev/null 2>&1"
             st =time.time()
-            print( f'Start moveing dataset-{env_var}: {cmd}')
+            print( f'{dataset}: Start moveing dataset-{env_var}: {cmd}')
+            
             os.system(cmd)
+            
             env[env_var] = str(os.path.join(scratchdir, name))
             new_env_var = env[env_var]
-            print( f'Finished moveing dataset-{new_env_var} in {time.time()-st}s')
+            print( f'{dataset}: Finished moveing dataset-{new_env_var} in {time.time()-st}s')
+              
           except:
               rank_zero_warn( 'ENV Var'+ env_var )
               env[env_var] = str(os.path.join(scratchdir, name))
@@ -167,14 +194,16 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     mode = exp['task_generator']['mode'], # mode for TaskGenerator
     cfg = exp['task_generator']['cfg'] ) # cfg for TaskGenerator
 
-
+  
+  print( tg )
+  
   if exp['replay']['cfg_rssb']['bins'] == -1:
     exp['replay']['cfg_rssb']['bins'] = len(tg)
 
   if task_nr >= len(tg):
     print("ERROR SPECIFIED supervisor stop_task is too high") 
     return
-
+  
   # MODEL
   model = Network(exp=exp, env=env)
   
@@ -195,6 +224,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
       **exp['task_specific_early_stopping']['cfg']
     )
     cb_ls.append(tses)
+  
+    
   if exp['cb_checkpoint']['active']:
     for i in range( len(tg) ):
       if i == task_nr:
@@ -247,8 +278,11 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   # What we can do now here is reinitalizing the datasets
   train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(tg, task_nr, exp['loader'], exp['replay']['cfg_ensemble'], env )
 
-
-  main_visu = MainVisualizer( p_visu = os.path.join( model_path, 'main_visu'), 
+  if model_path.split('/')[-1].find('rank') != -1:
+    pa = os.path.join( str( Path(model_path).parent ), 'main_visu')
+  else:
+    pa = os.path.join( model_path, 'main_visu')
+  main_visu = MainVisualizer( p_visu = pa, 
                             logger=logger, epoch=0, store=True, num_classes=exp['model']['cfg']['num_classes']+1)
   main_visu.epoch = task_nr
   
@@ -261,7 +295,12 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   
   #Training the model
   trainer.should_stop = False
-  
+  fn = os.path.join( exp['name'], "val_res.pkl")
+  if os.path.exists(fn):
+    with open(fn, 'rb') as handle:
+      val_res = pickle.load(handle)
+      model._val_epoch_results = val_res
+    
   if skip:
     # VALIDATION
     trainer.limit_train_batches = 5
@@ -284,6 +323,11 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   checkpoint_callback._last_global_step_saved = -999
   checkpoint_callback.save_checkpoint(trainer, model)
 
+  val_res = model._val_epoch_results
+  with open(fn, 'wb') as handle:
+    pickle.dump(val_res, handle, protocol=pickle.HIGHEST_PROTOCOL)
+    validation_acc_plot_stored(main_visu, val_res)
+  
   res = trainer.logger_connector.callback_metrics
   res_store = {}
   for k in res.keys():
@@ -294,7 +338,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   base_path = '/'.join( [a for a in model_path.split('/') if a.find('rank') == -1])
   with open(f"{base_path}/res{task_nr}.pkl", "wb") as f:
     pickle.dump(res_store, f)
-  
+
   print( f'<<<<<<<<<<<< FINISHED TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
 
   if exp['replay']['cfg_rssb']['elements'] != 0:
@@ -312,6 +356,8 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     logger.experiment.stop()
   except:
     pass
+  print("Start sleeping")
+  time.sleep(1)
 
 if __name__ == "__main__":
 

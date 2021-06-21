@@ -60,8 +60,10 @@ def map_function_pre_argmax( outputs, mappings, stuff_ids_coco_200_ids ):
     # print("Mapped ", name ," to ", nyu_name )
   masked_uncertain = torch.nn.functional.softmax( nyu_probs, dim=0).max( dim = 0 )[0] < 0.5
   nyu_probs[:,masked_uncertain] = 0
-  nyu_probs[0,masked_uncertain] = 0.3
+  nyu_probs[0,masked_uncertain] = 0.5
 
+  nyu_probs = torch.nn.functional.softmax( nyu_probs, dim=0)
+  
   m1 = sem_seg == 0
   for instance in outputs['panoptic_seg'][1] :  
     ids = instance['id']
@@ -76,39 +78,28 @@ def map_function_pre_argmax( outputs, mappings, stuff_ids_coco_200_ids ):
       # +1 Given that 0 is now invalid
       nyu_probs[nyuid+1, m2 * m1 ] += score
       nyu_probs[:, m2* m1] = torch.nn.functional.softmax( nyu_probs[:, m2* m1], dim=0)
-
+  
   return nyu_probs
 
 class DetectronHelper():
     def __init__(self, device ):
     
       cfg = get_cfg()
-      cfg.merge_from_file(model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_101_3x.yaml"))
-      cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-PanopticSegmentation/panoptic_fpn_R_101_3x.yaml")
+      cfg.merge_from_file(model_zoo.get_config_file("COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml"))
+      cfg.MODEL.WEIGHTS = model_zoo.get_checkpoint_url("COCO-PanopticSegmentation/panoptic_fpn_R_50_3x.yaml")
       
       self.model = DefaultPredictor(cfg)
       self.model.model.to(device)	
+      self.model.model.eval()
+
       self.device= device
 
       with open('cfg/dataset/mappings/coco200_nyu.pkl', 'rb') as handle:
         self.mappings = pickle.load(handle)
       self.stuff_ids_coco_200_ids = list(_get_builtin_metadata(  "coco_panoptic_separated" )['stuff_dataset_id_to_contiguous_id'].keys())
 
-      #delete :
-      self.cfg = cfg
-
     @torch.no_grad()   
     def get_label(self, img):
-      # H,W,C 0-255 uint8 np
-      # img = torch.from_numpy(img).to(self.device)
-      # from detectron2.data import MetadataCatalog, DatasetCatalog
-      # from detectron2.utils.visualizer import Visualizer
-      # v = Visualizer(img[:, :, ::-1], MetadataCatalog.get(self.cfg.DATASETS.TRAIN[0]), scale=1.2)
-      
-      # # outputs = self.model( img )
-      # panoptic_seg, segments_info = self.model(img)["panoptic_seg"]
-      # out = v.draw_panoptic_seg_predictions(panoptic_seg.to("cpu"), segments_info).get_image()
-
       outputs = self.model( img )
       seg_seg_nyu = map_function_pre_argmax( outputs ,self.mappings, self.stuff_ids_coco_200_ids )
       return torch.argmax(seg_seg_nyu, 0).cpu().numpy()
@@ -116,7 +107,6 @@ class DetectronHelper():
     @torch.no_grad()   
     def get_label_prob(self, img):
       # H,W,C 0-255 uint8 np
-      # img = torch.from_numpy(img).to(self.device)
       outputs = self.model( img )
       seg_seg_nyu = map_function_pre_argmax( outputs ,self.mappings, self.stuff_ids_coco_200_ids )
       return torch.nn.functional.softmax(seg_seg_nyu, 0).cpu().numpy()
@@ -130,7 +120,7 @@ if __name__ == '__main__':
     
     fsh = DetectronHelper(device='cuda:0')
     from pathlib import Path
-    paths = [str(s) for s in Path("/home/jonfrey/datasets/scannet/scans/").rglob('*.jpg') if str(s).find("color") != -1]
+    paths = [str(s) for s in Path("/home/jonfrey/Datasets/scannet/scans/").rglob('*.jpg') if str(s).find("color") != -1]
     print(paths)
 
     for j, p in enumerate( paths):
@@ -139,9 +129,12 @@ if __name__ == '__main__':
       if int(p.split('/')[-1][:-4]) % 10 == 0:
         i1 = readImage(p, H=640, W=1280, scale=False)
         label = fsh.get_label( i1 )
+        torch.cuda.empty_cache()
+        
         out= p.replace('color', 'label_detectron2')
         out= out.replace('.jpg', '.png')
         
+      
         Path(out).parent.mkdir(exist_ok=True, parents= True)
         Image.fromarray(np.uint8(label)).save(out)
         print(p, out)

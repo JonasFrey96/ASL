@@ -31,7 +31,9 @@ python tools/leonhard/push_and_run_folder.py --exp=scannet --time=4 --gpus=4 --m
 # Scheduled with fake SCANNET 
 python tools/leonhard/push_and_run_folder.py --exp=pretrain --time=4 --gpus=1 --mem=5240 --workers=16 --ram=60 --scratch=80 --fake=True
 
-python tools/leonhard/push_and_run_folder.py --exp=pretrain --time=24 --gpus=1 --mem=5240 --workers=16 --ram=60 --scratch=80
+python tools/leonhard/push_and_run_folder.py --exp=coco_train --time=24 --gpus=1 --mem=5240 --workers=16 --ram=60 --scratch=80
+
+
 """
 parser = argparse.ArgumentParser()
 parser.add_argument('--exp', default='exp',  required=True,
@@ -123,7 +125,7 @@ else:
   model_paths = [os.path.join(base,i) for i in model_paths] 
 
   # Push to cluster 
-  cmd = f"""rsync -a --delete --exclude='.git/' --exclude='__pycache__/' --exclude='cfg/exp/tmp/*' {home}/ASL/* {login}:/cluster/home/jonfrey/ASL"""
+  cmd = f"""rsync -a --delete --exclude='.git/' --exclude='__pycache__/' --exclude='cfg/exp/tmp/*' --exclude='notebooks/*' --exclude='docs/*' {home}/ASL/* {login}:/cluster/home/jonfrey/ASL"""
   os.system(cmd)
 
   # Executue commands on cluster
@@ -136,6 +138,7 @@ else:
     ssh = paramiko.SSHClient()
     ssh.load_system_host_keys()
     #ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+    print( host, port, username)
     ssh.connect(host, port, username)
     
     N = len(exps)

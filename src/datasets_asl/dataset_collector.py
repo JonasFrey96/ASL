@@ -1,15 +1,15 @@
 #from .cityscapes import Cityscapes
 #from .nyu_v2 import NYUv2
 #from .ml_hypersim import MLHypersim
-from .coco import COCo
+from .coco2014 import COCo
+from .cocostuff import CocoStuff164k
 #from .labdata import LabData
 from .scannet import ScanNet
+
 datasets = {
-    # 'cityscapes': Cityscapes,
     # 'nyuv2': NYUv2,
-    # 'mlhypersim': MLHypersim,
-    'coco': COCo,
-    # 'labdata': LabData,
+    'coco2014': COCo,
+    "cocostuff164k": CocoStuff164k,
     'scannet': ScanNet
 }
 
@@ -18,7 +18,6 @@ __all__ = ['get_dataset']
 def get_dataset(name, env, **kwargs):
     """Segmentation Datasets"""
     return datasets[name.lower()](root=env[name], **kwargs)
-
     
 def test():
     # pytest -q -s src/datasets/datasets_collector.py

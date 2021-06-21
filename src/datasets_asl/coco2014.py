@@ -12,7 +12,6 @@ try:
   from .helper import Augmentation
 except Exception: #ImportError
   from helper import Augmentation
-
 __all__ = ['COCo']
 
 # some indexe in the coco dataset are simply skipped. This makes the objects go from 1-80 and 0 is the background class. 
@@ -74,36 +73,30 @@ class COCo(Dataset):
           
   def __getitem__(self, index):
     # For replay dataset compatability
+    # return ( torch.ones( (3,320,640)), 
+    #          torch.ones( (320,640), dtype=torch.long ),
+    #          torch.ones( (3,320,640)))
     global_idx = index
     idx = -1
-    
     # Get image
     n = self._coco.loadImgs(self._img_ids[index])[0]['file_name']
     img_path = os.path.join(self._root_img, n)
     img = np.array( Image.open( img_path ).convert('RGB') ) # H W C
     img = (torch.from_numpy( img )/255).type(torch.float32).permute(2,0,1) # C H W
     # Get label
-    import time; st = time.time()
-    print("start")
     _,H,W= img.shape
     ann_ids = self._coco.getAnnIds(imgIds=self._img_ids[index])
     anns = self._coco.loadAnns(ann_ids)
     label = np.zeros((H,W))
-    print("Anns: ", len(anns))
     for i in range(len(anns)):
       pixel_value = anns[i]['category_id']
+      pixel_value = int((coco_id_without_skip[pixel_value]+1)/2 )
+      m = self._coco.annToMask(anns[i]) == 1
+      label[m] = pixel_value
       
-      obj_label = self._coco.annToMask(anns[i])
-      if self._squeeze_80_labels_to_40:
-        obj_label[obj_label== 1] = int((coco_id_without_skip[pixel_value]+1)/2 )
-      else:
-        obj_label[obj_label == 1] = coco_id_without_skip[pixel_value]
-      label = np.maximum(obj_label, label)
     label = label.astype(np.int32)
     label = torch.from_numpy( label ).type(torch.float32).permute(0,1)[None,:,:] # C H W
     
-    print(f"Load label {time.time()-st}")
-
     # Augmentation
     if self._mode.find('train') != -1 and self._data_augmentation :
       img, label = self._augmenter.apply(img, label)
@@ -111,24 +104,22 @@ class COCo(Dataset):
       img, label = self._augmenter.apply(img, label, only_crop=True)
     
     img_ori = img.clone()
+    img_ori.requires_grad = False
     if self._output_trafo is not None:
         img = self._output_trafo(img)
 
     # REJECT LABEL
     if (label > 0).sum() < 50:
       idx = random.randint(0, len(self) - 1)
-      print("Failed to load, ", (label > 0).sum(), idx)
       if not self.unique:
         return self[idx]
       else:
         return False
 
-    ret = (img, 
-          label.type(torch.int64)[0, :, :])
-    ret += ( img_ori, )
-    print( ret[1].max(),ret[1].min(), ret[1].shape)
-    return ret 
-
+    res =  (img, 
+          label.type(torch.long)[0, :, :] - 1, 
+          img_ori)
+    return res
   def __len__(self):
     return self._length
 
