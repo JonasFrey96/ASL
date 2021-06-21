@@ -115,15 +115,11 @@ if __name__ == "__main__":
     sys.path.append("""/home/jonfrey/ASL/src""")
     os.chdir("/home/jonfrey/ASL")
 
-    import sys
-    import os
-    import imageio
-    from pathlib import Path
-    import yaml
-    import time
-    from multiprocessing import Pool
-
-    sys.path.append(os.path.join(os.getcwd(),"src"))
+    import imageio 
+    i1 = imageio.imread( "/home/jonfrey/datasets/scannet/scans/scene0033_00/color/500.jpg" )
+    yh = DeeplabHelper(device="cuda:0")
+    label = yh.get_label_prob( i1 )
+    
     from visu import Visualizer
 
     with open("/home/jonfrey/ASL/cfg/exp/create_newlabels/create_load_model.yml") as file:

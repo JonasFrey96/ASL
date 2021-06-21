@@ -12,6 +12,8 @@ import numpy as np
 from datasets_asl import get_dataset
 from datasets_asl import Ensemble
 
+import os
+
 __all__ = ['adapter_tg_to_dataloader']
 
 def replay_cfg_to_probs(replay_cfg_ensemble, nr):
@@ -23,15 +25,40 @@ def replay_cfg_to_probs(replay_cfg_ensemble, nr):
 
   probs = []
   if replay_cfg_ensemble['active']:
-    if type( replay_cfg_ensemble['probs'] ) is float:
-      assert replay_cfg_ensemble['probs'] * (nr-1) < 1
+    m = replay_cfg_ensemble.get('mode', "simple")
+    cfg = replay_cfg_ensemble['cfg_'+ m]
+    
+    if m == "simple":
+      # replay each task eactly with the given ratio
+      # inference the prob. for the current task
+      assert cfg["ratio_per_task"] * (nr-1) < 1
+      probs = [cfg["ratio_per_task"]  for i in range(nr-1) ]
+    
+    elif m == "fixed_total_replay_ratio":
+      # ratio_replay defines the total replay probability
+      # each past task is replayed with same prob
+      assert cfg["ratio_replay"] < 1 and cfg["ratio_replay"] >= 0
+      probs = [cfg["ratio_replay"]/(nr-1)  for i in range(nr-1) ]
       
-      probs = [ replay_cfg_ensemble['probs']  for i in range(nr-1) ]
-      probs += [1-(replay_cfg_ensemble['probs'] * (nr-1)) ]
-    else:
-      if len(replay_cfg_ensemble['probs']) < nr:
-        raise ValueError("To few user defined probs in replay cfg! Give float or add entries to list")
-      probs = replay_cfg_ensemble['probs'][:nr]
+    elif m == "focus_task_0":
+      assert ( cfg["ratio_replay_task_0"] + cfg["ratio_replay_task_1_N"] * (nr-2) ) < 1
+      probs = [ cfg["ratio_replay_task_0"] ] 
+      probs +=  [ cfg["ratio_replay_task_1_N"] ] * (nr-2)
+      
+    elif m == "individual_simple": 
+      assert sum(cfg['probs']) < 1 
+      assert len(cfg['probs']) >= (nr-1)
+      probs = cfg['probs'][:(nr-1)]
+    
+    elif m == "individual_ratios":
+      assert cfg["ratio_replay"] < 1
+      assert len(cfg['importance']) >= (nr-1)
+      imp = cfg['importance'][:(nr-1)] 
+      # normalize and weight
+      probs = [ i/sum(imp)*cfg["ratio_replay"] for i in imp]
+      
+    probs += [1-sum(probs)]
+        
   else:
     # dont use replay at all
     probs = [0] * nr
@@ -45,9 +72,7 @@ def adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env):
   # accumulate train datasets and then wrap them together
   name = ""
   train_dataset_list = []
-  output_transform = transforms.Compose([
-        transforms.Normalize([.485, .456, .406], [.229, .224, .225]),
-  ])
+  output_transform = transforms.Normalize([.485, .456, .406], [.229, .224, .225])
 
   train_dataset_list = [] 
   val_datasets = []
@@ -55,8 +80,13 @@ def adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env):
     if idx < task_nr+1:
       # add it train_dataset_list
       task_name = task.name
+      
+      cfg_train_dataset = task.dataset_train_cfg
+      if idx < task_nr:
+        cfg_train_dataset["data_augmentation"] = replay_cfg_ensemble.get("replay_augmentation", True)  
+      
       train_dataset_list.append( get_dataset(
-        **task.dataset_train_cfg,
+        **cfg_train_dataset,
         env = env,
         output_trafo = output_transform,
       ))
@@ -77,7 +107,13 @@ def adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env):
 
 def adapter_tg_to_dataloader(tg, task_nr, loader_cfg, replay_cfg_ensemble, env ):
   train_dataset, val_datasets, task_name = adapter_tg_to_en( tg, task_nr, replay_cfg_ensemble, env)
-
+  
+  # TODO: Jonas Frey remove this for future
+  if os.environ['ENV_WORKSTATION_NAME'] == "ws":
+    loader_cfg['batch_size'] = 2
+    loader_cfg['num_workers'] = 0
+  
+  
   train_dataloader = DataLoader(train_dataset,
     shuffle = loader_cfg['shuffle'],
     num_workers = ceil(loader_cfg['num_workers']/torch.cuda.device_count()),

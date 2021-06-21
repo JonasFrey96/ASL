@@ -77,8 +77,8 @@ class Augmentation():
       with warnings.catch_warnings():
         # this will suppress all warnings in this block
         warnings.simplefilter("ignore")
-        img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=None)
-        label = F.rotate(label, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
+        img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=0)
+        label = F.rotate(label, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=0)
       
       # Crop
       i, j, h, w = self._crop.get_params( img, self._output_size )
@@ -154,9 +154,9 @@ class AugmentationList():
       with warnings.catch_warnings():
         # this will suppress all warnings in this block
         warnings.simplefilter("ignore")
-        img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=None)
+        img = F.rotate(img, angle, resample=PIL.Image.BILINEAR , expand=False, center=None, fill=0)
         for _i,l in enumerate(label):
-          label[_i] = F.rotate(l, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=None)
+          label[_i] = F.rotate(l, angle, resample=PIL.Image.NEAREST , expand=False, center=None, fill=0)
       
       # Crop
       i, j, h, w = self._crop.get_params( img, self._output_size )

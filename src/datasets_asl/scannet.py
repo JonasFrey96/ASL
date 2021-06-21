@@ -1,3 +1,5 @@
+#TODO: Jonas Frey integrate the correct label loading using the written class for it 
+
 from torch.utils.data import Dataset
 
 import numpy as np
@@ -16,6 +18,7 @@ import imageio
 import pandas
 
 import pickle
+from utils_asl import LabelLoaderAuto
 __all__ = ['ScanNet']
 
 class ScanNet(Dataset):
@@ -35,7 +38,9 @@ class ScanNet(Dataset):
         0.05],
       sub = 10,
       data_augmentation= True,
-      label_setting = "default"):
+      label_setting = "default", 
+      confidence_aux = 0, 
+      preprocessing_check = True):
 
     """
     Dataset dosent know if it contains replayed or normal samples !
@@ -55,10 +60,19 @@ class ScanNet(Dataset):
 
     self._sub = sub
     self._mode = mode
-
-    self._load(root, mode, label_setting=label_setting )
     
-    self._filter_scene(scenes)
+    self._confidence_aux = confidence_aux
+    
+    self._label_setting = label_setting
+    
+    if mode.find('_25k') == -1:
+      self._load(root, mode, label_setting=label_setting )
+      self._filter_scene(scenes)
+      
+    else:
+      self._load_25k(root, mode)
+      self.aux_labels = False
+      
 
     self._augmenter = AugmentationList( output_size,
                                         degrees,
@@ -73,9 +87,67 @@ class ScanNet(Dataset):
 
     self.aux_labels_fake = False
     
-  def set_aux_labels_fake(self, flag):
-    self.aux_labels_fake = True
-    self.aux_labels = True
+    
+    self._label_loader = LabelLoaderAuto(root_scannet = root, confidence = self._confidence_aux)
+    if self.aux_labels:  
+      self._preprocessing_hack()
+    
+  def _preprocessing_hack(self, force=False):
+    # check if this has already been performed
+    aux_label, method = self._label_loader.get(self.aux_label_pths[self.global_to_local_idx[0]])
+    print("Meethod ", method)
+    print("self.global_to_local_idx[0] ", self.global_to_local_idx[0], self.aux_label_pths[self.global_to_local_idx[0]])
+    if method == "RGBA":
+      
+      # This should always evaluate to true
+      if self.aux_label_pths[self.global_to_local_idx[0]].find("_.png") == -1:
+        print("self.aux_label_pths[self.global_to_local_idx[0]]",self.aux_label_pths[self.global_to_local_idx[0]], self.global_to_local_idx[0])
+        if (os.path.isfile(self.aux_label_pths[self.global_to_local_idx[0]].replace('.png','_.png')) and 
+          os.path.isfile(self.aux_label_pths[self.global_to_local_idx[-1]].replace('.png','_.png')) and not force):
+          # only perform simple renaming
+          print("Only do renanming")
+          self.aux_label_pths = [ a.replace('.png','_.png') for a in self.aux_label_pths]
+        else:
+          print ("Start multithread preprocessing of images")
+          def parallel( gtli, aux_label_pths, label_loader):
+            print("Start take care of: ", gtli[0], ' - ',  gtli[-1] )
+            for i in gtli:
+              aux_label, method = label_loader.get(aux_label_pths[i])
+              imageio.imwrite( aux_label_pths[i].replace('.png','_.png'), np.uint8( aux_label ))
+
+          cores = 16
+          tasks = [t.tolist() for t in np.array_split(np.array(self.global_to_local_idx), cores)]
+          
+          from multiprocessing import Process
+          for i in range(cores):
+            p = Process( target=parallel, args=(tasks[i],self.aux_label_pths, self._label_loader) )
+            p.start()
+          p.join()
+          print ("Done multithread preprocessing of images")
+          self.aux_label_pths = [ a.replace('.png','_.png') for a in self.aux_label_pths]
+          
+          
+    
+  def _load_25k(self, root, mode, ratio= 0.8):
+    self._get_mapping(root)
+    pa = Path( os.path.join(root, "scannet_frames_25k") )
+    paths = [ str(s) for s in pa.rglob('*.jpg') if str(s).find("color") != -1 ]
+    fun = lambda x:  int( x.split("/")[-3][5:9] ) * 100000 \
+          + int( x.split("/")[-3][10:] ) * 10000 \
+          + int( x.split("/")[-1][:-4] )
+    paths.sort(key=fun)
+    self.image_pths = paths
+    self.label_pths = [p.replace("color","label").replace("jpg", "png") for p in paths]
+    idx_train = int(ratio*len(self.image_pths))
+    if mode.find("train") != -1:
+      self.global_to_local_idx = np.arange( idx_train )
+    else:
+      self.global_to_local_idx = np.arange( idx_train, len(self.label_pths) )
+    self.length = len(self.global_to_local_idx)
+    
+  def set_aux_labels_fake(self, flag = True):
+    self.aux_labels_fake = flag
+    self.aux_labels = flag
 
   def __getitem__(self, index):
     """
@@ -107,19 +179,35 @@ class ScanNet(Dataset):
     img_orginal
 
     """
+    # TESTING IF IO BOUND
+    # return (torch.zeros( (3, 320,640) ),
+    #        torch.ones( (320,640) ) .type(torch.int64),
+    #        torch.zeros( (3, 320,640) ))
+    
     global_idx = self.global_to_local_idx[index]
     
     # Read Image and Label
-    label = imageio.imread(self.label_pths[global_idx])
-    label = torch.from_numpy(label.astype(np.int32)).type(
-      torch.float32)[None, :, :]  # C H W
+    label, _ = self._label_loader.get(self.label_pths[global_idx])
+    label = torch.from_numpy( label ).type(torch.float32)[None, :, :]  # C H W -> contains 0-40 
     label = [label]
     if self.aux_labels and not self.aux_labels_fake:
-      aux_label = imageio.imread(self.aux_label_pths[global_idx])
-      aux_label = torch.from_numpy(aux_label.astype(np.int32)).type(
-        torch.float32)[None, :, :]
-      # appending this to the list so we can apply the same augmentation to all labels! 
-      label.append(aux_label)
+      _p = self.aux_label_pths[global_idx]
+      if os.path.isfile(_p):
+        aux_label, _ = self._label_loader.get( _p )
+        aux_label = torch.from_numpy(aux_label ).type(torch.float32)[None, :, :]
+        label.append(aux_label)
+      else:
+        # TODO: Remove when this offline preprocessing failed
+        if _p.find("_.png") != -1:
+          print( _p )
+          
+          print("Processed not found")
+          _p = _p.replace( "_.png", ".png" )
+          aux_label, _ = self._label_loader.get( _p )
+          aux_label = torch.from_numpy(aux_label ).type(torch.float32)[None, :, :]
+          label.append(aux_label)
+          
+    
     
     img = imageio.imread(self.image_pths[global_idx])
     img = torch.from_numpy(img).type(
@@ -134,13 +222,6 @@ class ScanNet(Dataset):
     img_ori = img.clone()
     if self._output_trafo is not None:
       img = self._output_trafo(img)
-
-    # scannet to nyu40 for GT LABEL
-    sa = label[0].shape
-    label[0] = label[0].flatten()
-    label[0] = self.mapping[label[0].type(torch.int64)] 
-    label[0] = label[0].reshape(sa)
-    
 
     for k in range(len(label)):
       label[k] = label[k]-1 # 0 == chairs 39 other prop  -1 invalid
@@ -180,8 +261,8 @@ class ScanNet(Dataset):
     string += f"  »  DataAug Replay: {self._data_augmentation_for_replay}\n"
     string += "="*90
     return string
-    
-  def _load(self, root, mode, train_val_split=0.2, label_setting="default"):
+  
+  def _get_mapping(self, root):
     tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
     df = pandas.read_csv(tsv, sep='\t')
     self.df =df
@@ -191,7 +272,8 @@ class ScanNet(Dataset):
     self.mapping = torch.zeros( ( int(mapping_source.max()+1) ),dtype=torch.int64)
     for so,ta in zip(mapping_source, mapping_target):
       self.mapping[so] = ta 
-    
+  def _load(self, root, mode, train_val_split=0.2, label_setting="default"):
+    self._get_mapping(root)
     
     self.train_test, self.scenes, self.image_pths, self.label_pths = self._load_cfg(root, train_val_split)
     self.image_pths = [ os.path.join(root,i[1:]) for i in self.image_pths if i.find("scene0088_03") == -1 ]
@@ -199,6 +281,10 @@ class ScanNet(Dataset):
 
     if label_setting != "default":
       self.aux_label_pths = [ i.replace("label-filt", label_setting) for i in self.label_pths]
+      if not os.path.isfile(self.aux_label_pths[0]): 
+        #TODO: Jonas Frey might need
+        print( "LABEL FILE DOSENT EXIST -> MAYBE ON JONAS LOCAL PC")
+      self.aux_label_pths = [ i.replace("/home/jonfrey/Datasets/scannet/", f"/home/jonfrey/Datasets/labels_generated/{label_setting}/") for i in self.aux_label_pths]
       self.aux_labels = True
     else:
       self.aux_labels = False

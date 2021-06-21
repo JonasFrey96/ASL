@@ -1,0 +1,11 @@
+workstation: True
+neptune_project_name: jonasfrey96/CLS
+
+base: /home/jonfrey/Results
+coco2014: /home/jonfrey/Datasets/coco
+scannet: /home/jonfrey/Datasets/scannet
+cocostuff164k: /home/jonfrey/Datasets/cocostuff164k
+
+scannet_frames_25k: /home/jonfrey/Datasets/scannet/scannet_frames_25k
+
+labels_generic: /cluster/work/riner/users/jonfrey/datasets/

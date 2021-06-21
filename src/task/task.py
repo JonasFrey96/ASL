@@ -15,11 +15,16 @@ class Task():
     self.dataset_val_cfg = dataset_val_cfg
     
 class TaskGenerator():
-  def __init__(self):
+  def __init__(self, cfg):
     self._task_list = []
     self._current_task = 0
     self._total_tasks = 0
-      
+  
+  def init_end_routine(self, cfg):
+    self._current_task = 0
+    self._total_tasks = len(self._task_list)
+    
+     
   def __iter__(self):
     return self
 
@@ -48,7 +53,7 @@ def test():
   import sys, os
   sys.path.insert(0, os.getcwd())
   sys.path.append(os.path.join(os.getcwd() + '/src'))
-
+  
   tg = TaskGenerator()
   print(tg)
 

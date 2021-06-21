@@ -5,7 +5,7 @@ from pytorch_lightning.utilities import rank_zero_warn
 import torch
 from torchvision.utils import make_grid
 import os
-
+import numpy as np
 from visu import Visualizer
 
 __all__ = ['VisuCallback']
@@ -14,7 +14,7 @@ class VisuCallback(Callback):
   def __init__(self, exp):
     self.visualizer = Visualizer(
       p_visu=os.path.join( exp['name'], 'visu'),
-      logger=None,
+      logger=None, store=False,
       num_classes= exp['model']['cfg']['num_classes']+1)
 
     self.logged_images = {
@@ -76,7 +76,8 @@ class VisuCallback(Callback):
 
       if "aux_label" in outputs:
         aux_label = outputs['aux_label'].clone().detach()
-        
+        if len(aux_label.shape) == 4:
+          aux_label = torch.argmax( aux_label, dim=1)
         aux_pred = torch.argmax(outputs['pred'], 1).clone().detach()
         aux_pred[ aux_label == -1 ] = -1
         aux_pred += 1
@@ -100,6 +101,12 @@ class VisuCallback(Callback):
       self.visualizer.plot_segmentation(tag=f'', seg=grid_pred[0], method='right')
       self.visualizer.plot_image( tag=f'{pl_module._mode}_Task{task_nr}_{optional_key}_img_ori_left_pred_right_{nr}', 
                                   img=grid_image, method='left')
+      
+      self.visualizer.plot_detectron( img= grid_image, label= grid_label[0], method='left', alpha= 0.5)
+      self.visualizer.plot_detectron( img= grid_image, label= grid_pred[0], method='right',  alpha= 0.5,
+        tag = f"{pl_module._mode}_Task{task_nr}_{optional_key}_gt_left_pred_right_overlay_{nr}")
+      
+      
       self.logged_images[pl_module._mode] += 1
 
 

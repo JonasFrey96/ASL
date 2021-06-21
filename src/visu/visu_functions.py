@@ -1,5 +1,6 @@
 import pickle
 import numpy as np
+__all__ = ['validation_acc_plot_stored', "plot_from_pkl", "validation_acc_plot"]
 
 def plot_from_pkl(main_visu, base_path, task_nr):
   with open(f"{base_path}/res0.pkl",'rb') as f:
@@ -52,7 +53,44 @@ def validation_acc_plot(main_visu, logger, nr_eval_tasks):
       x, y, count=where,
       x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
       task_names=names, tag='Validation_Accuracy_Summary')
+  
+def validation_acc_plot_stored(main_visu, res):
+  task_nr = len(res)-2
+  names = [f'val_acc_{idx}' for idx in range(task_nr)]
+  
+  task_nrs, task_indices = np.unique( np.array( res[-1]), return_index=True)
+  
+  count = (task_indices + 1).tolist()
+  count = count + [res[-2][-1]]
+  x =  np.array(res[-2])
+  y = [np.array(res[i]) for i in range( task_nr) ]
 
+  arr = main_visu.plot_lines_with_background(
+      x, y, count=(task_indices-1).tolist()[1:]+[len(res[-1])],
+      x_label='Epoch', y_label='Acc', title='Validation Accuracy', 
+      task_names=names, tag='Validation_Accuracy_Summary')
+
+  evaled_tasks = task_indices.shape[0]
+  data_matrix = np.zeros( (evaled_tasks,task_nr) )
+  
+  for t in range( evaled_tasks ):
+    try:
+      nr = task_indices[t+1]
+      time = nr - 1
+    except:
+      time = len(res[0]) - 1 
+    for j in range(task_nr):
+      
+      data_matrix[t,j] = res[j][min( time,len( res[j] )-1)] * 100 
+
+  data_matrix = np.round( data_matrix, decimals=1) 
+    
+  main_visu.plot_matrix(
+    tag = "Data Matrix",
+    data_matrix = data_matrix,
+    higher_is_better= True,
+    title= "Data matrix")
+  
 
 def plot_from_neptune(main_visu,logger):
   try: 
@@ -96,3 +134,25 @@ def plot_from_neptune(main_visu,logger):
   except:
     print("VALIED TO PLOT FROM PICKLE")
     pass 
+  
+  
+def test():
+  import os
+  import pickle
+  from visualizer import MainVisualizer
+  main_visu = MainVisualizer(p_visu = os.path.join( os.getenv("HOME"),"tmp"), store=True, num_classes = 40)
+  
+  fn = "/home/jonfrey/Results/large_run/2021-06-06T14:16:23_4h_individual_buffer_100_gt/val_res.pkl"
+  if os.path.exists(fn):
+    with open(fn, 'rb') as handle:
+      res = pickle.load(handle)
+    validation_acc_plot_stored(main_visu, res)
+  else:
+    return -1
+  
+  print(res)
+  
+  
+  
+if __name__ == '__main__':
+  test()

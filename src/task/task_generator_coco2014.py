@@ -1,30 +1,29 @@
 import copy
 from task import TaskGenerator, Task
 
-__all__ = ['TaskGeneratorCoco']
+__all__ = ['TaskGeneratorCoco2014']
 
 coco_template_dict = { 
-    'name': 'coco',
+    'name': 'coco2014',
     'mode': 'train', 
     'output_size': [320,640],
     'scenes': [],    
     'data_augmentation': True,
 }
 
-class TaskGeneratorCoco( TaskGenerator ):
+class TaskGeneratorCoco2014( TaskGenerator ):
   def __init__(self, mode, cfg, *args, **kwargs):
     # SET ALL TEMPLATES CORRECT
-    super(TaskGeneratorCoco, self).__init__()
+    super(TaskGeneratorCoco2014, self).__init__(cfg)
 
     mode_cfg = cfg.get(mode,{})
-    if mode == 'coco_pretrain':
+    if mode == 'coco2014_pretrain':
       self._coco_pretrain( **mode_cfg )
 
     else:
-      raise AssertionError('TaskGeneratorCoco: Undefined Mode')
-    self._current_task = 0
-    self._total_tasks = len(self._task_list)
-  
+      raise AssertionError('TaskGeneratorCoco2014: Undefined Mode')
+    
+    self.init_end_routine(cfg)
 
   def _coco_pretrain( self ):
     train = copy.deepcopy( coco_template_dict )

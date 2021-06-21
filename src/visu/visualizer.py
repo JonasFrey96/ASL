@@ -255,7 +255,7 @@ class MainVisualizer():
     return np.uint8(arr)
   
   @image_functionality
-  def plot_lines_with_bachground(self, x,y, count=None, x_label='x', y_label='y', title='Title', task_names=None,**kwargs):
+  def plot_lines_with_background(self, x,y, count=None, x_label='x', y_label='y', title='Title', task_names=None,**kwargs):
     # y = list of K  np.arrays with len N  . first tasks goes first
     # x : np.array N
     # both x and y might be just an array
@@ -281,7 +281,10 @@ class MainVisualizer():
           x_ = x[0]
       else:
         x_ = x
-      
+      if x_.shape[0] == 1:
+        x_ = x_.repeat(2,0) 
+        y_ = y_.repeat(2,0)
+        
       ax.plot(x_,y_, color=np.array( COL_DICT[keys[j]])/255)
     if task_names is not None:
       plt.legend(task_names) 
@@ -296,8 +299,10 @@ class MainVisualizer():
           plt.axvspan((i)*length/nr_tasks, (i+1)*length/nr_tasks, facecolor=np.array( COL_DICT[keys[i]])/255, alpha=0.2)
     else:
       start = x.min()
-      for i in range(0, nr_tasks):
+      for i in range(0, len(count) ):
+       
         stop = count[i]
+        print( "mi ma", max(start,x.min()) , min(stop,x.max()), np.array( COL_DICT[keys[i]])/255)
         plt.axvspan( max(start,x.min()) , min(stop,x.max()) , facecolor=np.array( COL_DICT[keys[i]])/255, alpha=0.2)
         start = stop
       
@@ -460,7 +465,7 @@ class Visualizer():
     label = label.astype(np.long) 
     detectronVisualizer = DetectronVisu( torch.from_numpy(img).type(torch.uint8), self._meta_data, scale=1)
 
-    out = detectronVisualizer.draw_sem_seg( label, area_threshold=None, alpha=0.85).get_image()
+    out = detectronVisualizer.draw_sem_seg( label, area_threshold=None, alpha=kwargs.get('alpha',0.85)).get_image()
     return out
 
   @property
@@ -491,8 +496,8 @@ class Visualizer():
     img = flow_to_image(flow)
     return self.plot_image(img=img, **kwargs)
 
-  def plot_depth(self, depth, **kwargs):
-    img = colorize(depth)
+  def plot_depth(self, depth, vmin=0.1, vmax= 10, **kwargs):
+    img = colorize(depth, vmin=vmin, vmax=vmax)
     return self.plot_image(img=img, **kwargs )
 
   @image_functionality
@@ -634,5 +639,4 @@ def test():
   # vis.plot_lines_with_bachground(x,y, count=[5,55,60,100], task_names=['a', 'b', 'c', 'd'])
   
 if __name__ == "__main__":
-  
   test()
