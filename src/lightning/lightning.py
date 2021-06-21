@@ -353,6 +353,20 @@ class Network(LightningModule):
     self._epoch_start_time = time.time()
     print( "SELF TRAINER SHOULD STOP", self.trainer.should_stop, self.device )
 
+
+  
+  
+  # ADVANCED FILLING STRATEGY USING TEST
+  def on_test_epoch_start(self):
+    self._mode = 'test'
+  def test_step(self, batch, batch_idx):
+    pass
+  def test_step_end( self, outputs ):
+    pass
+  def test_epoch_end(self, outputs):
+    pass
+  
+  
   def on_save_checkpoint(self, params):
     pass
 

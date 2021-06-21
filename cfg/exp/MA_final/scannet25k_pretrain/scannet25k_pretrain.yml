@@ -60,7 +60,7 @@ loader:
   pin_memory: true
   batch_size: 8
   shuffle: true
-  num_workers: 40
+  num_workers: 20
 
 replay:
   cfg_rssb:
