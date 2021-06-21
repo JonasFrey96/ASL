@@ -24,7 +24,7 @@ for b in scenes:
   op = base+'/'+b.split('/')[-1]
   print(fn) 
   # if j % 15 == 0 and j != 0:
-  os.system(f'/usr/bin/python /media/scratch2/jonfrey/datasets/scannet/ScanNet/SensReader/python/reader.py --filename={fn} --output_path={op}')
+  os.system(f'/usr/bin/python /media/scratch2/jonfrey/datasets/scannet/ScanNet/SensReader/python/reader.py --filename=/media/scratch1/jonfrey/old/sensefiles/scene0002_01/scene0002_01.sens --output_path=/media/scratch1/jonfrey/old/sensefiles/scene0002_01/{op}')
   # else:
     # os.system(f'/usr/bin/python /media/scratch2/jonfrey/datasets/scannet/ScanNet/SensReader/python/reader.py --filename={fn} --output_path={op} &')
   # j += 1
