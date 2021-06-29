@@ -1,0 +1,1 @@
+docker build ~/ASL/docker/rviz -t eviz

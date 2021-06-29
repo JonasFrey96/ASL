@@ -1,0 +1,16 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"path": "../catkin_ws/src"
+		},
+		{
+			"path": "../Repos/Kimera-VIO"
+		},
+		{
+			"path": "../Repos/Kimera-VIO-ROS"
+		}
+	]
+}
