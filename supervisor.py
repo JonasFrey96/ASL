@@ -17,7 +17,7 @@ from train_task import train_task
 
 if __name__ == "__main__":
   parser = argparse.ArgumentParser()
-  parser.add_argument('--exp', type=file_path, default='cfg/exp/template.yml',
+  parser.add_argument('--exp', type=file_path, default='cfg/exp/MA_final/template.yml',
                       help='The main experiment yaml file.')
   parser.add_argument('--mode', default='module', choices=['shell','module'],
                       help='The environment yaml file.')
@@ -36,7 +36,7 @@ if __name__ == "__main__":
     close = 1 # int(bool(i==sto))
     skip = int(i < sta)
 
-    if args.mode == 'shell' or env['workstation']:
+    if args.mode == 'shell' and not env['workstation']:
       if env['workstation']:
         mc = '/home/jonfrey/miniconda3/envs/track4'
       else:

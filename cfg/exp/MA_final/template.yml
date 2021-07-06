@@ -52,9 +52,9 @@ trainer:
   precision: 32
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 50
-  limit_val_batches: 50
-  limit_test_batches: 1.0
+  limit_train_batches: 10
+  limit_val_batches: 10
+  limit_test_batches: 10
   progress_bar_refresh_rate: 10
   max_epochs: 1000
   gpus: -1
@@ -75,6 +75,7 @@ replay:
     bins: -1
   cfg_ensemble:
     active: True
+
     # AUGMENTATION
     replay_augmentation: True  
     
@@ -112,6 +113,9 @@ replay:
         - 1
         - 1
         - 1
+  cfg_filling:
+    strategy: loss
+    metric_mode: max   # max min eqaul
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1

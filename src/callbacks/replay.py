@@ -10,7 +10,7 @@ class ReplayCallback(Callback):
   def __init__(self ):
     pass
 
-  def on_epoch_start(self, trainer, pl_module):
+  def on_train_start(self, trainer, pl_module):
     if pl_module._exp['replay']['cfg_rssb']['elements'] != 0:
       ls_global_indices = trainer.train_dataloader.dataset.datasets.get_replay_datasets_globals()
       bins_np, valid_np = pl_module._rssb.get() 
@@ -24,23 +24,25 @@ class ReplayCallback(Callback):
       
       trainer.train_dataloader.dataset.datasets.set_replay_datasets_globals( ls_global_indices )
 
-  def on_fit_end(self, trainer, pl_module):
+  def on_train_end(self, trainer, pl_module):
     if pl_module._exp['replay']['cfg_rssb']['elements'] != 0:
       ls_global_indices = trainer.train_dataloader.dataset.datasets.get_datasets_globals()
       assert len(ls_global_indices) <= pl_module._rssb.bins.shape[0]
       
       # PERFORMS RANDOM MEMORY BUFFER FILLING
+      # IDEA IS WE CAN ITERATE OVER ALL BINS AND RANDOMLY SAMPLE
       for bin,ls in enumerate(ls_global_indices):
         el = pl_module._rssb.nr_elements
 
         torch_ls = torch.tensor( ls, dtype=torch.long)
 
         if el >= len(ls):
-          pl_module._rssb.bins[bin, :len(ls)] = torch_ls[ torch.range( 0, len(ls)-1, dtype=torch.long) ]
+          # FOR DATASETS THAT ALREADY HAVE BEEN CONTRACTED NOTHING CHANGES.
+          pl_module._rssb.bins[bin, :len(ls)] = torch_ls[ torch.arange( 0, len(ls), dtype=torch.long) ]
           pl_module._rssb.valid[bin, :len(ls)] = True
           pl_module._rssb.valid[bin, len(ls):] = False
         else:
           pl_module._rssb.bins[bin, :] = torch_ls[ torch.randperm( len(ls) )[:el] ] 
           pl_module._rssb.valid[bin, :] = True
-        val = min(el,10)
+        val = min(el,5)
         print( f"Set for bin {bin} following indices: ",  pl_module._rssb.bins[bin, :val])
