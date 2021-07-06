@@ -4,7 +4,6 @@ import time
 
 # MISC 
 import numpy as np
-import pandas as pd
 
 # DL-framework
 import torch
@@ -19,6 +18,10 @@ import datetime
 from models_asl import FastSCNN, ReplayStateSyncBack
 from callbacks import Teacher
 
+# BUFFER FILLING
+from uncertainty import get_softmax_uncertainty_max
+from uncertainty import get_softmax_uncertainty_distance
+from uncertainty import get_softmax_uncertainty_entropy
 
 __all__ = ['Network']
 def wrap(s,length, hard=False):
@@ -57,7 +60,8 @@ class Network(LightningModule):
     self.val_aux_vs_gt_acc = torch.nn.ModuleList( 
       [pl_metrics.classification.Accuracy() for i in range(exp['replay']['cfg_rssb']['bins'])] ) 
 
-
+    self.test_acc = pl_metrics.classification.Accuracy()
+    
     self._task_name = 'NotDefined' # is used for model checkpoint nameing
     self._task_count = 0 # so this here might be a bad idea. Decide if we know the task or not
     self._type = torch.float16 if exp['trainer'].get('precision',32) == 16 else torch.float32
@@ -89,8 +93,6 @@ class Network(LightningModule):
         self._val_epoch_results[j].append(r)
       self._val_epoch_results[-2].append(self.current_epoch)
       self._val_epoch_results[-1].append(self._task_count)
-      
-      
       
   def forward(self, batch, **kwargs):    
     if kwargs.get('replayed', None) is not None:
@@ -171,13 +173,17 @@ class Network(LightningModule):
   #### TRAINING ####
   ##################
   
-  def on_fit_start(self):
+  def on_train_start(self):
     print(" ================ START FITTING ==================")
     print(f" TASK NAME: {self._task_name } ")
     print(f" TASK COUNT: {self._task_count } ")
     print(f" CURRENT EPOCH: {self.current_epoch } ")
     print(f" CURRENT EPOCH: {self.global_step } ")
     print(f" RSSB STATE: ", self._rssb.valid.sum(dim=1) )
+    for i in range(self._task_count):
+      m = min(5,self._rssb.nr_elements)
+      print(f" RSSB STATE: ", self._rssb.bins[i,:m] )
+    
     print(" ================ START FITTING ==================")
 
   def on_train_epoch_start(self):
@@ -194,7 +200,7 @@ class Network(LightningModule):
     loss = self.compute_loss(  
                 pred = outputs[0], 
                 **ba)
-    self.log('train_loss', loss, on_step=False, on_epoch=True)
+    self.log(f'{self._mode}_loss', loss, on_step=False, on_epoch=True)
     ret = {'loss': loss, 'pred': outputs[0], 'label': ba['label'], 'ori_img': ba['ori_img']  }
     
     if 'aux_label' in ba.keys():
@@ -334,9 +340,9 @@ class Network(LightningModule):
       
     epoch = str(self.current_epoch)
     
-    t = time.time()- self._epoch_start_time
+    t = time.time() - self._epoch_start_time
     t = str(datetime.timedelta(seconds=round(t)))
-    t2 = time.time()- self._train_start_time
+    t2 = time.time() - self._train_start_time
     t2 = str(datetime.timedelta(seconds=round(t2))) 
     if not self.trainer.running_sanity_check:
       print('VALIDATION_EPOCH_END: Time for a complete epoch: '+ t)
@@ -352,21 +358,131 @@ class Network(LightningModule):
       )
     self._epoch_start_time = time.time()
     print( "SELF TRAINER SHOULD STOP", self.trainer.should_stop, self.device )
-
-
+    
   
-  
-  # ADVANCED FILLING STRATEGY USING TEST
   def on_test_epoch_start(self):
+    """
+    Memory Buffer Filling Explained:
+      1. Perform normal trainer.fit
+      2. Call trainer.test -> extracts with the desired method the correct global indices
+      3. In test_epoch_end the computed indices are stored in the RSSB
+      4. (skip to next task)
+      5. Here tightly integrated ReplayCallback starts on_train_start
+      6. Replay Callback: Fetch: RSSB state( Set Global Indices).
+                          Fetch: For each Dataset in the Ensemble the Global Indices.
+                          Verify that RSSB State is a valid subset of the Global Indices in the Ensemble.
+                          Overwrite directly the global indices list in the dataset and reset the length.
+      Overview: 
+        Ensembel dataset responsibly for sampling from the replay.
+        trainer.test stores values to rssb (values are now a part of the models statedict and can be reloaded)
+        Replay callback is responsibly for "contracting" the dataloader indices according to rssb state. 
+        
+    """
+    # PREPARE MODEL
     self._mode = 'test'
+    self._restore_extract, self._restore_extract_layer = self.model.extract, self.model.extract_layer
+    self.model.extract = True
+    self.model.extract_layer = 'fusion'
+    
+    # PREPARE LOGGING STRUCTURES
+    gtli = self.trainer.test_dataloaders[0].dataset.global_to_local_idx
+    
+    nr = len ( self.trainer.test_dataloaders[0].dataset )
+    self.logs_test = {
+      'loss': np.full( (nr,), np.inf),
+      'acc': np.zeros( (nr,)),
+      'softmax_max':  np.zeros( (nr,)),
+      'softmax_distance':  np.ones( (nr,)),
+      'softmax_entropy':  np.zeros( (nr,)),
+      'indices': np.array( gtli ),
+      'features': np.zeros( (nr,40,128)), # for each class extract a 128 dimensional vector
+      'label_count_pred': np.zeros( (nr,40)),
+      'label_count_gt': np.zeros( (nr,40)),
+    }
+    self.count = 0
+  
+  @torch.no_grad()
   def test_step(self, batch, batch_idx):
-    pass
-  def test_step_end( self, outputs ):
-    pass
+    res = self.validation_step(batch, batch_idx, dataloader_idx=0)
+    images, label = batch[:2]
+    BS = images.shape[0]
+    
+    outputs = self.model(images)
+    pred = outputs[0]
+    
+    # EXTRACT LATENT FEATURE
+    features = outputs[1]
+    _BS,_C,_H, _W = features.shape
+    label_features = F.interpolate(label[:,None].type(features.dtype), (_H,_W), mode='nearest')[:,0].type(label.dtype)
+    NC = self._exp['model']['cfg']['num_classes']
+    latent_feature = torch.zeros( (_BS,NC,_C), device=self.device ) #10kB per Image if 16 bit
+    for b in range(BS): 
+      for n in range(NC):
+        m = label_features[b]==n
+        if m.sum() != 0:
+          latent_feature[b,n] = features[b][:,m].mean(dim=1)
+    self.logs_test['features'][self.count:self.count+BS] = latent_feature.cpu().numpy()
+    # EXTRACT UNCERTAINTY
+    self.logs_test['softmax_max'][self.count:self.count+BS] = get_softmax_uncertainty_max(pred).cpu().numpy() # confident 0 , uncertain 1
+    self.logs_test['softmax_distance'][self.count:self.count+BS] = get_softmax_uncertainty_distance(pred).cpu().numpy() # confident 0 , uncertain 1
+    self.logs_test['softmax_entropy'][self.count:self.count+BS] = get_softmax_uncertainty_entropy(pred).cpu().numpy() # confident 0 , uncertain 1
+    
+    # EXTRACT LOSS
+    self.logs_test['loss'][self.count:self.count+BS] = F.cross_entropy(pred, label, ignore_index=-1,reduction='none').mean(dim=[1,2]).cpu().numpy()
+
+    # EXTRACT ACC + LABEL COUNT
+    pred_onehot = torch.argmax(pred, 1)
+    m = label > -1
+    for b in range(BS):
+      self.logs_test['acc'][self.count+b] = float( self.test_acc( pred_onehot[b,m[b]], label[b,m[b]]) )
+      unique, counts = torch.unique( pred_onehot[b], return_counts=True)
+      self.logs_test['label_count_pred'][self.count+b][unique.cpu().numpy()] = counts.cpu().numpy()
+      unique, counts = torch.unique( label, return_counts=True)
+      self.logs_test['label_count_gt'][self.count+b][unique.cpu().numpy()] = counts.cpu().numpy()
+    
   def test_epoch_end(self, outputs):
-    pass
-  
-  
+    self.model.extract, self.model.extract_layer = self._restore_extract, self._restore_extract_layer
+    
+    stra = self._exp['replay']['cfg_filling']['strategy']
+    nr_indices = len(self.logs_test['indices'])
+    if nr_indices < self._rssb.nr_elements:
+      self._rssb.bins[self._task_count][:nr_indices] = torch.from_numpy(self.logs_test['indices'])
+      self._rssb.valid[self._task_count, :nr_indices] = True
+      self._rssb.valid[self._task_count, nr_indices:] = False
+    elif stra == "random":
+      ind = np.random.permutation( self.logs_test['indices'] )[:self._rssb.nr_elements]
+      self._rssb.bins[self._task_count] = torch.from_numpy(ind)
+      self._rssb.valid[self._task_count, :] = True
+      
+    elif (stra == "metric_softmax_distance" or
+          stra == "metric_softmax_max" or 
+          stra == "metric_softmax_entropy" or 
+          stra == "loss" or 
+          stra == "acc"):
+      sel = np.argsort(self.logs_test[stra])
+      metric_mode = self._exp['replay']['cfg_filling']['metric_mode']
+      
+      if metric_mode == "max":
+        sel = self.logs_test['indices'][sel[:self._rssb.nr_elements]]
+        
+      elif metric_mode == "min":
+        sel = self.logs_test['indices'][sel[-self._rssb.nr_elements:]]
+        
+      elif metric_mode == "equal":
+        sel2 = np.round( np.linspace(0, nr_indices-1 ,self._rssb.nr_elements),0).as_type(np.uint32)
+        sel = self.logs_test['indices'][sel[sel2]]
+      else:
+        raise ValueError("Not defined")
+      
+      self._rssb.bins[self._task_count] = torch.from_numpy(sel)
+      self._rssb.valid[self._task_count, :] = True
+    else:
+      raise Exception("Not implemented")
+    
+    val = min(self._rssb.nr_elements,10)
+    print( f"\n \n In Test overwritten bin {self._task_count} following indices: ",  
+          self._rssb.bins[self._task_count, :val], "\n \n")
+    
   def on_save_checkpoint(self, params):
     pass
 
@@ -387,7 +503,8 @@ class Network(LightningModule):
       max_epochs = self._exp['lr_scheduler']['cfg']['max_epochs'] 
       target_lr = self._exp['lr_scheduler']['cfg']['target_lr'] 
       power = self._exp['lr_scheduler']['cfg']['power'] 
-      lambda_lr= lambda epoch: (((max_epochs-min(max_epochs,epoch) )/max_epochs)**(power) ) + (1-(((max_epochs -min(max_epochs,epoch))/max_epochs)**(power)))*target_lr/init_lr
+      lambda_lr= lambda epoch: (((max_epochs-min(max_epochs,epoch) )/
+                                 max_epochs)**(power) ) + (1-(((max_epochs -min(max_epochs,epoch))/max_epochs)**(power)))*target_lr/init_lr
       scheduler = torch.optim.lr_scheduler.LambdaLR(optimizer, lambda_lr, last_epoch=-1, verbose=True)
       ret = [optimizer], [scheduler]
     else:

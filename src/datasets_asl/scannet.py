@@ -272,6 +272,7 @@ class ScanNet(Dataset):
     self.mapping = torch.zeros( ( int(mapping_source.max()+1) ),dtype=torch.int64)
     for so,ta in zip(mapping_source, mapping_target):
       self.mapping[so] = ta 
+      
   def _load(self, root, mode, train_val_split=0.2, label_setting="default"):
     self._get_mapping(root)
     
@@ -400,7 +401,6 @@ class ScanNet(Dataset):
     self.global_to_local_idx = np.arange( self.valid_mode.shape[0] )
     self.global_to_local_idx = (self.global_to_local_idx[self.valid_scene]).tolist()
     self.length = len(self.global_to_local_idx)
-
 
     # verify paths found:
     for global_idx in self.global_to_local_idx:

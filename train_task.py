@@ -273,7 +273,6 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
       print('Restoring weights: ' + str(res))
     else:
       raise Exception('Checkpoint not a file')
-  
 
   # What we can do now here is reinitalizing the datasets
   train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(tg, task_nr, exp['loader'], exp['replay']['cfg_ensemble'], env )
@@ -319,7 +318,7 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
     train_res = trainer.fit(model = model,
                             train_dataloader= train_dataloader,
                             val_dataloaders= val_dataloaders)
-
+    
   checkpoint_callback._last_global_step_saved = -999
   checkpoint_callback.save_checkpoint(trainer, model)
 
@@ -342,11 +341,37 @@ def train_task( init, close, exp_cfg_path, env_cfg_path, task_nr, skip=False, lo
   print( f'<<<<<<<<<<<< FINISHED TASK IDX {task_nr} TASK NAME : '+task_name+ ' Trained >>>>>>>>>>>>>' )
 
   if exp['replay']['cfg_rssb']['elements'] != 0:
+    from torch.utils.data import DataLoader
+    test_dataloader = DataLoader(train_dataloader.dataset.main_dataset,
+      shuffle = False,
+      num_workers = 2,
+      pin_memory = True,
+      batch_size = 2, 
+      drop_last = True)
+        
+    test_res = trainer.test(model = model,
+                        test_dataloaders= test_dataloader )
+    print(f"\n\nTEST IS DONE WITH TASK {task_nr}: ")
+    for i in range(task_nr+1):
+      m = min(5,model._rssb.nr_elements)
+      print(f" RSSB STATE {i}: ", model._rssb.bins[i,:m] )
+    print("\n\n")
+    print("Picture main_dataset overview: ")
+    print("gtli [0]", train_dataloader.dataset.main_dataset.global_to_local_idx[0], 
+          "gtli [-1]", train_dataloader.dataset.main_dataset.global_to_local_idx[-1])
+    
+    print("Path [0]",train_dataloader.dataset.main_dataset.image_pths[ train_dataloader.dataset.main_dataset.global_to_local_idx[0]], 
+          "Path [-1]", train_dataloader.dataset.main_dataset.image_pths[train_dataloader.dataset.main_dataset.global_to_local_idx[-1]])
+    
+    print(f"\n\n")
+    
+    trainer.checkpoint_connector.save_checkpoint(exp['checkpoint_load_2'] )
+    print("Store after test to: ", exp['checkpoint_load_2'])
+  if exp['replay']['cfg_rssb']['elements'] != 0:
     # visualize rssb
     bins, valids = model._rssb.get()
     fill_status = (bins != 0).sum(axis=1)
     main_visu.plot_bar( fill_status, x_label='Bin', y_label='Filled', title='Fill Status per Bin', sort=False, reverse=False, tag='Buffer_Fill_Status')
-  
   try:
     validation_acc_plot(main_visu, logger, nr_eval_tasks= len(val_dataloaders))
   except Exception as e:
