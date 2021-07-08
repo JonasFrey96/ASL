@@ -1,86 +1,67 @@
-import os
 import torch
-import torch.nn as nn
-import torch.nn.functional as F
-from .fast_scnn import FastSCNN
-from pytorch_lightning.utilities import rank_zero_info, rank_zero_warn
-from os.path import join
+from torch._C import device
+from models_asl import FastSCNN
 import os
-import time
-import copy
-__all__ = ['Teacher']
 
+__all__ = ["Teacher"]
 
 """
-Goal: store the model for each task at the end of the training. 
-The Teacher model can be used to create soft labels.
+Cant be implemented as a callback given that we have to directly operate on the batch data.
+1. Init: Setup a constant teacher model by providing the .ckpt path
+2. Actively call the method modify_batch to overwrite the auxillary label in the batch with the teacher output.
 """
+
+import torch.nn as nn
+
 
 class Teacher(nn.Module):
-  def __init__(self, num_classes, n_teacher, soft_labels = True, verbose = True, fast_params = {}):
+  def __init__(self, active, base_path, cfg):
+    self.active = active
     super().__init__()
-    self.models = nn.ModuleList( [FastSCNN(**fast_params) for i in range(n_teacher)] ) 
-    self.soft_labels = soft_labels
-    self.n_classes = num_classes
-    self.softmax = torch.nn.Softmax( dim=1 )
-    self.verbose = verbose
-    
-  def forward(self, x, teacher):
-    # not used, replayed by get_latent_replay
-    x = self.models[teacher](x)[0]
+    if active:
+      self.teacher = FastSCNN(**cfg["model"]["cfg"])
 
-  def print_weight_summary(self):
-    string = 'Summary Teacher:\n'
-    for j in range(len(self.models)):
-      sum = 0
-      for i in self.models[j].parameters():
-        sum += i[0].sum()
-      string += f'   Teacher Level {j}: WeightSum == {sum}\n'
-    rank_zero_info(string)
-    
-  def get_latent_replay(self, images, replayed):
+      p = os.path.join(base_path, cfg["checkpoint_path"])
+
+      if os.path.isfile(p):
+        state_dict_loaded = torch.load(p, map_location=lambda storage, loc: storage)[
+          "state_dict"
+        ]
+        state_dict_loaded = {
+          k.replace("model.", ""): v for k, v in state_dict_loaded.items()
+        }
+        self.teacher.load_state_dict(state_dict_loaded, strict=False)
+      self.teacher.eval()
+      self.overwrite = cfg["overwrite"]
+      self.soft = cfg["soft"]
+      # TODO: MAPPING
+
+  def modify_batch(self, batch):
+    if not self.active:
+      return batch
+
+    assert (
+      len(batch) < 5 and not self.overwrite
+    ), "If len(batch) > 4 aux_label and aux_vaild are provided by the dataloader: Set overwrite in teacher, disable teacher or change dataloader"
     with torch.no_grad():
-      res_targets, res_features = None, None
-      for n in range(len(self.models)):
-          mask = (replayed == n)[:,0]
-          if mask.sum() != 0:
-            if res_targets is not None:
-              target, features = self.get_features( images, n) 
-              res_targets[mask] = target[mask]
-              res_features[mask] = features[mask]
-            else:
-              res_targets, res_features = self.get_features( images, n) 
-  
-    if self.soft_labels:
-      res_targets = self.softmax(res_targets).detach()
-    else:
-      res_targets = torch.argmax(res_targets, 1).detach().type(torch.int64)      
-    return res_targets.clone(), res_features.clone().detach()
-  
-  def get_features(self, x, teacher):
-    return self.models[teacher](x) #ERROR 
-  
-  def absorbe_model(self, model, teacher, path=None):
-	
-    if teacher < len(self.models):
-      if self.verbose:
-        rank_zero_info( f'Storing the model {teacher} as a new teacher')
-      
-      para_copy = dict( model.named_parameters() )
-      for name, params in self.models[teacher].named_parameters():
-        # params.data.copy_( para_copy[name].clone)
-        params.data = para_copy[name].clone()
-     
-      # if os.path.exists(path):
-      #   self.models[teacher].load_state_dict( torch.load(path, map_location = list(model.parameters())[0].device ) )
-      #   # self.models[teacher].load_state_dict( torch.load(path) )
-      # else:
-      #   rank_zero_info( f'Can not restore the teacher from the saved model parameters !!!! Problemo')
-      
-      # if os.path.exists(path):
-      #   os.remove(path) 
-      # else:
-      #   print("The file does not exist")
-    
-    for i , mod in enumerate(self.models):
-      mod.freeze_module( mask=[True, True, True, True] )
+      BS = int(batch[0].shape[0])
+      outputs = self.teacher(batch[0])
+
+      if not self.soft:
+        aux_label = torch.argmax(outputs[0], dim=1)
+      else:
+        aux_label = torch.nn.functional.softmax(outputs[0], dim=1)
+
+      if len(batch) == 3:
+        batch = batch[:3] + [
+          aux_label,
+          torch.tensor([True] * BS, device=outputs[0].device),
+        ]
+      if len(batch) == 4:
+        batch = batch[:3] + [
+          aux_label,
+          torch.tensor([True] * BS, device=outputs[0].device),
+          batch[3],
+        ]
+
+    return batch

@@ -2,149 +2,166 @@
 # Created by: Tramac
 # Date: 2019-03-25
 # Copyright (c) 2017
-# https://github.com/Tramac/Fast-SCNN-pytorch 
+# https://github.com/Tramac/Fast-SCNN-pytorch
 # modified by Jonas Frey
 # Licensed under Apache 2.0
 ###########################################################################
 
 """Fast Segmentation Convolutional Neural Network"""
-import os
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-__all__ = ['FastSCNN', 'get_fast_scnn']
+__all__ = ["FastSCNN"]
 
-def inject(x,injection_features, injection_mask):
-  if (x.shape[1] == injection_features.shape[1] and 
-      x.shape[2] == injection_features.shape[2] and
-      x.shape[3] == injection_features.shape[3] ):
+
+def inject(x, injection_features, injection_mask):
+  if (
+    x.shape[1] == injection_features.shape[1]
+    and x.shape[2] == injection_features.shape[2]
+    and x.shape[3] == injection_features.shape[3]
+  ):
     s = x.shape
-    m_replace = injection_mask[:,:,None,None].repeat(1, s[1], s[2], s[3])
-    m_keep = m_replace == False
+    m_replace = injection_mask[:, :, None, None].repeat(1, s[1], s[2], s[3])
+    m_keep = not (m_replace == True)
     x = x * m_keep.type(x.dtype) + injection_features * m_replace.type(x.dtype)
   return x
+
 
 class FastSCNN(nn.Module):
   def __init__(self, num_classes, aux=False, **kwargs):
     super().__init__()
     self.aux = aux
-    
+
     learning_to_downsample = LearningToDownsample(32, 48, 64)
-    global_feature_extractor = GlobalFeatureExtractor(64, [64, 96, 128], 128, 6, [3, 3, 3])
+    global_feature_extractor = GlobalFeatureExtractor(
+      64, [64, 96, 128], 128, 6, [3, 3, 3]
+    )
     feature_fusion = FeatureFusionModule(64, 128, 128)
     classifier = Classifer(128, num_classes)
-    
-    self.extract = kwargs.get('extraction',{}).get('active', False)
-    self.extract_layer = kwargs.get('extraction',{}).get('layer', 'extractor')
-    
-    self._md = nn.ModuleDict( 
-      { 'learn_to_down': learning_to_downsample,
-        'extractor': global_feature_extractor,
-        'fusion': feature_fusion,
-        'classifier': classifier  }
+
+    self.extract = kwargs.get("extraction", {}).get("active", False)
+    self.extract_layer = kwargs.get("extraction", {}).get("layer", "extractor")
+
+    self._md = nn.ModuleDict(
+      {
+        "learn_to_down": learning_to_downsample,
+        "extractor": global_feature_extractor,
+        "fusion": feature_fusion,
+        "classifier": classifier,
+      }
     )
-    
+
     if self.aux:
       self.auxlayer = nn.Sequential(
         nn.Conv2d(64, 32, 3, padding=1, bias=False),
         nn.BatchNorm2d(32),
         nn.ReLU(True),
         nn.Dropout(0.1),
-        nn.Conv2d(32, num_classes, 1)
+        nn.Conv2d(32, num_classes, 1),
       )
 
   def forward(self, x):
-    # generic extraction is implemented in a bad way. 
+    # generic extraction is implemented in a bad way.
     extraction = None
-    size = x.size()[2:] # 384,384,3 = 442368
-    
-    higher_res_features = self._md['learn_to_down'](x) # BS,64,48,48 = 147456
+    size = x.size()[2:]  # 384,384,3 = 442368
+
+    higher_res_features = self._md["learn_to_down"](x)  # BS,64,48,48 = 147456
     if self.extract:
-      if self.extract_layer == 'learn_to_down':
+      if self.extract_layer == "learn_to_down":
         extraction = higher_res_features.clone().detach()
-      
-    x = self._md['extractor'](higher_res_features) # BS,128,12,12 = 18432 Compression factor of 24
+
+    x = self._md["extractor"](
+      higher_res_features
+    )  # BS,128,12,12 = 18432 Compression factor of 24
     if self.extract:
-      if self.extract_layer == 'extractor':
+      if self.extract_layer == "extractor":
         extraction = x.clone().detach()
-    
-    x = self._md['fusion'](higher_res_features, x) # BS,128,48,48 = 294912
+
+    x = self._md["fusion"](higher_res_features, x)  # BS,128,48,48 = 294912
     if self.extract:
-      if self.extract_layer == 'fusion':
+      if self.extract_layer == "fusion":
         extraction = x.clone().detach()
-        
-    x = self._md['classifier'](x) # BS,40,48,48
+
+    x = self._md["classifier"](x)  # BS,40,48,48
     outputs = []
-    x = F.interpolate(x, size, mode='bilinear', align_corners=True)
+    x = F.interpolate(x, size, mode="bilinear", align_corners=True)
     outputs.append(x)
-    outputs.append(extraction) 
-    
+    outputs.append(extraction)
+
     if self.aux:
       auxout = self.auxlayer(higher_res_features)
-      auxout = F.interpolate(auxout, size, mode='bilinear', align_corners=True)
+      auxout = F.interpolate(auxout, size, mode="bilinear", align_corners=True)
       outputs.append(auxout)
 
     return tuple(outputs)
-  
+
   def injection_forward(self, x, injection_features, injection_mask):
-    size = x.size()[2:] # 384,384,3 = 442368
+    size = x.size()[2:]  # 384,384,3 = 442368
     x = inject(x, injection_features, injection_mask)
-    
+
     # input replay
-    higher_res_features = self._md['learn_to_down'](x) # BS,64,48,48 = 147456
-    higher_res_features = inject(higher_res_features, injection_features, injection_mask)
-    x = self._md['extractor'](higher_res_features) # BS,128,12,12 = 18432 Compression factor of 24
+    higher_res_features = self._md["learn_to_down"](x)  # BS,64,48,48 = 147456
+    higher_res_features = inject(
+      higher_res_features, injection_features, injection_mask
+    )
+    x = self._md["extractor"](
+      higher_res_features
+    )  # BS,128,12,12 = 18432 Compression factor of 24
     x = inject(x, injection_features, injection_mask)
-    x = self._md['fusion'](higher_res_features, x) # BS,128,48,48 = 294912   
+    x = self._md["fusion"](higher_res_features, x)  # BS,128,48,48 = 294912
     x = inject(x, injection_features, injection_mask)
-    x = self._md['classifier'](x) # BS,40,48,48
+    x = self._md["classifier"](x)  # BS,40,48,48
     outputs = []
-    x = F.interpolate(x, size, mode='bilinear', align_corners=True)
+    x = F.interpolate(x, size, mode="bilinear", align_corners=True)
     outputs.append(x)
-    
+
     if self.aux:
       auxout = self.auxlayer(higher_res_features)
-      auxout = F.interpolate(auxout, size, mode='bilinear', align_corners=True)
+      auxout = F.interpolate(auxout, size, mode="bilinear", align_corners=True)
       outputs.append(auxout)
-    
+
     return tuple(outputs)
-  
-  def freeze_module(self, mask=[False,False,False,False], layer=None ):
+
+  def freeze_module(self, mask=[False, False, False, False], layer=None):
     if layer is not None:
       mask = []
-      k = list( self._md.keys()) 
+      k = list(self._md.keys())
       for i in range(10):
         if k[i] == layer:
           mask.append(True)
           break
         mask.append(True)
       if len(mask) < 4:
-        mask = mask + [False]*(4-len(mask))  
-    
-    for m, mod in zip (mask, self._md.values()):
+        mask = mask + [False] * (4 - len(mask))
+
+    for m, mod in zip(mask, self._md.values()):
       if m:
         # mod.requires_grad = False
         for parameter in mod.parameters():
-	        parameter.requires_grad = False
+          parameter.requires_grad = False
       else:
         for parameter in mod.parameters():
-	        parameter.requires_grad = True
+          parameter.requires_grad = True
         # mod.requires_grad = True
-  
+
+
 class _ConvBNReLU(nn.Module):
   """Conv-BN-ReLU"""
 
-  def __init__(self, in_channels, out_channels, kernel_size=3, stride=1, padding=0, **kwargs):
+  def __init__(
+    self, in_channels, out_channels, kernel_size=3, stride=1, padding=0, **kwargs
+  ):
     super(_ConvBNReLU, self).__init__()
     self.conv = nn.Sequential(
       nn.Conv2d(in_channels, out_channels, kernel_size, stride, padding, bias=False),
       nn.BatchNorm2d(out_channels),
-      nn.ReLU(True)
+      nn.ReLU(True),
     )
 
   def forward(self, x):
     return self.conv(x)
+
 
 class _DSConv(nn.Module):
   """Depthwise Separable Convolutions"""
@@ -157,23 +174,27 @@ class _DSConv(nn.Module):
       nn.ReLU(True),
       nn.Conv2d(dw_channels, out_channels, 1, bias=False),
       nn.BatchNorm2d(out_channels),
-      nn.ReLU(True)
+      nn.ReLU(True),
     )
 
   def forward(self, x):
     return self.conv(x)
+
 
 class _DWConv(nn.Module):
   def __init__(self, dw_channels, out_channels, stride=1, **kwargs):
     super(_DWConv, self).__init__()
     self.conv = nn.Sequential(
-      nn.Conv2d(dw_channels, out_channels, 3, stride, 1, groups=dw_channels, bias=False),
+      nn.Conv2d(
+        dw_channels, out_channels, 3, stride, 1, groups=dw_channels, bias=False
+      ),
       nn.BatchNorm2d(out_channels),
-      nn.ReLU(True)
+      nn.ReLU(True),
     )
 
   def forward(self, x):
     return self.conv(x)
+
 
 class LinearBottleneck(nn.Module):
   """LinearBottleneck used in MobileNetV2"""
@@ -188,7 +209,7 @@ class LinearBottleneck(nn.Module):
       _DWConv(in_channels * t, in_channels * t, stride),
       # pw-linear
       nn.Conv2d(in_channels * t, out_channels, 1, bias=False),
-      nn.BatchNorm2d(out_channels)
+      nn.BatchNorm2d(out_channels),
     )
 
   def forward(self, x):
@@ -215,7 +236,7 @@ class PyramidPooling(nn.Module):
     return avgpool(x)
 
   def upsample(self, x, size):
-    return F.interpolate(x, size, mode='bilinear', align_corners=True)
+    return F.interpolate(x, size, mode="bilinear", align_corners=True)
 
   def forward(self, x):
     # BS, 128, 12, 12
@@ -249,12 +270,25 @@ class LearningToDownsample(nn.Module):
 class GlobalFeatureExtractor(nn.Module):
   """Global feature extractor module"""
 
-  def __init__(self, in_channels=64, block_channels=(64, 96, 128),
-         out_channels=128, t=6, num_blocks=(3, 3, 3), **kwargs):
+  def __init__(
+    self,
+    in_channels=64,
+    block_channels=(64, 96, 128),
+    out_channels=128,
+    t=6,
+    num_blocks=(3, 3, 3),
+    **kwargs
+  ):
     super(GlobalFeatureExtractor, self).__init__()
-    self.bottleneck1 = self._make_layer(LinearBottleneck, in_channels, block_channels[0], num_blocks[0], t, 2)
-    self.bottleneck2 = self._make_layer(LinearBottleneck, block_channels[0], block_channels[1], num_blocks[1], t, 2)
-    self.bottleneck3 = self._make_layer(LinearBottleneck, block_channels[1], block_channels[2], num_blocks[2], t, 1)
+    self.bottleneck1 = self._make_layer(
+      LinearBottleneck, in_channels, block_channels[0], num_blocks[0], t, 2
+    )
+    self.bottleneck2 = self._make_layer(
+      LinearBottleneck, block_channels[0], block_channels[1], num_blocks[1], t, 2
+    )
+    self.bottleneck3 = self._make_layer(
+      LinearBottleneck, block_channels[1], block_channels[2], num_blocks[2], t, 1
+    )
     self.ppm = PyramidPooling(block_channels[2], out_channels)
 
   def _make_layer(self, block, inplanes, planes, blocks, t=6, stride=1):
@@ -276,22 +310,24 @@ class GlobalFeatureExtractor(nn.Module):
 class FeatureFusionModule(nn.Module):
   """Feature fusion module"""
 
-  def __init__(self, highter_in_channels, lower_in_channels, out_channels, scale_factor=4, **kwargs):
+  def __init__(
+    self, highter_in_channels, lower_in_channels, out_channels, scale_factor=4, **kwargs
+  ):
     super(FeatureFusionModule, self).__init__()
     self.scale_factor = scale_factor
     self.dwconv = _DWConv(lower_in_channels, out_channels, 1)
     self.conv_lower_res = nn.Sequential(
-      nn.Conv2d(out_channels, out_channels, 1),
-      nn.BatchNorm2d(out_channels)
+      nn.Conv2d(out_channels, out_channels, 1), nn.BatchNorm2d(out_channels)
     )
     self.conv_higher_res = nn.Sequential(
-      nn.Conv2d(highter_in_channels, out_channels, 1),
-      nn.BatchNorm2d(out_channels)
+      nn.Conv2d(highter_in_channels, out_channels, 1), nn.BatchNorm2d(out_channels)
     )
     self.relu = nn.ReLU(True)
 
   def forward(self, higher_res_feature, lower_res_feature):
-    lower_res_feature = F.interpolate(lower_res_feature, scale_factor=4, mode='bilinear', align_corners=True)
+    lower_res_feature = F.interpolate(
+      lower_res_feature, scale_factor=4, mode="bilinear", align_corners=True
+    )
     lower_res_feature = self.dwconv(lower_res_feature)
     lower_res_feature = self.conv_lower_res(lower_res_feature)
 
@@ -307,10 +343,7 @@ class Classifer(nn.Module):
     super(Classifer, self).__init__()
     self.dsconv1 = _DSConv(dw_channels, dw_channels, stride)
     self.dsconv2 = _DSConv(dw_channels, dw_channels, stride)
-    self.conv = nn.Sequential(
-      nn.Dropout(0.1),
-      nn.Conv2d(dw_channels, num_classes, 1)
-    )
+    self.conv = nn.Sequential(nn.Dropout(0.1), nn.Conv2d(dw_channels, num_classes, 1))
 
   def forward(self, x):
     # BS, 40, 48, 48
@@ -320,39 +353,19 @@ class Classifer(nn.Module):
     return x
 
 
-def get_fast_scnn(dataset='citys', pretrained=False, root='./weights', map_cpu=False, **kwargs):
-  acronyms = {
-    'pascal_voc': 'voc',
-    'pascal_aug': 'voc',
-    'ade20k': 'ade',
-    'coco': 'coco',
-    'citys': 'citys',
-  }
-  from data_loader import datasets
-  model = FastSCNN(datasets[dataset].NUM_CLASS, **kwargs)
-  if pretrained:
-    if(map_cpu):
-      model.load_state_dict(torch.load(os.path.join(root, 'fast_scnn_%s.pth' % acronyms[dataset]), map_location='cpu'))
-    else:
-      model.load_state_dict(torch.load(os.path.join(root, 'fast_scnn_%s.pth' % acronyms[dataset])))
-  return model
-
-
 def test_input_size():
   # pytest -q -s src/models/fast_scnn.py
-  
-  model = FastSCNN( 41, aux=False)
-  input_sizes = [(382,382),(480,640),(764,764)]
+
+  model = FastSCNN(41, aux=False)
+  input_sizes = [(382, 382), (480, 640), (764, 764)]
   C = 3
   BS = 8
-  for s1,s2 in input_sizes:
-    data = torch.rand( (BS,C,s1,s2), dtype=torch.float32)
-    print( 'Input', data.shape)
+  for s1, s2 in input_sizes:
+    data = torch.rand((BS, C, s1, s2), dtype=torch.float32)
+    print("Input", data.shape)
     res = model(data)
-    print( 'Output', res[0].shape )
-    
-if __name__ == '__main__':
+    print("Output", res[0].shape)
+
+
+if __name__ == "__main__":
   test_input_size()
-  # img = torch.randn(2, 3, 256, 512)
-  # model = get_fast_scnn('citys')
-  # outputs = model(img)

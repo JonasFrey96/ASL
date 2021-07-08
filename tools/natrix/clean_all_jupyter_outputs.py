@@ -2,9 +2,9 @@ import os
 from pathlib import Path
 import time
 
-notebooks = [str(p) for p in Path("/home/jonfrey/ASL").rglob('*.ipynb') ] 
+notebooks = [str(p) for p in Path("/home/jonfrey/ASL").rglob("*.ipynb")]
 
-notebooks.sort( key = lambda x: Path(x).stat().st_mtime )
+notebooks.sort(key=lambda x: Path(x).stat().st_mtime)
 print(notebooks)
 
 for n in notebooks:

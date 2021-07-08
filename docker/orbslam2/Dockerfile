@@ -6,8 +6,6 @@ ENV NVIDIA_VISIBLE_DEVICES \
 ENV NVIDIA_DRIVER_CAPABILITIES \
     ${NVIDIA_DRIVER_CAPABILITIES:+$NVIDIA_DRIVER_CAPABILITIES,}graphics
 
-MAINTAINER Jonas Frey "jonfrey@ethz.ch"
-
 SHELL ["/bin/bash", "--login", "-c"]
 
 ARG DEBIAN_FRONTEND=noninteractive
