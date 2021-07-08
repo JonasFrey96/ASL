@@ -1,32 +1,26 @@
-################################################
-# TEMPLATE                                     #
-# includes all necessary config parameters     #
-################################################
-
-name: teacher/debug
-offline_mode: true
-timestamp: false
-weights_restore: true
+name: coco_stuff_pretrain/debug
+offline_mode: false
+timestamp: true
+weights_restore: false
 checkpoint_restore: false
-checkpoint_load: scannet25k_24h_lr_decay_from_scratch/2021-06-05T14:36:26_scannet25k_24h_lr_decay_from_scratch/task0-epoch=64--step=158340.ckpt
+checkpoint_load: no
 lr: 0.001
 tag_list:
-  - scannet
-  - pretrain_25k
   - half_res
+  - nyu40
 
 supervisor:
-  # Experiment Settings
+  # Experiment Settings 
   start_task: 0
-  stop_task: 5
+  stop_task: 0
 
 task_specific_early_stopping:
   active: True
   cfg:
     patience: 2000
-    timelimit_in_min: 0.5
+    timelimit_in_min: 60
     verbose: True
-    max_epoch_count: 1
+    max_epoch_count: 1000
 
 teaching:
   active: False
@@ -49,37 +43,34 @@ optimizer:
     weight_decay: 4.0e-05
 
 trainer:
-  precision: 32
+  precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 10
-  limit_val_batches: 10
-  limit_test_batches: 10
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
   progress_bar_refresh_rate: 10
   max_epochs: 1000
   gpus: -1
   num_sanity_val_steps: 0
   check_val_every_n_epoch: 1
-  #accelerator: ddp
+  accelerator: ddp
 
 loader:
   pin_memory: true
   batch_size: 8
   shuffle: true
-  num_workers: 20
+  num_workers: 40
 
 replay:
-  # BUFFER SIZE
   cfg_rssb:
-    elements: 1000
+    elements: 25000
     bins: -1
   cfg_ensemble:
     active: True
 
     # AUGMENTATION
     replay_augmentation: True  
-    
-    # SAMPLE FROM BUFFER
     mode: individual_ratios
     cfg_simple:
       ratio_per_task: 0.2
@@ -113,9 +104,7 @@ replay:
         - 1
         - 1
         - 1
-  cfg_filling:
-    strategy: loss
-    metric_mode: max   # max min eqaul
+
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
@@ -145,9 +134,9 @@ model:
       - false
 
 teacher:
-  active: true
+  active: false
   cfg:
-    checkpoint_path: scannet25k_24h_lr_decay_from_scratch/2021-06-05T14:36:26_scannet25k_24h_lr_decay_from_scratch/task0-epoch=64--step=158340.ckpt
+    checkpoint_path: nan
     soft: true
     model:
       cfg:
@@ -162,31 +151,25 @@ teacher:
 loss:
   aux_label_factor: 1
   soft_aux_label_factor: 1
-
-
 task_generator:
-  name: scannet
-  mode: scannet_25k_individual
+  name: cocostuff
+  mode: cocostuff_pretrain
   cfg:
     scannet_auxilary_labels:
       label_setting: default
-
     scannet_25k_individual:
       number_of_tasks: 4
       scenes_per_task: 1 
       label_setting: default
-      confidence_aux: 0.9
-
+      confidence_aux: 0.3
     scannet_scenes:
       number_of_tasks: 4
       scenes_per_task: 5
-      
     copy_to_template:
       output_size: 
       - 320
       - 640
       label_setting: default
-
 
 cb_early_stopping:
   active: false
@@ -213,7 +196,7 @@ lr_monitor:
 
 label_generation:
   active: False
-  identifier: labels_pcmr_confidence_09_fixed_epochs_20
+  identifier: labels_deeplab_trained
   confidence: 0
   scenes:
     - scene0000_00
@@ -231,5 +214,4 @@ label_generation:
     - scene0005_01
 
 move_datasets:
-  - env_var: scannet
-  - env_var: scannet_frames_25k
+  - env_var: cocostuff164k

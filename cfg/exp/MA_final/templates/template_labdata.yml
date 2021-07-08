@@ -1,0 +1,235 @@
+################################################
+# TEMPLATE                                     #
+# includes all necessary config parameters     #
+################################################
+
+name: teacher/debug
+offline_mode: true
+timestamp: false
+weights_restore: true
+checkpoint_restore: false
+checkpoint_load: scannet25k_24h_lr_decay_from_scratch/2021-06-05T14:36:26_scannet25k_24h_lr_decay_from_scratch/task0-epoch=64--step=158340.ckpt
+lr: 0.001
+tag_list:
+  - scannet
+  - pretrain_25k
+  - half_res
+
+supervisor:
+  # Experiment Settings
+  start_task: 1
+  stop_task: 5
+
+task_specific_early_stopping:
+  active: True
+  cfg:
+    patience: 2000
+    timelimit_in_min: 0.5
+    verbose: True
+    max_epoch_count: 1
+
+teaching:
+  active: False
+  soft_labels: False
+  soft_labels_weight: 10
+  loss_function: MSE
+
+# Standard Setting
+lr_scheduler:
+  active: true
+  cfg:
+    power: 0.9
+    max_epochs: 2000
+    target_lr: 1.0e-05
+
+optimizer:
+  name: ADAM
+  sgd_cfg:
+    momentum: 0.9
+    weight_decay: 4.0e-05
+
+trainer:
+  precision: 32
+  accumulate_grad_batches: 1
+  fast_dev_run: false
+  limit_train_batches: 10
+  limit_val_batches: 10
+  limit_test_batches: 10
+  progress_bar_refresh_rate: 10
+  max_epochs: 1000
+  gpus: -1
+  num_sanity_val_steps: 0
+  check_val_every_n_epoch: 1
+  #accelerator: ddp
+
+loader:
+  pin_memory: true
+  batch_size: 8
+  shuffle: true
+  num_workers: 20
+
+replay:
+  # BUFFER SIZE
+  cfg_rssb:
+    elements: 1000
+    bins: -1
+  cfg_ensemble:
+    active: True
+
+    # AUGMENTATION
+    replay_augmentation: True  
+    
+    # SAMPLE FROM BUFFER
+    mode: individual_ratios
+    cfg_simple:
+      ratio_per_task: 0.2
+    cfg_fixed_total_replay_ratio:
+      ratio_replay: 0.2
+    cfg_focus_task_0:
+      ratio_replay_task_0 : 0.2
+      ratio_replay_task_1_N : 0.05
+    cfg_individual_simple: 
+      probs:
+        - 0.2
+        - 0.05
+        - 0.05
+        - 0.05
+        - 0.05
+        - 0.05
+        - 0.05
+        - 0.05
+        - 0.05
+        - 0.05
+    cfg_individual_ratios:
+      ratio_replay: 0.8
+      importance:
+        - 10
+        - 1
+        - 1
+        - 1
+        - 1
+        - 1
+        - 1
+        - 1
+        - 1
+        - 1
+  cfg_filling:
+    strategy: cover_sequence 
+    metric_mode: max   # max min eqaul
+visu:
+  every_n_epochs: 1
+  log_training_metric_every_n_epoch: 1
+  images:
+    train: 1
+    val: 1
+    test: 1
+  log_ref_weights_grad_every_n_steps: 10000
+
+model:
+  name: Fast-SCNN
+  input_size:
+    - 320
+    - 640
+  cfg:
+    num_classes: 40
+    aux: false
+    extraction:
+      active: false
+      layer: 'learn_to_down'
+  freeze:
+    active: false
+    mask:
+      - false
+      - false
+      - false 
+      - false
+
+teacher:
+  active: false
+  cfg:
+    checkpoint_path: scannet25k_24h_lr_decay_from_scratch/2021-06-05T14:36:26_scannet25k_24h_lr_decay_from_scratch/task0-epoch=64--step=158340.ckpt
+    soft: true
+    model:
+      cfg:
+        num_classes: 40
+        aux: false
+        extraction:
+          active: false
+          layer: 'learn_to_down'
+    overwrite: False
+
+# These factors are cumulative
+loss:
+  aux_label_factor: 1
+  soft_aux_label_factor: 1
+
+
+task_generator:
+  name: scannet
+  mode: scannet_25k_individual
+  cfg:
+    scannet_auxilary_labels:
+      label_setting: default
+
+    scannet_25k_individual:
+      number_of_tasks: 4
+      scenes_per_task: 1 
+      label_setting: default
+      confidence_aux: 0.9
+
+    scannet_scenes:
+      number_of_tasks: 4
+      scenes_per_task: 5
+      
+    copy_to_template:
+      output_size: 
+      - 320
+      - 640
+      label_setting: default
+
+
+cb_early_stopping:
+  active: false
+  cfg:
+    monitor: val_loss_epoch
+    patience: 10000
+    strict: true
+    verbose: true
+    mode: min
+    min_delta: -0.0001
+cb_checkpoint:
+  active: true
+  nameing: 1
+  cfg:
+    verbose: true
+    monitor: train_loss
+    mode: min
+    prefix: ''
+    save_last: true
+    save_top_k: 1
+lr_monitor:
+  cfg:
+    logging_interval: epoch
+
+label_generation:
+  active: False
+  identifier: labels_pcmr_confidence_09_fixed_epochs_20
+  confidence: 0
+  scenes:
+    - scene0000_00
+    - scene0000_01
+    - scene0000_02
+    - scene0001_00
+    - scene0001_01
+    - scene0002_00
+    - scene0002_01
+    - scene0003_00
+    - scene0003_01
+    - scene0003_02
+    - scene0004_00
+    - scene0005_00
+    - scene0005_01
+
+move_datasets:
+  - env_var: scannet
+  - env_var: scannet_frames_25k

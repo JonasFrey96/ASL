@@ -1,6 +1,7 @@
 # 1. ASL Master Thesis 
 
 - [1. ASL Master Thesis](#1-asl-master-thesis)
+	- [Code Stack:](#code-stack)
 	- [Current to TODOS for Final master thesis:](#current-to-todos-for-final-master-thesis)
 	- [1.1. Challenge](#11-challenge)
 		- [1.1.1. Similar fields in semantic segmentation:](#111-similar-fields-in-semantic-segmentation)
@@ -21,6 +22,19 @@
 	- [1.10 NeptuneAI Logger](#110-neptuneai-logger)
 	- [1.11 Uncertainty Estimation](#111-uncertainty-estimation)
 - [2. Acknowledgement](#2-acknowledgement)
+
+
+## Code Stack:
+
+DL Framework: PyTorch 1.7
+Testing Framework: PyTest
+Code Linting: Flake8
+Code Formatting: CBlack https://pypi.org/project/cblack/ 
+	it`s like black just with 2 line intend
+ROS: melodic and noetic support
+
+
+
 
 
 ## Current to TODOS for Final master thesis:
@@ -156,7 +170,7 @@ Each experiment is defined by two files:
 Contains all paths that are user depended for external datasets.
 
 | key            | function                                                |
-|----------------|---------------------------------------------------------|
+| -------------- | ------------------------------------------------------- |
 | workstation    | Set true if no data needs to be transfered for training |
 | base           | path to where to log the experiments                    |
 | cityscapes     | path to dataset                                         |
@@ -205,7 +219,7 @@ Also a logfile for tracking the joint results over the full training procedure i
 To utilize the unlabeled data we have a look into the following aspects:
 
 | Method                   | Description                                                         |
-|--------------------------|---------------------------------------------------------------------|
+| ------------------------ | ------------------------------------------------------------------- |
 | **Temporal Consistency** | Semantic segmentation should be consistent over time                |
 | **Cross Consistency**    | Decoder should be invariant and consistent to Input transformations |
 | **Optical Flow**         | Optical Flow directly relates semantic intra-frame segmentation     |
@@ -229,28 +243,28 @@ Rougly running at 1.8 it/s
 
 ## 1.9. Datasets  
 
-| Dataset         | Parameters    | Values                                 |
-|-----------------|---------------|----------------------------------------|
-| **NYU_v2**      | Images Train: | 1449 (total)                           |
-|                 | Images Val:   |                                        |
-|                 | Annotations:  | NYU-40                                 |
-|                 | Optical Flow: | True                                   |
-|                 | Depth:        | True                                   |
-| | Resolution: | 640 × 480 |
-|                 | Total Size:   | 3.7GB                                  |
-| **ML-Hypersim** | Images Train: | 74619 (total)                          |
-|                 | Images Val:   |                                        |
-|                 | Annotations:  | NYU-40                                 |
-|                 | Optical Flow: | False                                  |
-|                 | Depth:        | True                                   |
-| | Resolution: | 1024×768 |
-|                 | Total Size:   | 247GB                                  |
-| **COCO 2014**   | Images Train: | 330K >200K labeled                     |
-|                 | Images Val:   |                                        |
-|                 | Annotations:  | Object cat 90 Classes (80 used)        |
-|                 | Optical Flow: | False                                  |
-|                 | Depth:        | False                                  |
-|                 | Total Size:   | 20GB                                   |
+| Dataset         | Parameters    | Values                          |
+| --------------- | ------------- | ------------------------------- |
+| **NYU_v2**      | Images Train: | 1449 (total)                    |
+|                 | Images Val:   |                                 |
+|                 | Annotations:  | NYU-40                          |
+|                 | Optical Flow: | True                            |
+|                 | Depth:        | True                            |
+|                 | Resolution:   | 640 × 480                       |
+|                 | Total Size:   | 3.7GB                           |
+| **ML-Hypersim** | Images Train: | 74619 (total)                   |
+|                 | Images Val:   |                                 |
+|                 | Annotations:  | NYU-40                          |
+|                 | Optical Flow: | False                           |
+|                 | Depth:        | True                            |
+|                 | Resolution:   | 1024×768                        |
+|                 | Total Size:   | 247GB                           |
+| **COCO 2014**   | Images Train: | 330K >200K labeled              |
+|                 | Images Val:   |                                 |
+|                 | Annotations:  | Object cat 90 Classes (80 used) |
+|                 | Optical Flow: | False                           |
+|                 | Depth:        | False                           |
+|                 | Total Size:   | 20GB                            |
 
 ## 1.10 NeptuneAI Logger
 ```

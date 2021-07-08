@@ -6,9 +6,12 @@ import os
 import time
 
 proxies = {
-  'http': 'http://proxy.ethz.ch:3128',
-  'https': 'http://proxy.ethz.ch:3128',
+  "http": "http://proxy.ethz.ch:3128",
+  "https": "http://proxy.ethz.ch:3128",
 }
-neptune.init(project_qualified_name='jonasfrey96/ASL', api_token=os.environ["NEPTUNE_API_TOKEN"], proxies=proxies)
+neptune.init(
+  project_qualified_name="jonasfrey96/ASL",
+  api_token=os.environ["NEPTUNE_API_TOKEN"],
+  proxies=proxies,
+)
 neptune.create_experiment()
-
