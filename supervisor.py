@@ -6,6 +6,7 @@ sys.path.insert(0, os.getcwd())
 sys.path.append(os.path.join(os.getcwd() + "/src"))
 
 import coloredlogs
+import logging
 
 coloredlogs.install()
 
@@ -41,13 +42,16 @@ if __name__ == "__main__":
   sta = exp["supervisor"]["start_task"]
   sto = exp["supervisor"]["stop_task"]
   print(f"SUPERVISOR: Execute Task {sta}-{sto}")
-  for i in range(0, sto + 1):
+
+  for i in range(0, sto):
     print(f"SUPERVISOR: Execute Task {i}/{sto}")
     init = int(bool(i == 0))
     close = 1  # int(bool(i==sto))
     skip = int(i < sta)
 
+    print(args.mode)
     if args.mode == "shell" and not env["workstation"]:
+
       if env["workstation"]:
         mc = "/home/jonfrey/miniconda3/envs/track4"
       else:
@@ -60,8 +64,14 @@ if __name__ == "__main__":
       os.system(cmd)
 
     else:
-
-      print("SUPERVISOR: CALLING train_task:", init, close, args.exp, env_cfg_path, i)
+      print(
+        f"SUPERVISOR: CALLING train_task: init={init} close={close} exp="
+        + str(args.exp)
+        + " env_cfg_path="
+        + env_cfg_path
+        + " task_nr="
+        + str(i)
+      )
 
       train_task(init, close, args.exp, env_cfg_path, i, skip=skip, logger_pass=None)
     torch.cuda.empty_cache()

@@ -12,6 +12,7 @@ from pytorch_lightning import metrics as pl_metrics
 from torch.nn import functional as F
 import datetime
 import pickle
+import os
 
 # MODULES
 from models_asl import FastSCNN, ReplayStateSyncBack, Teacher
@@ -22,6 +23,10 @@ from uncertainty import get_softmax_uncertainty_distance
 from uncertainty import get_softmax_uncertainty_entropy
 
 __all__ = ["Network"]
+
+
+def two_line(a, b, length=40):
+  return str(str(a) + " " * (length - len(str(a))) + str(b))
 
 
 def wrap(s, length, hard=False):
@@ -190,17 +195,25 @@ class Network(LightningModule):
   ##################
 
   def on_train_start(self):
-    print(" ================ START FITTING ==================")
-    print(f" TASK NAME: {self._task_name } ")
-    print(f" TASK COUNT: {self._task_count } ")
-    print(f" CURRENT EPOCH: {self.current_epoch } ")
-    print(f" CURRENT EPOCH: {self.global_step } ")
-    print(f" RSSB STATE: ", self._rssb.valid.sum(dim=1))
+    print("")
+    print("================ ON_TRAIN_START ==================")
+    print(two_line(" TASK NAME: ", self._task_name))
+    print(two_line(" TASK COUNT: ", self._task_count))
+    print(two_line(" CURRENT EPOCH: ", self.current_epoch))
+    print(two_line(" CURRENT EPOCH: ", self.global_step))
+    print(two_line(" RSSB STATE: ", self._rssb.valid.sum(dim=1)))
     for i in range(self._task_count):
       m = min(5, self._rssb.nr_elements)
-      print(f" RSSB STATE: ", self._rssb.bins[i, :m])
+      print(two_line("   RSSB INIDI TASK-" + str(i) + " :", self._rssb.bins[i, :m]))
 
-    print(" ================ START FITTING ==================")
+    print(
+      two_line(" TRAINING DATASET LENGTH:", len(self.trainer.train_dataloader.dataset))
+    )
+
+    for j, d in enumerate(self.trainer.val_dataloaders):
+      print(two_line(f" VALIDATION DATASET {j} LENGTH:", len(d.dataset)))
+
+    print(" =============  ON_TRAIN_START_DONE ===============")
 
   def on_train_epoch_start(self):
     self._mode = "train"
@@ -395,7 +408,7 @@ class Network(LightningModule):
     t2 = time.time() - self._train_start_time
     t2 = str(datetime.timedelta(seconds=round(t2)))
     if not self.trainer.running_sanity_check:
-      print("VALIDATION_EPOCH_END: Time for a complete epoch: " + t)
+      print("VALIDATION_EPOCH_END: Time for a complete epoch: " + str(t))
       n = self._task_name
       n = wrap(n, 20)
       t = wrap(t, 10, True)
@@ -404,11 +417,14 @@ class Network(LightningModule):
       v_acc = wrap(v_acc, 6)
 
       print(
-        "VALIDATION_EPOCH_END: "
-        + f"Exp: {n} | Epoch: {epoch} | TimeEpoch: {t} | TimeStart: {t2} |  >>> Train-Loss: {t_l } <<<   >>> Val-Acc: {v_acc} <<<"
+        str(
+          f"VALIDATION_EPOCH_END: Exp: {n}, Epoch: {epoch}, TimeEpoch: {t}, TimeStart: {t2}"
+        )
       )
+      print(str(f"VALIDATION_EPOCH_END: Train-Loss: {t_l }, Val-Acc: {v_acc}"))
+
     self._epoch_start_time = time.time()
-    print("SELF TRAINER SHOULD STOP", self.trainer.should_stop, self.device)
+    print("VALIDATION_EPOCH_END: Should stop: " + str(self.trainer.should_stop))
 
   def on_test_epoch_start(self):
     """
@@ -458,7 +474,7 @@ class Network(LightningModule):
 
   @torch.no_grad()
   def test_step(self, batch, batch_idx):
-    res = self.validation_step(batch, batch_idx, dataloader_idx=0)
+    _ = self.validation_step(batch, batch_idx, dataloader_idx=0)
     images, label = batch[:2]
     BS = images.shape[0]
 
@@ -519,7 +535,9 @@ class Network(LightningModule):
       ] = counts.cpu().numpy()
 
   def test_epoch_end(self, outputs):
-    with open(f"test_result_task{self._task_count}.pkl", "wb") as handle:
+
+    p = os.path.join(self._exp["name"], f"test_result_task{self._task_count}.pkl")
+    with open(p, "wb") as handle:
       pickle.dump(self.logs_test, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     self.model.extract, self.model.extract_layer = (
@@ -570,7 +588,9 @@ class Network(LightningModule):
       sel = np.round(np.linspace(0, nr_indices - 1, self._rssb.nr_elements), 0).astype(
         np.uint32
       )
-      self._rssb.bins[self._task_count] = self.logs_test["indices"][sel]
+      self._rssb.bins[self._task_count] = torch.from_numpy(
+        self.logs_test["indices"][sel]
+      )
       self._rssb.valid[self._task_count, :] = True
 
     else:
@@ -578,9 +598,11 @@ class Network(LightningModule):
 
     val = min(self._rssb.nr_elements, 10)
     print(
-      f"\n \n In Test overwritten bin {self._task_count} following indices: ",
-      self._rssb.bins[self._task_count, :val],
-      "\n \n",
+      str(
+        f"\nTEST_EPOCH_END: In Test overwritten bin {self._task_count} following indices: "
+        + str(self._rssb.bins[self._task_count, :val])
+        + "\n \n"
+      )
     )
 
   def on_save_checkpoint(self, params):
@@ -601,21 +623,49 @@ class Network(LightningModule):
       raise Exception
 
     if self._exp.get("lr_scheduler", {}).get("active", False):
-      # polynomial lr-scheduler
-      init_lr = self.hparams["lr"]
-      max_epochs = self._exp["lr_scheduler"]["cfg"]["max_epochs"]
-      target_lr = self._exp["lr_scheduler"]["cfg"]["target_lr"]
-      power = self._exp["lr_scheduler"]["cfg"]["power"]
-      lambda_lr = (
-        lambda epoch: (((max_epochs - min(max_epochs, epoch)) / max_epochs) ** (power))
-        + (1 - (((max_epochs - min(max_epochs, epoch)) / max_epochs) ** (power)))
-        * target_lr
-        / init_lr
-      )
-      scheduler = torch.optim.lr_scheduler.LambdaLR(
-        optimizer, lambda_lr, last_epoch=-1, verbose=True
-      )
-      ret = [optimizer], [scheduler]
+      n = self._exp["lr_scheduler"]["name"]
+      if n == "POLY":
+        # polynomial lr-scheduler
+        init_lr = self.hparams["lr"]
+        max_epochs = self._exp["lr_scheduler"]["poly_cfg"]["max_epochs"]
+        target_lr = self._exp["lr_scheduler"]["poly_cfg"]["target_lr"]
+        power = self._exp["lr_scheduler"]["poly_cfg"]["power"]
+        lambda_lr = (
+          lambda epoch: (
+            ((max_epochs - min(max_epochs, epoch)) / max_epochs) ** (power)
+          )
+          + (1 - (((max_epochs - min(max_epochs, epoch)) / max_epochs) ** (power)))
+          * target_lr
+          / init_lr
+        )
+        scheduler = torch.optim.lr_scheduler.LambdaLR(
+          optimizer, lambda_lr, last_epoch=-1, verbose=True
+        )
+        interval = "epoch"
+
+      elif n == "ONE_CYCLE_LR":
+        assert self.max_epochs != -1
+        assert self._exp["task_specific_early_stopping"]["active"]
+
+        cfg = self._exp["lr_scheduler"]["one_cycle_lr_cfg"]
+        scheduler = torch.optim.lr_scheduler.OneCycleLR(
+          optimizer,
+          self.hparams["lr"],
+          epochs=int(self.max_epochs) + 1,
+          steps_per_epoch=int(self.length_train_dataloader),
+          pct_start=cfg["pct_start"],
+          anneal_strategy="linear",
+          final_div_factor=cfg["final_div_factor"],
+        )
+        # trainer.lr_schedulers[0]['scheduler']
+
+        interval = "step"
+      else:
+        raise ValueError(f"The exp[lr_scheduler][name] is not well define {n}!")
+
+      lr_scheduler = {"scheduler": scheduler, "interval": interval}
+
+      ret = {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
     else:
       ret = [optimizer]
     return ret

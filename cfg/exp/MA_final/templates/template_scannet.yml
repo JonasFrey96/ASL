@@ -4,7 +4,8 @@
 ################################################
 
 name: teacher/debug
-offline_mode: true
+neptune_project_name: jonasfrey96/MASTER
+offline_mode: false
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -24,9 +25,9 @@ task_specific_early_stopping:
   active: True
   cfg:
     patience: 2000
-    timelimit_in_min: 0.5
-    verbose: True
-    max_epoch_count: 1
+    timelimit_in_min: 60
+    verbose: False
+    max_epoch_count: 50
 
 teaching:
   active: False
@@ -34,13 +35,16 @@ teaching:
   soft_labels_weight: 10
   loss_function: MSE
 
-# Standard Setting
 lr_scheduler:
   active: true
-  cfg:
+  name: ONE_CYCLE_LR
+  poly_cfg:
     power: 0.9
     max_epochs: 2000
     target_lr: 1.0e-05
+  one_cycle_lr_cfg:
+    pct_start: 0.1
+    final_div_factor: 1
 
 optimizer:
   name: ADAM
@@ -49,12 +53,12 @@ optimizer:
     weight_decay: 4.0e-05
 
 trainer:
-  precision: 32
+  precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 10
-  limit_val_batches: 10
-  limit_test_batches: 10
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
+  limit_test_batches: 1.0
   progress_bar_refresh_rate: 10
   max_epochs: 1000
   gpus: -1
@@ -75,10 +79,8 @@ replay:
     bins: -1
   cfg_ensemble:
     active: True
-
     # AUGMENTATION
     replay_augmentation: True  
-    
     # SAMPLE FROM BUFFER
     mode: individual_ratios
     cfg_simple:
@@ -114,8 +116,9 @@ replay:
         - 1
         - 1
   cfg_filling:
-    strategy: cover_sequence 
+    strategy: random 
     metric_mode: max   # max min eqaul
+
 visu:
   every_n_epochs: 1
   log_training_metric_every_n_epoch: 1
@@ -158,11 +161,9 @@ teacher:
           layer: 'learn_to_down'
     overwrite: False
 
-# These factors are cumulative
 loss:
   aux_label_factor: 1
   soft_aux_label_factor: 1
-
 
 task_generator:
   name: scannet
@@ -187,7 +188,6 @@ task_generator:
       - 640
       label_setting: default
 
-
 cb_early_stopping:
   active: false
   cfg:
@@ -197,6 +197,7 @@ cb_early_stopping:
     verbose: true
     mode: min
     min_delta: -0.0001
+
 cb_checkpoint:
   active: true
   nameing: 1
@@ -207,9 +208,10 @@ cb_checkpoint:
     prefix: ''
     save_last: true
     save_top_k: 1
+
 lr_monitor:
   cfg:
-    logging_interval: epoch
+    logging_interval: step
 
 label_generation:
   active: False

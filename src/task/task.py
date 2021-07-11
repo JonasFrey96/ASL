@@ -1,7 +1,6 @@
 """ 
 Defines Data Strucutre for Tasks.
 Task dosen`t know anything about CL!
-
 Each Task should return a cfg such that a dataset can be initalized based on it. 
 """
 

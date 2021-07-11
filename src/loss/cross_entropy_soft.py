@@ -50,7 +50,7 @@ def test():
   if res1.mean() != res2.mean():
     raise Exception()
 
-  soft_res = cross_entropy_soft(pred, label_soft)
+  _ = cross_entropy_soft(pred, label_soft)
 
 
 if __name__ == "__main__":

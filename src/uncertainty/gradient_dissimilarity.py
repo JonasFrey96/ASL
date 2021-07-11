@@ -1,15 +1,9 @@
 import torch
 import random
-from random import randint
 from torch.nn import functional as F
 import time
 
 __all__ = ["hierarchical_dissimilarity"]
-import torch
-import random
-from random import randint
-from torch.nn import functional as F
-import time
 
 
 def get_fast_distance(x):
@@ -121,8 +115,10 @@ def hierarchical_dissimilarity(X, K=50, maxSize=100, device="cuda:0"):
     r = hierarchical_dissimilarity(
       X[right_indices], K=K, maxSize=maxSize, device=device
     )
-    l = hierarchical_dissimilarity(X[left_indices], K=K, maxSize=maxSize, device=device)
-    sel_indices = torch.cat((indices[left_indices][l], indices[right_indices][r]))
+    leng = hierarchical_dissimilarity(
+      X[left_indices], K=K, maxSize=maxSize, device=device
+    )
+    sel_indices = torch.cat((indices[left_indices][leng], indices[right_indices][r]))
     in_data = (X[sel_indices]).clone()
     in_data = in_data.to(device)
     c = gradient_dissimilarity_fast(in_data, K=K)

@@ -27,6 +27,7 @@ class MLHypersim(Dataset):
     flip_p=0.5,
     jitter_bcsh=[0.3, 0.3, 0.3, 0.05],
     data_augmentation=True,
+    **kwargs,
   ):
 
     super(MLHypersim, self).__init__()
@@ -44,6 +45,8 @@ class MLHypersim(Dataset):
 
     self._scenes_loaded = scenes
     self.unique = False
+    self.aux_labels = False
+    self.aux_labels_fake = False
 
   def __getitem__(self, index):
     """
@@ -55,20 +58,8 @@ class MLHypersim(Dataset):
     replayed [torch.tensor]: 1 torch.float32
     global_idx [int]: global_index in dataset
     """
-    replayed = torch.tensor([-1], dtype=torch.int32)
-    idx = -1
-    if self.replay:
-      if self._mode == "train":
-        idx, bin = self.idx(self.global_to_local_idx[index])
-        if idx != -1:
-          global_idx = idx
-          replayed[0] = bin
-        else:
-          global_idx = self.global_to_local_idx[index]
-      else:
-        global_idx = self.global_to_local_idx[index]
-    else:
-      global_idx = self.global_to_local_idx[index]
+
+    global_idx = self.global_to_local_idx[index]
 
     with h5py.File(self.image_pths[global_idx], "r") as f:
       img = np.array(f["dataset"])
@@ -80,39 +71,40 @@ class MLHypersim(Dataset):
       None, :, :
     ]  # C H W    # label_max = 40 invalid = -1 0 is not used as an index
 
-    if self._mode == "train" and (
-      (self._data_augmentation and idx == -1)
-      or (self._data_augmentation_for_replay and idx != -1)
-    ):
-
+    label = [label]
+    if self._mode == "train" and self._data_augmentation:
       img, label = self._augmenter.apply(img, label)
     else:
       img, label = self._augmenter.apply(img, label, only_crop=True)
-
-    # check if reject
-    if (label != -1).sum() < 10:
-      # reject this example
-      idx = random.randint(0, len(self) - 1)
-
-      if not self.unique:
-        return self[idx]
-      else:
-        replayed[0] = -999
 
     img_ori = img.clone()
     if self._output_trafo is not None:
       img = self._output_trafo(img)
 
-    label[label > 0] = label[label > 0] - 1
+    # REJECT LABEL
+    if (label[0] != -1).sum() < 10:
+      idx = random.randint(0, len(self) - 1)
+      if not self.unique:
+        return self[idx]
+      else:
+        return False
 
-    # shifts label to -1 = invalid, 0 = wall, 39 = otherprop
-    return (
-      img,
-      label.type(torch.int64)[0, :, :],
-      img_ori,
-      replayed.type(torch.float32),
-      global_idx,
-    )
+    for k in range(len(label)):
+      # -1 not defined
+      # 0 wall
+      # 39 other prob
+      m = label[k] > 0
+      label[k][m] = label[k][m] - 1
+
+    ret = (img, label[0].type(torch.int64)[0, :, :])
+    if self.aux_labels:
+      if self.aux_labels_fake:
+        ret += (label[0].type(torch.int64)[0, :, :], torch.tensor(False))
+      else:
+        ret += (label[1].type(torch.int64)[0, :, :], torch.tensor(True))
+
+    ret += (img_ori,)
+    return ret
 
   def __len__(self):
     return self.length
@@ -148,22 +140,25 @@ class MLHypersim(Dataset):
     self.sceneTypes.sort()
 
     self.global_to_local_idx = [i for i in range(len(self.image_pths))]
-
-    self.filtered_image_pths = copy.deepcopy(self.image_pths)
     # Scene filtering checked by inspection
+
+    keep_all = []
     for sce in self.sceneTypes:
-      images_in_scene = [i for i in self.filtered_image_pths if i.find(sce) != -1]
-      k = int((1 - train_val_split) * len(images_in_scene))
+
+      indices_for_scene = [
+        j for (j, i) in enumerate(self.image_pths) if i.find(sce) != -1
+      ]
+      k = int((1 - train_val_split) * len(indices_for_scene))
       if mode == "train":
-        remove_ls = images_in_scene[k:]
+        keep = indices_for_scene[:k]
       elif mode == "val":
-        remove_ls = images_in_scene[:k]
+        keep = indices_for_scene[k:]
 
-      idx = self.filtered_image_pths.index(remove_ls[0])
-      for i in range(len(remove_ls)):
-        del self.filtered_image_pths[idx]
+      keep_all = keep_all + keep
 
-        del self.global_to_local_idx[idx]
+    self.global_to_local_idx = (
+      np.array(self.global_to_local_idx)[np.array(keep_all)]
+    ).tolist()
 
     self.length = len(self.global_to_local_idx)
 
@@ -174,16 +169,14 @@ class MLHypersim(Dataset):
     return sceneTypes
 
   def _filter_scene(self, scenes):
+
     if len(scenes) != 0:
-      images_idx = []
-      for sce in scenes:
-        images_idx += [
-          i
-          for i in range(len(self.filtered_image_pths))
-          if (self.filtered_image_pths[i]).find(sce) != -1
-        ]
-      idx = np.array(images_idx)
-      self.global_to_local_idx = (np.array(self.global_to_local_idx)[idx]).tolist()
+      gtli = []
+      for j, sce in enumerate(self.scenes):
+        if sce in scenes:
+          gtli.append(j)
+
+      self.global_to_local_idx = list(set(gtli) & set(self.global_to_local_idx))
       self.length = len(self.global_to_local_idx)
 
 

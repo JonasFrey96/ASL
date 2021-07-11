@@ -1,5 +1,4 @@
 from sklearn.cluster import KMeans
-import numpy as np
 import torch
 
 __all__ = ["get_kMeans_indices"]

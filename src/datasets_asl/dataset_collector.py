@@ -4,11 +4,13 @@
 from .coco2014 import COCo
 from .cocostuff import CocoStuff164k
 from .scannet import ScanNet
+from .mlhypersim import MLHypersim
 
 datasets = {
   "coco2014": COCo,
   "cocostuff164k": CocoStuff164k,
   "scannet": ScanNet,
+  "mlhypersim": MLHypersim,
 }
 
 __all__ = ["get_dataset"]

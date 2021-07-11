@@ -27,17 +27,17 @@ RUN apt-get install -y python-catkin-tools
 # TMUX and VIM
 RUN apt install -y tmux vim
 RUN echo """# Make mouse useful in copy mode \
-setw -g mode-mouse on \
-# Allow mouse to select which pane to use \
-set -g mouse-select-pane on \
-# Allow xterm titles in terminal window, terminal scrolling with scrollbar, and setting overrides of C-Up, C-Down, C-Left, C-Right \
-set -g terminal-overrides "xterm*:XT:smcup@:rmcup@:kUP5=\eOA:kDN5=\eOB:kLFT5=\eOD:kRIT5=\eOC" \
-# Scroll Histor y\
-set -g history-limit 30000 \
-# Set ability to capture on start and restore on exit window data when running an application \
-setw -g alternate-screen on \
-# Lower escape timing from 500ms to 50ms for quicker response to scroll-buffer access. \
-set -s escape-time 50""" >> /home/.tmux.conf 
+    setw -g mode-mouse on \
+    # Allow mouse to select which pane to use \
+    set -g mouse-select-pane on \
+    # Allow xterm titles in terminal window, terminal scrolling with scrollbar, and setting overrides of C-Up, C-Down, C-Left, C-Right \
+    set -g terminal-overrides "xterm*:XT:smcup@:rmcup@:kUP5=\eOA:kDN5=\eOB:kLFT5=\eOD:kRIT5=\eOC" \
+    # Scroll Histor y\
+    set -g history-limit 30000 \
+    # Set ability to capture on start and restore on exit window data when running an application \
+    setw -g alternate-screen on \
+    # Lower escape timing from 500ms to 50ms for quicker response to scroll-buffer access. \
+    set -s escape-time 50""" >> /home/.tmux.conf 
 
 # PANGOLIN
 RUN apt install -y vim
@@ -50,11 +50,11 @@ RUN apt install -y pkg-config
 RUN apt install -y libegl1-mesa-dev libwayland-dev libxkbcommon-dev wayland-protocols
 
 RUN cd /home && git clone https://github.com/stevenlovegrove/Pangolin.git && \
-cd Pangolin && \
-mkdir build && \
-cd build && \
-cmake .. && \
-cmake --build .
+    cd Pangolin && \
+    mkdir build && \
+    cd build && \
+    cmake .. && \
+    cmake --build .
 
 # ORB-SLAM2
 RUN cd /home && git clone https://github.com/JonasFrey96/ORB_SLAM2.git ORB_SLAM2

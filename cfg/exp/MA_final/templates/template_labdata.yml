@@ -4,7 +4,8 @@
 ################################################
 
 name: teacher/debug
-offline_mode: true
+neptune_project_name: jonasfrey96/MASTER
+offline_mode: false
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -49,7 +50,7 @@ optimizer:
     weight_decay: 4.0e-05
 
 trainer:
-  precision: 32
+  precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
   limit_train_batches: 10
@@ -114,7 +115,7 @@ replay:
         - 1
         - 1
   cfg_filling:
-    strategy: cover_sequence 
+    strategy: random 
     metric_mode: max   # max min eqaul
 visu:
   every_n_epochs: 1

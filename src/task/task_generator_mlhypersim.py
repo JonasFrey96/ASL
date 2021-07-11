@@ -1,17 +1,20 @@
 import copy
 from task import TaskGenerator, Task
+from datasets_asl import MLHypersim
 
 __all__ = ["TaskGeneratorMLHypersim"]
 
 mlhypersim_template_dict = {
-  "name": "scannet",
+  "name": "mlhypersim",
   "mode": "train",
   "output_size": [320, 640],
   "scenes": [],
   "data_augmentation": True,
-  "label_setting": "default",
-  "confidence_aux": 0,
 }
+
+classes = MLHypersim.get_classes()
+rooms = list(set([c[:6] for c in classes]))
+rooms.sort()
 
 
 class TaskGeneratorMLHypersim(TaskGenerator):
@@ -24,31 +27,30 @@ class TaskGeneratorMLHypersim(TaskGenerator):
 
     mode_cfg = cfg.get(mode, {})
     if mode == "mlhypersim_scenes":
-      self._mylhypersim_scenes(**mode_cfg)
+      self._mlhypersim_scenes(**mode_cfg)
     else:
       raise AssertionError("TaskGeneratorMLHypersim: Undefined Mode")
 
     self.init_end_routine(cfg)
 
-  def _mlhypersim_scenes(
-    self, number_of_tasks, scenes_per_task, label_setting="default", confidence_aux=0
-  ):
+  def _mlhypersim_scenes(self, number_of_tasks, scenes_per_task):
     train = copy.deepcopy(mlhypersim_template_dict)
     val = copy.deepcopy(mlhypersim_template_dict)
     train["mode"] = "train"
     val["mode"] = "val"
-    train["label_setting"] = label_setting
-    train["confidence_aux"] = confidence_aux
-
-    val["label_setting"] = label_setting
 
     start_scene_train = 0
     for i in range(number_of_tasks):
       # GENERATE TRAIN TASK
-      train["scenes"] = [
-        f"scene{s:04d}"
-        for s in range(start_scene_train, start_scene_train + scenes_per_task)
+      sel_rooms = [
+        rooms[r] for r in range(start_scene_train, start_scene_train + scenes_per_task)
       ]
+      train["scenes"] = []
+      for c in classes:
+        for r in sel_rooms:
+          if c.find(r) != -1:
+            train["scenes"].append(c)
+
       val["scenes"] = train["scenes"]
       t = Task(
         name=f"Train_{i}",
@@ -68,7 +70,7 @@ def test():
 
   mode = "mlhypersim_scenes"
   cfg = {
-    "copy_to_template": {"output_size": [320, 640], "label_setting": "default"},
+    "copy_to_template": {"output_size": [320, 640]},
     "mlhypersim_scenes": {"number_of_tasks": 4, "scenes_per_task": 1},
   }
   tg = TaskGeneratorMLHypersim(mode=mode, cfg=cfg)

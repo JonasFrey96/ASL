@@ -80,13 +80,10 @@ def get_image_indices(
         _K = round(K_return * factor)
 
       if _K > 0:
-        max_ele = metric[m].shape[0]
-        top_K = min(max_ele, _K + len(candidates) + 1)
-
-        values, indices = torch.topk(metric[m], _K, largest=not most_dissimilar)
+        _, indices = torch.topk(metric[m], _K, largest=not most_dissimilar)
         added = 0
         for ele in gloable_indices_all[m][indices].tolist():
-          if not ele in candidates and added < _K:
+          if ele not in candidates and added < _K:
             added += 1
             candidates = candidates + [int(ele)]
 

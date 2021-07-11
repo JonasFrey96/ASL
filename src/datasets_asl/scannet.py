@@ -144,7 +144,6 @@ class ScanNet(Dataset):
         # TODO: Remove when this offline preprocessing failed
         if _p.find("_.png") != -1:
           print(_p)
-
           print("Processed not found")
           _p = _p.replace("_.png", ".png")
           aux_label, _ = self._label_loader.get(_p)
@@ -508,7 +507,6 @@ def test():
   st = time.time()
   print("Start")
   for j, data in enumerate(dataloader):
-    img = data[0]
     label = data[1]
     assert type(label) == torch.Tensor
     assert (label != -1).sum() > 10

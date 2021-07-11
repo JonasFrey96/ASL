@@ -4,6 +4,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 import os
 from pathlib import Path
 import torch
+import logging
 
 try:
   from .utils import flatten_dict
@@ -20,7 +21,7 @@ def log_important_params(exp):
 
 
 def get_neptune_logger(exp, env, exp_p, env_p):
-  project_name = env["neptune_project_name"]
+  project_name = exp["neptune_project_name"]
   params = log_important_params(exp)
   cwd = os.getcwd()
   files = [
@@ -33,7 +34,6 @@ def get_neptune_logger(exp, env, exp_p, env_p):
 
   t1 = str(os.environ["ENV_WORKSTATION_NAME"])
   if not env["workstation"]:
-    print("Not workstation set proxy")
     NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
 
   gpus = "gpus_" + str(torch.cuda.device_count())
@@ -72,7 +72,7 @@ def get_tensorboard_logger(exp, env, exp_p, env_p):
     NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
   gpus = "gpus_" + str(torch.cuda.device_count())
 
-  print("GET TENSORBOARD LOGGER , " + exp["name"])
+  logging.debug("Use Tensorboard Logger with exp['name]: " + exp["name"])
   return TensorBoardLogger(
     save_dir=exp["name"], name="tensorboard", default_hp_metric=params
   )
