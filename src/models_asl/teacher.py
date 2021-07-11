@@ -1,5 +1,4 @@
 import torch
-from torch._C import device
 from models_asl import FastSCNN
 import os
 

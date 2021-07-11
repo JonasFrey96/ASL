@@ -53,7 +53,7 @@ def test():
 
   exp = load_yaml(os.path.join(os.getcwd() + "/cfg/test/test.yml"))
   env = load_yaml(os.path.join("cfg/env", os.environ["ENV_WORKSTATION_NAME"] + ".yml"))
-
+  print(exp, env)
   # TODO: Jonas Frey
   return True
 

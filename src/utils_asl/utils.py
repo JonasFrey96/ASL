@@ -1,5 +1,4 @@
 import torch
-from pytorch_lightning.metrics.functional.classification import iou as pl_iou
 from pytorch_lightning.metrics.functional.classification import (
   stat_scores_multiple_classes,
 )
@@ -60,7 +59,7 @@ def iIoU_class(pred, target, num_classes, verbose=False):
       print(f"Inter: {TPS},\nUnion: {TPS+FPS+FNS}")
     IoU = (TPS[1:] * w) / ((TPS[1:] * w) + FPS[1:] + (FNS[1:] * w))
 
-    mIoU = (IoU[torch.isnan(IoU) == False]).mean()
+    mIoU = (IoU[not torch.isnan(IoU)]).mean()
     iou_per_image[b] = mIoU
 
   return torch.mean(iou_per_image)  # returns mean over batch

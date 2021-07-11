@@ -1,4 +1,5 @@
 name: coco_stuff_pretrain/debug
+neptune_project_name: jonasfrey96/MASTER
 offline_mode: false
 timestamp: true
 weights_restore: false

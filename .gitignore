@@ -140,3 +140,4 @@ notebooks/tmp/*
 nohup.out
 ws.code-workspace
 .vscode/launch.json
+cfg/exp/MA_final/*

@@ -1,5 +1,4 @@
 workstation: True
-neptune_project_name: jonasfrey96/CLS
 
 base: /media/scratch1/jonfrey/results
 cityscapes: /media/scratch1/jonfrey/datasets/cityscapes

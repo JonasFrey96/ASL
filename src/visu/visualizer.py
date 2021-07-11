@@ -1,7 +1,6 @@
 # STD
 import os
 import copy
-import io
 
 # MISC
 import numpy as np
@@ -17,8 +16,11 @@ from matplotlib import cm
 from matplotlib.backends.backend_agg import FigureCanvasAgg
 import matplotlib.patches as patches
 import pickle
+from PIL import Image, ImageDraw
+import skimage
+from skimage import measure
+from skimage.segmentation import mark_boundaries, find_boundaries
 
-from detectron2.utils.visualizer import Visualizer as DetectronVisu
 
 try:
   from .colors import *
@@ -340,12 +342,6 @@ class MainVisualizer:
       for i in range(0, len(count)):
 
         stop = count[i]
-        print(
-          "mi ma",
-          max(start, x.min()),
-          min(stop, x.max()),
-          np.array(COL_DICT[keys[i]]) / 255,
-        )
         plt.axvspan(
           max(start, x.min()),
           min(stop, x.max()),
@@ -518,22 +514,48 @@ class Visualizer:
 
   @image_functionality
   def plot_detectron(self, img, label, **kwargs):
-    # Label: H,W numpy or torch tensor
-    # use image function to get imagae is np.array uint8
     img = self.plot_image(img, not_log=True)
     try:
       label = label.clone().cpu().numpy()
     except:
       pass
     label = label.astype(np.long)
-    detectronVisualizer = DetectronVisu(
-      torch.from_numpy(img).type(torch.uint8), self._meta_data, scale=1
-    )
 
-    out = detectronVisualizer.draw_sem_seg(
-      label, area_threshold=None, alpha=kwargs.get("alpha", 0.85)
-    ).get_image()
-    return out
+    H, W, C = img.shape
+    uni = np.unique(label)
+    overlay = np.zeros_like(img)
+
+    centers = []
+    for u in uni:
+      m = label == u
+      col = self._meta_data["stuff_colors"][u]
+      overlay[m] = col
+      labels_mask = measure.label(m)
+      regions = measure.regionprops(labels_mask)
+      regions.sort(key=lambda x: x.area, reverse=True)
+      cen = np.mean(regions[0].coords, axis=0).astype(np.uint32)
+      centers.append((self._meta_data["stuff_classes"][u], cen))
+
+    back = np.zeros((H, W, 4))
+    back[:, :, :3] = img
+    back[:, :, 3] = 255
+    fore = np.zeros((H, W, 4))
+    fore[:, :, :3] = overlay
+    fore[:, :, 3] = 100
+    img_new = Image.alpha_composite(
+      Image.fromarray(np.uint8(back)), Image.fromarray(np.uint8(fore))
+    )
+    draw = ImageDraw.Draw(img_new)
+    for i in centers:
+      draw.text(tuple(i[1]), str(i[0]), fill=(255, 255, 255, 128))
+
+    img_new = img_new.convert("RGB")
+    mask = mark_boundaries(img_new, label, color=(255, 255, 255))
+    mask = mask.sum(axis=2)
+    m = mask == mask.max()
+    img_new = np.array(img_new)
+    img_new[m] = (255, 255, 255)
+    return np.uint8(img_new)
 
   @property
   def epoch(self):

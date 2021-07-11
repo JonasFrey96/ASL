@@ -1,6 +1,5 @@
 import torch
 import random
-from random import randint
 from torch.nn import functional as F
 
 
@@ -73,7 +72,7 @@ def compute_interclass_similarity_score(candidate_features, buffer_features_all)
 
     per_class_overview[str(i)] = val / indi.shape[0]
   # print("per class overview", per_class_overview)
-  mean = score / (buffer_features_all.shape[1] - add_average_times)
+  _ = score / (buffer_features_all.shape[1] - add_average_times)
 
   # if we dont add the mean we motivate to at least keep two samples of each class in the buffer
   res = score  # + mean * add_average_times
@@ -134,10 +133,8 @@ def test():
   nr2 = torch.randint(0, 10, (50, 40, 128)).type(torch.float32)
   compute_interclass_similarity_score(nr, nr2)
 
-  from PIL import Image
-  import os, sys
-
-  import time
+  import os
+  import sys
 
   os.chdir("/home/jonfrey/ASL")
   sys.path.append("/home/jonfrey/ASL")
@@ -158,7 +155,6 @@ def test():
     "/media/scratch1/jonfrey/models/master_thesis/dev/uncertainty_integration3/latent_feature_tensor_0.pt"
   )
 
-  st = time.time()
   selected, metric = interclass_dissimilarity(
     latent_features, label_dist, iterations=5000
   )

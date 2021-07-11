@@ -3,7 +3,6 @@
 # module load eth_proxy
 import neptune
 import os
-import time
 
 proxies = {
   "http": "http://proxy.ethz.ch:3128",

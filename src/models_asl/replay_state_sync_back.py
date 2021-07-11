@@ -1,7 +1,5 @@
-import os
 import torch
 import torch.nn as nn
-import torch.nn.functional as F
 
 # This model is used to store the state of the replay buffer in the dataloaders.
 # This allows to easly continue training with the correct buffer mode from a checkpoint.

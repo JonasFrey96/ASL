@@ -23,7 +23,7 @@ def inject(x, injection_features, injection_mask):
   ):
     s = x.shape
     m_replace = injection_mask[:, :, None, None].repeat(1, s[1], s[2], s[3])
-    m_keep = not (m_replace == True)
+    m_keep = not m_replace
     x = x * m_keep.type(x.dtype) + injection_features * m_replace.type(x.dtype)
   return x
 

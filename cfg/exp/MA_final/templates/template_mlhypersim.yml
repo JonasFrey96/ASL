@@ -1,10 +1,6 @@
-################################################
-# TEMPLATE                                     #
-# includes all necessary config parameters     #
-################################################
-
-name: teacher/debug
-offline_mode: true
+name: mlhypersim/debug
+neptune_project_name: jonasfrey96/MASTER
+offline_mode: false
 timestamp: false
 weights_restore: true
 checkpoint_restore: false
@@ -17,8 +13,8 @@ tag_list:
 
 supervisor:
   # Experiment Settings
-  start_task: 1
-  stop_task: 5
+  start_task: 0
+  stop_task: 4
 
 task_specific_early_stopping:
   active: True
@@ -34,13 +30,16 @@ teaching:
   soft_labels_weight: 10
   loss_function: MSE
 
-# Standard Setting
 lr_scheduler:
-  active: true
-  cfg:
+  active: false
+  name: ONE_CYCLE_LR
+  poly_cfg:
     power: 0.9
     max_epochs: 2000
     target_lr: 1.0e-05
+  one_cycle_lr_cfg:
+    pct_start: 0.1
+    final_div_factor: 1
 
 optimizer:
   name: ADAM
@@ -49,7 +48,7 @@ optimizer:
     weight_decay: 4.0e-05
 
 trainer:
-  precision: 32
+  precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
   limit_train_batches: 10
@@ -114,7 +113,7 @@ replay:
         - 1
         - 1
   cfg_filling:
-    strategy: cover_sequence 
+    strategy: random 
     metric_mode: max   # max min eqaul
 visu:
   every_n_epochs: 1
@@ -165,8 +164,8 @@ loss:
 
 
 task_generator:
-  name: scannet
-  mode: scannet_25k_individual
+  name: mlhypersim
+  mode: mlhypersim_scenes
   cfg:
     scannet_auxilary_labels:
       label_setting: default
@@ -181,13 +180,14 @@ task_generator:
       number_of_tasks: 4
       scenes_per_task: 5
 
-    
+    mlhypersim_scenes:
+      number_of_tasks: 4
+      scenes_per_task: 4
       
     copy_to_template:
       output_size: 
       - 320
       - 640
-      label_setting: default
 
 
 cb_early_stopping:
@@ -234,5 +234,4 @@ label_generation:
     - scene0005_01
 
 move_datasets:
-  - env_var: scannet
-  - env_var: scannet_frames_25k
+  - env_var: mlhypersim

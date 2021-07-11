@@ -37,9 +37,15 @@ class ReplayCallback(Callback):
 
       # PERFORMS RANDOM MEMORY BUFFER FILLING
       # IDEA IS WE CAN ITERATE OVER ALL BINS AND RANDOMLY SAMPLE
-      for bin, ls in enumerate(ls_global_indices):
-        el = pl_module._rssb.nr_elements
+      # IIF. THE BIN IS NOT VALID JET
+      bin_fill_status = pl_module._rssb.valid.sum(dim=1)
 
+      for bin, ls in enumerate(ls_global_indices):
+        if bin_fill_status[bin] == pl_module._rssb.valid.shape[1]:
+          # DONT FILL BECAUSE ALREADY VALID ENTRIES
+          continue
+
+        el = pl_module._rssb.nr_elements
         torch_ls = torch.tensor(ls, dtype=torch.long)
 
         if el >= len(ls):

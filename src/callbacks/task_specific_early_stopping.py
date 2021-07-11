@@ -1,6 +1,7 @@
 import time
 from pytorch_lightning.callbacks import Callback
 from pytorch_lightning.utilities import rank_zero_info
+import logging
 
 __all__ = ["TaskSpecificEarlyStopping"]
 
@@ -59,11 +60,17 @@ class TaskSpecificEarlyStopping(Callback):
       # check time
       if (time.time() - self.time_buffer[nr]) / 60 > self.timelimit_in_min or (
         self.max_epoch_count != -1
-        and self.epoch - self.training_start_epoch > self.max_epoch_count
+        and self.epoch - self.training_start_epoch >= self.max_epoch_count
       ):
-        # time limit reached
+        if (
+          self.max_epoch_count != -1
+          and self.epoch - self.training_start_epoch >= self.max_epoch_count
+        ):
+          print("TSES: Stopped due to max epochs")
+        else:
+          print("TSES: Stopped due to timelimit reached!")
         should_stop = True
-        rank_zero_info("STOPPED due to timelimit reached!")
+
       try:
         metric = trainer.callback_metrics[f"val_acc/dataloader_idx_{nr}"]
       except:
@@ -77,7 +84,7 @@ class TaskSpecificEarlyStopping(Callback):
 
       if self.k_not_in_best_buffer[nr] > self.patience:
         should_stop = True
-        rank_zero_info("STOPPED due to not in best buffer!")
+        print("TSES: Stopped due to not in best buffer!")
 
       if bool(should_stop):
         self.stopped_epoch = trainer.current_epoch
@@ -89,14 +96,17 @@ class TaskSpecificEarlyStopping(Callback):
         )
 
       if self.verbose:
-        string = "Callback State\n"
-        string += f"Trainger should stop: {should_stop}\n"
+        print("TSES: Callback State")
+        print(str(f"TSES: Trainger should stop: {should_stop}"))
         for i in range(len(self.best_metric_buffer)):
           n = self.k_not_in_best_buffer[i]
           v = self.best_metric_buffer[i]
           t = int((time.time() - self.time_buffer[i]) / 60)
-          string += f"State {i}: Did not make top k n{n}-times. Best {v}. Time: {t}min, Metric {metric}!\n"
-        rank_zero_info(string)
+          print(
+            str(
+              f"TSES: S{i} not TopK n{n}-th - Best {round(float(v),2)} - Time: {t}min - Current {round(float(metric),2)}!"
+            )
+          )
     else:
       if self.verbose:
-        rank_zero_info("Visited twice at same epoch")
+        logging.warning("TSES: Visited twice at same epoch")
