@@ -63,9 +63,10 @@ For example you can create ```ASL/cfg/env/your_env_name.yml```, with the followi
 ```yaml
 # Configuration
 workstation: True                 
-# If False uses Proxy and copies Dataset to $TMPDIR folder -> allows to train on Leonhard and Euler Cluster
+# If False uses Proxy and copies Dataset to $TMPDIR folder
+# -> allows to train on Leonhard and Euler Cluster
 
-base: path_to_your_logging_directory  	# Here all your experiments are logged
+base: path_to_your_logging_directory # Here all your experiments are logged
  
 # Datasets
 cityscapes: ../datasets/cityscapes
@@ -94,17 +95,17 @@ How to download and install the datasets is explained in [Dataset Preperation](D
 ### Running Experiments
  
 Running a full CL-scenario:
-```
+```bash
 cd ~/ASL && python supervisor.py --exp=cfg/exp/MA/scannet/25k_pretrain/pretrain.py
 ```
 ```exp``` arguments provides the correct experiment configuration path.
  
 #### Experiment Configuration Explained
  
-```
-**name** Name of the experiment folders
-**neptne_project_name**: NeptuneAI project name  
-**offline_mode** False uses tensorboard. True uses NeptuneAI
+```yaml
+name: test/run1 #Name of the experiment folders
+neptne_project_name: YourName/YourProject #NeptuneAI project name  
+offline_mode: False # False uses tensorboard, True uses NeptuneAI
 TODO
 ```
 #### Overview Provided Experiments
@@ -125,11 +126,10 @@ TODO
 7. single_task: Train on all datasets simultaneously
 8. student_teacher: Experiments with soft and hard teacher for replay
  
-## Pseudo Label Experiments
+## Supervision Signal Generation
 
 How to run
-TODO
- 
+
 ### CRF & SLIC
 TODO
  
@@ -140,14 +140,12 @@ You can create the optical flow for the ScanNet dataset using the jupyter Notebo
 You need to make sure to add the correct paths to import the RAFT model and the dataset.  
 The notebook **Report/pseudo_labels_flow.ipynb** creates all reported plots and figures.  
 
+### 3D Mapping
+Result:  
+![](https://github.com/JonasFrey96/ASL/tree/main/docs/create_map_gt_rviz.gif)
 
-## Python Code formatting
-cblack
- 
- 
-
-### Dataset Preparation
-#### Hypersim
+## Dataset Preparation
+### Hypersim
 Download the Hypersim Dataset and extract the files following the [author's instructions](https://github.com/apple/ml-hypersim)  
 We additionally provide a .tar file with the first 10 scenes.
  
@@ -168,7 +166,7 @@ mlhypersim
   ...
   ...
 ```		
-#### ScanNet
+### ScanNet
 Download the ScanNet dataset and follow the [author's instructions](http://www.scan-net.org/) to extract the .sens files into individual files.  
 Also, make sure to download the 25k files if you want to perform the pre-training.  
 Here it's important to delete samples from the first 10 scenes to avoid overlapping continual learning and pre-training tasks.  
@@ -227,7 +225,7 @@ scannet
     ...
 
 ```
-#### COCO2014
+### COCO2014
 This dataset is only used for pre-training.
 Download the MS COCO 2014 dataset https://cocodataset.org/#home.
  
@@ -246,7 +244,7 @@ coco
     instances_train2014.json
     instances_val2014.json
 ```
-#### COCO164k
+### COCO164k
 This dataset is only used for pre-training.
 Download the MS COCO 2017 dataset https://cocodataset.org/#home.
  
@@ -269,9 +267,9 @@ cocostuff164k
 
 # 2. Acknowledgment 
 
-- The authors of Fast-SCNN: Fast Semantic Segmentation Network. ([arxiv](https://arxiv.org/pdf/1902.04502.pdf))  
-- TRAMAC <https://github.com/Tramac> for implementing Fast-SCNN in PyTorch [Fast-SCNN-pytorch](https://github.com/Tramac/Fast-SCNN-pytorch). 
-- RAFT <https://github.com/princeton-vl/RAFT>  
-- ORBSLAM2 <https://github.com/appliedAI-Initiative/orb_slam_2_ros>  
-- People at <http://continualai.org> for the inspiration.
+- The authors of [Fast-SCNN](https://arxiv.org/pdf/1902.04502.pdf)  
+- TRAMAC implementing [Fast-SCNN in PyTorch](https://github.com/Tramac/Fast-SCNN-pytorch)  
+- The authors of [RAFT](https://github.com/princeton-vl/RAFT)  
+-  The authors of [ORBSLAM2](https://github.com/appliedAI-Initiative/orb_slam_2_ros)  
+- People at <http://continualai.org> for the inspiration
 
