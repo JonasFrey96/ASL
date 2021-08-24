@@ -1,283 +1,277 @@
-# 1. ASL Master Thesis 
+# 1. ASL Master Thesis
 
-- [1. ASL Master Thesis](#1-asl-master-thesis)
-	- [Code Stack:](#code-stack)
-	- [Current to TODOS for Final master thesis:](#current-to-todos-for-final-master-thesis)
-	- [1.1. Challenge](#11-challenge)
-		- [1.1.1. Similar fields in semantic segmentation:](#111-similar-fields-in-semantic-segmentation)
-	- [1.2. Use case](#12-use-case)
-	- [1.3. First Step Dataset](#13-first-step-dataset)
-	- [1.4. Implementation](#14-implementation)
-		- [1.4.1. Project Structure](#141-project-structure)
-	- [1.5. Getting started](#15-getting-started)
-		- [1.5.1. Clone repo to home](#151-clone-repo-to-home)
-		- [1.5.2. Setup conda env](#152-setup-conda-env)
-		- [1.5.3. Experiment defintion](#153-experiment-defintion)
-		- [1.5.4. Running the experiment](#154-running-the-experiment)
-		- [1.5.5. Tasks and Evaluation](#155-tasks-and-evaluation)
-	- [1.6. Supervision Options](#16-supervision-options)
-	- [1.7. Continual Learning Options](#17-continual-learning-options)
-	- [1.8. Scaling performance](#18-scaling-performance)
-	- [1.9. Datasets](#19-datasets)
-	- [1.10 NeptuneAI Logger](#110-neptuneai-logger)
-	- [1.11 Uncertainty Estimation](#111-uncertainty-estimation)
-- [2. Acknowledgement](#2-acknowledgement)
+https://markdownlivepreview.com/
+This is the repository accompanying my master's thesis.
+ 
+Additionally, we created the accompanying repositories:  
+ 1.) Pose estimation using [ORBSLAM2 Fork](https://github.com/JonasFrey96/orb_slam_2_ros)  
+ 2.) Optical Flow estimation [RAFT Fork](https://github.com/JonasFrey96/RAFT)   
+ 3.) [Kimera Semantics Fork](https://github.com/JonasFrey96/Kimera-Semantics) (Allows fast protobuf export of semantics)  
+ 4.) [Kimera Interfacer](https://github.com/JonasFrey96/Kimera-Interfacer) (Generate maps and pseudo labels for ScanNet and Lab data)  
+ 
+We only elaborate on how to run all the experiments and reproduce the results.  
+For the technical background, I refer to my [Master's Thesis](https://github.com/JonasFrey96/ASL/tree/main/docs/Jonas_Frey_Master_Thesis.pdf). 
 
+## Repository Overview:
+All code related to continual learning experiments is contained in the **src** folder.  
 
-## Code Stack:
+* **src** Contains all code for training the neural network
+  * **src/supervisor.py** Starts all the training tasks.  
+  * **src/train_task.py** Can be called directly or is executed by the supervisor.  
+Set's up logger, trainer, and model and executes a single task.  
+    * **src/lightning/lightning.py** Contains the full neural network model and logging.  
+It is the best starting point to get familiar with the implementation. 
+    * **src/task/task_generator.py** Depending on the configuration returns a list of parameters to create multiple training and associated test datasets for each task. 
 
-DL Framework: PyTorch 1.7
-Testing Framework: PyTest
-Code Linting: Flake8
-Code Formatting: CBlack https://pypi.org/project/cblack/ 
-	it`s like black just with 2 line intend
-ROS: melodic and noetic support
+* **docker** Contains the docker files to generate the pseudo labels using 3D mapping  
+  * **docker/orbslam2_ros** ORBSLAM2 Implementation  
+  * **docker/semantics** Kimera Semantics + Kimera Interfacer  
+  * **docker/vio** Not used in the final report (Kimera VIO)  
+  * **docker/maplab** Not used in the final report (Maplab)  
 
-
-
-
-
-## Current to TODOS for Final master thesis:
-
-CL:
-  - Recreate each result using ScanNet Dataset
-  		- NOT working currently:
-    		- buffer filling strategy
-    		- more complex loss based sampling strategies
-
-  - Create the correct cfgs for this and upload them on github
-
-  Quality:
-    - Complete PyTest Integration
-    - Create a config pareses showing all possible configs using argparse.
-    - Create config validator to get rid of error prone configs initially with reasonable advices what to do next.
-
-Supervision:
-  - Reproduce Optical Flow supervision results
+* **notebooks** 
+  * **notebooks/report** includes all the jupyter notebooks used to generate all figures in the report  
+ 
+* **cfg** includes configuration files for:  
+  * **cfg/env** Setting up your environment file
+  * **cfg/exp** Experiment files to run all experiments
+  * **cfg/conda** Python conda enviornment
 
 
-Robot Real Data:
-	- ROS Wrapper
+## Continual Learning Experiments
 
-
-## 1.1. Challenge
-Continual learning for semantic segmentation.  
-We focus on adaptation to different environments.  
-
-
-### 1.1.1. Similar fields in semantic segmentation:  
-- **Unsupervised semantic segmentation:**  
-> > >  In a lot of robotic application and especially semantic segmentation labeled data is expensive therefore employing unsupervised or semi-supervised methods is desirable to achieve the adaptation.
-- **Domain adaptation:**  
-> > > Semantic segmentation or optical flow training data is often generated using game engines or simulators (GTA 5 Dataset or Similar ones).
-Here the challenge is how to deal with the domain shift between the target domain (real data) and training domain (synthetic data)- 
-
-- **Class Incremental Continual Learning:**  
-> > > To study catastrophic forgetting and algorithms on how to update a Neural Network class incremental learning is a nice toy task. 
-There should be a clear carry over between tasks. The skill of classifying CARS and ROADS help each other. Also this scenario is easily set up. 
-
-- **Knowledge Distillation:**  
-> > > Extracting knowledge from a trained network to train an other one. Student Teacher models.  
-
-- **Transfer Learning:**  
-> > > Learning one task and transferring the learned knowledge to achieve other tasks. This is commonly done with auxillary training losses/tasks or pre-training on an other task/dataset.  
-
-- **Contrastive Learning:**  
-> > > Can be used to fully unsupervised learn meaningful embeddings.  
-
-## 1.2. Use case
-A simple use case can be a robot that is pre-trained on several indoor datasets but is deployed to a new indoor lab.  
-
-Instead of generalizing to all indoor-environments in the world we tackle the challenge by continually integrating gathered knowledge of the robots environment in an unsupervised fashion in the semantic segmentation network.  
-
-The problem of **GENERALIZATION**: NN are shown to work great when you are able to densely sample within the desired target distribution with provided training data.  
-This is often not possible (lack of data). Generalization to a larger domain of inputs can be achieved by data augmentation or providing other suitable human designed priors. Non or the less these methods are intrinsically limited.  
-
-Given this intrinsic limitation and the fact that data is nearly always captured in time-series and humans learn in the same fashion the continual learning paradigm arises.  
-
-## 1.3. First Step Dataset
-Given that there is now benchmark for continual learning for semantic segmentation we propose benchmark based on a existing semantic segmentation dataset. 
-
-With additional metrics such as compute, inference time and memory consumption this allows for a comparison of different methods.  
-
-Additionally we provide multiple baselines:  
-1. Training in an non continual setting  
-2. Training in a naive-way  
-3. Our method  
-
-## 1.4. Implementation
-Implementation challenges:
-- **Do we know that we are in a new scene** Measure of uncertainty might be interresting for this here. 
-
-- Design considerations of replay buffer:
-		- can be stored on GPU memory -> we don't need to touch and write a wrapper for each dataloader to integrate the buffer.  
-		- we simply drop data in the Batch Generated by the dataloader and replace it with the replay buffer. 
-		Also a different forward pass has to be performed for the replay buffer -> so an option is to perform two forward passed for each Batch  
-		Forward pass for replay buffer.  
-		Forward pass for real data.  
-		This allows us to design batches with a certain distribution of replayed and new samples.  
-
-
-Learning rate scheduling: 
-- Since we are currently looking at the performance difference between naive learning and a smarter continual learning approach and we want to study the forgetting in the network we don't use a learning rate scheduler.  
-
-
-### 1.4.1. Project Structure
-The repository is organized in the following way:  
-
-
-**root/**
-- **src/**
-	- **datasets/**
-	- **loss/**
-	- **models/**
-	- **utils/**
-	- **visu/**
-- **cfg/**
-	- **dataset/**: config files for dataset
-	- **env/**: cluster workstation environment
-	- **exp/**: experiment configuration
-	- **setup/**: conda environment files
-- **notebooks**
-- **tools**
-	- **leonhard/**
-	- **natrix/**
-- main.py
-
-## 1.5. Getting started
-
-### 1.5.1. Clone repo to home
+### Getting started:
+Clone the repository:  
+```bash 
+cd ~ && git clone https://github.com/JonasFrey96/ASL
 ```
-cd ~
-git clone https://github.com/JonasFrey96/ASL.git
+ 
+Create and activate conda environment:
+```bash 
+cd ~/ASL && conda env create -f cfg/conda/cl.yml
+conda activate cl 
 ```
+Assumes CUDA 11.0 is installed and uses ```pytorch=1.7.1``` and ```pytorch-lightning=1.2.0```.  
 
-### 1.5.2. Setup conda env  
-The conda env file is located at `cfg/conda/track.yml`.  
-This file is currently not a sparse version but includes all the packages I use for debugging.  
+You may have to adapt the conda environment depending on your system. 
+
+#### Environment Configuration Explained
+Setting up the enviornment file depending on your system.  
+You can either create a new enviornment file or edit an existin one in the ```env``` folder.  
+For example you can create ```ASL/cfg/env/your_env_name.yml```, with the following content:
+
+```yaml
+# Configuration
+workstation: True                 
+# If False uses Proxy and copies Dataset to $TMPDIR folder -> allows to train on Leonhard and Euler Cluster
+
+base: path_to_your_logging_directory  	# Here all your experiments are logged
+ 
+# Datasets
+cityscapes: ../datasets/cityscapes
+nyuv2: ../datasets/nyuv2
+coco2014: ../datasets/coco
+mlhypersim: ../datasets/mlhypersim
+scannet: ../datasets/scannet
+scannet_frames_25k: ../datasets/scannet_frames_25k
+cocostuff164k: ../datasets/cocostuff164k
+ 
+# Pseudo Labels Path
+labels_generic: ../datasets/
 ```
-conda env create -f cfg/conda/track.yml
-``` 
+ 
+The correct env file is chosen based on the global variable ```ENV_WORKSTATION_NAME```.
+```bash
+export ENV_WORKSTATION_NAME="""your_env_name"""
 ```
-conda activate track3
+If available set your NeptuneAPI Token to log all the experiments to NeptuneAI:
+```bash
+export NEPTUNE_API_TOKEN="""YOUR_NEPTUNE_KEY"""
 ```
-
-### 1.5.3. Experiment defintion
-Each experiment is defined by two files:  
-
-
-1. ```env```
-Contains all paths that are user depended for external datasets.
-
-| key            | function                                                |
-| -------------- | ------------------------------------------------------- |
-| workstation    | Set true if no data needs to be transfered for training |
-| base           | path to where to log the experiments                    |
-| cityscapes     | path to dataset                                         |
-| nyuv2          | path to dataset                                         |
-| coco           | path to dataset                                         |
-| mlhypersim     | path to dataset                                         |
-| tramac_weights | path to pretrained weights fast_scnn_citys.pth          |
-
-1. ```exp```
-Contains all settings for the experiment.
-
-
-### 1.5.4. Running the experiment
-Simply pass the correct `exp` and `env` yaml files.  
+With this you have setup the configuration. 
+How to download and install the datasets is explained in [Dataset Preperation](Dataset-Preperation).
+ 
+### Running Experiments
+ 
+Running a full CL-scenario:
 ```
-python main.py --exp=cfg/exp/exp.yml --env=cfg/env/env.yml
+cd ~/ASL && python supervisor.py --exp=cfg/exp/MA/scannet/25k_pretrain/pretrain.py
 ```
-
-If you develop on a workstation and want to easily push to leonhard i created a small script `tools/leonhard/push_and_run_folder.py`  
-The script will schedule all experiment files located in the folder.  
+```exp``` arguments provides the correct experiment configuration path.
+ 
+#### Experiment Configuration Explained
+ 
 ```
-python tools/leonhard/push_and_run_folder.py --exp=ml-hypersim --time=4 --gpus=4 --mem=10240 --workers=20 --ram=60 --scratch=300
+**name** Name of the experiment folders
+**neptne_project_name**: NeptuneAI project name  
+**offline_mode** False uses tensorboard. True uses NeptuneAI
+TODO
 ```
-It uses the `tools/leonhard/submit.sh` script to schedule the job.
+#### Overview Provided Experiments
+**Hypersim**
+1. basic: Standard Memory Buffer
+2. memory_size: Evaluate different Memory Sizes
+3. sgd_setting: Training Setting Search
+ 
+ 
+
+**ScanNet**
+1. basic: Standard Memory Buffer
+2. buffer_filling: Different Buffer Filling Strategies
+3. buffer_size: Buffer Size
+4. latent_replay: Latent Replay Experiment
+5. no_replay: Catastrophic Forgetting
+6. replay_ratios: Replay Ratios
+7. single_task: Train on all datasets simultaneously
+8. student_teacher: Experiments with soft and hard teacher for replay
+ 
+## Pseudo Label Experiments
+
+How to run
+TODO
+ 
+### CRF & SLIC
+TODO
+ 
+### Optical Flow
+To create the optical flow we used [RAFT](https://github.com/princeton-vl/RAFT)  
+Download the pre-trained models.  
+You can create the optical flow for the ScanNet dataset using the jupyter Notebook **notebook/optical_flow/**  
+You need to make sure to add the correct paths to import the RAFT model and the dataset.  
+The notebook **Report/pseudo_labels_flow.ipynb** creates all reported plots and figures.  
 
 
-### 1.5.5. Tasks and Evaluation
-A **Task** is split partioned as follow:  
+## Python Code formatting
+cblack
+ 
+ 
+
+### Dataset Preparation
+#### Hypersim
+Download the Hypersim Dataset and extract the files following the [author's instructions](https://github.com/apple/ml-hypersim)  
+We additionally provide a .tar file with the first 10 scenes.
+ 
+Folder structure:
 ```
-	1. Training Task  
-		- Name  
-		- Train/Val Dataset  
-	N. Test Tasks  
-		- Name  
-		- Test Dataset  
+mlhypersim
+  ai_XXX_XXX
+    images
+      scene
+        scene_cam_00_final_hdf5
+          frame.0000.color.hdf5
+          ...
+          frame.XXXX.color.hdf5
+        scene_cam_00_geometry_hdf5
+          frame.0000.semantic.hdf5
+          ...
+          frame.XXX.semantic.hdf5
+  ...
+  ...
+```		
+#### ScanNet
+Download the ScanNet dataset and follow the [author's instructions](http://www.scan-net.org/) to extract the .sens files into individual files.  
+Also, make sure to download the 25k files if you want to perform the pre-training.  
+Here it's important to delete samples from the first 10 scenes to avoid overlapping continual learning and pre-training tasks.  
+We additionally provide a .tar file with the extracted first 10 scenes.  
+ 
+Folder structure:
 ```
-A **Task** does not include any information about the training procedure itself.
+scannet
+  scannet_frames_25k
+    scene0010_00
+      color
+        000000.jpg
+        ...
+        XXXXXX.jpg
+      depth
+        000000.png
+        ...
+        XXXXXX.png
+      label
+        000000.png
+        ...
+        XXXXXX.png
+      pose
+        000000.txt
+        ...
+        XXXXXX.txt
+      intriniscs_color.txt
+      intrinsics_depth.txt
+    ...
+    ...
+    scene0706_00
+      ...
+  scans
+    scene0000_00
+      color
+        000000.jpg
+        ...
+        XXXXXX.jpg
+      depth
+        000000.png
+        ...
+        XXXXXX.png
+      label-filt
+        000000.png
+        ...
+        XXXXXX.png
+      pose
+        000000.txt
+        ...
+        XXXXXX.txt
+      intrinsics
+        intriniscs_color.txt
+        intrinsics_depth.txt
+    ...
+    scene0009_02
+    ...
 
-
-**Logging**  
-For each task a seperate tensorboard logfile is created.  
-Also a logfile for tracking the joint results over the full training procedure is generated.  
-
-
-## 1.6. Supervision Options  
-To utilize the unlabeled data we have a look into the following aspects:
-
-| Method                   | Description                                                         |
-| ------------------------ | ------------------------------------------------------------------- |
-| **Temporal Consistency** | Semantic segmentation should be consistent over time                |
-| **Cross Consistency**    | Decoder should be invariant and consistent to Input transformations |
-| **Optical Flow**         | Optical Flow directly relates semantic intra-frame segmentation     |
-| **Depth Data**           | Semantic segmentation aligns with frames                            |
-
-![Detectron2 Panoptic Segmentation](https://github.com/JonasFrey96/ASL/blob/main/docs/lab_data_segmentation.jpg)
-
-## 1.7. Continual Learning Options  
-We will focus on latent memory replay to avoid catastrophic forgetting initially.
-
-Other options:
-- Regularization approach
-- Increasing model complexity
-- Generative replay
-
-## 1.8. Scaling performance  
-4 1080Ti GPUs 20 Cores BS 8 (effective BS 32)  
-Rougly running at 1.8 it/s  
--> 57.6 Images/s  
-
-
-## 1.9. Datasets  
-
-| Dataset         | Parameters    | Values                          |
-| --------------- | ------------- | ------------------------------- |
-| **NYU_v2**      | Images Train: | 1449 (total)                    |
-|                 | Images Val:   |                                 |
-|                 | Annotations:  | NYU-40                          |
-|                 | Optical Flow: | True                            |
-|                 | Depth:        | True                            |
-|                 | Resolution:   | 640 × 480                       |
-|                 | Total Size:   | 3.7GB                           |
-| **ML-Hypersim** | Images Train: | 74619 (total)                   |
-|                 | Images Val:   |                                 |
-|                 | Annotations:  | NYU-40                          |
-|                 | Optical Flow: | False                           |
-|                 | Depth:        | True                            |
-|                 | Resolution:   | 1024×768                        |
-|                 | Total Size:   | 247GB                           |
-| **COCO 2014**   | Images Train: | 330K >200K labeled              |
-|                 | Images Val:   |                                 |
-|                 | Annotations:  | Object cat 90 Classes (80 used) |
-|                 | Optical Flow: | False                           |
-|                 | Depth:        | False                           |
-|                 | Total Size:   | 20GB                            |
-
-## 1.10 NeptuneAI Logger
 ```
-neptune tensorboard /PATH/TO/TensorBoard_logdir --project jonasfrey96/ASL
+#### COCO2014
+This dataset is only used for pre-training.
+Download the MS COCO 2014 dataset https://cocodataset.org/#home.
+ 
+Folder structure:
+```
+coco
+  train2014
+    COCO_train2014_000000000009.jpg
+    ...
+    COCO_train2014_000000581921.jpg
+  val2014
+    COCO_val2014_000000000042.jpg
+    ...
+    COCO_val2014_000000581929.jpg
+  annotations
+    instances_train2014.json
+    instances_val2014.json
+```
+#### COCO164k
+This dataset is only used for pre-training.
+Download the MS COCO 2017 dataset https://cocodataset.org/#home.
+ 
+Folder structure:
+```
+cocostuff164k
+  images
+    train2017
+      000000000009.jpg
+      ...
+      000000581929.jpg
+    val2017
+      000000000139.jpg
+      ...
+      000000581781.jpg
+  annotations
+    instances_train2014.json
+    instances_val2014.json
 ```
 
-## 1.11 Uncertainty Estimation
-![Uncertainty](https://github.com/JonasFrey96/ASL/blob/main/docs/handwritten_notes/Uncertainty.png)
+# 2. Acknowledgment 
 
+- The authors of Fast-SCNN: Fast Semantic Segmentation Network. ([arxiv](https://arxiv.org/pdf/1902.04502.pdf))  
+- TRAMAC <https://github.com/Tramac> for implementing Fast-SCNN in PyTorch [Fast-SCNN-pytorch](https://github.com/Tramac/Fast-SCNN-pytorch). 
+- RAFT <https://github.com/princeton-vl/RAFT>  
+- ORBSLAM2 <https://github.com/appliedAI-Initiative/orb_slam_2_ros>  
+- People at <http://continualai.org> for the inspiration.
 
-
-# 2. Acknowledgement  
-Special thanks to:  
-People at <http://continualai.org> for the inspiration and feedback.  
-The authors of Fast-SCNN: Fast Semantic Segmentation Network. ([arxiv](https://arxiv.org/pdf/1902.04502.pdf))  
-TRAMAC <https://github.com/Tramac> for implementing Fast-SCNN in PyTorch [Fast-SCNN-pytorch](https://github.com/Tramac/Fast-SCNN-pytorch).  

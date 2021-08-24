@@ -224,8 +224,14 @@ def train_task(
     mode=exp["task_generator"]["mode"],  # mode for TaskGenerator
     cfg=exp["task_generator"]["cfg"],
   )  # cfg for TaskGenerator
-
   print(str(tg))
+
+  # Reinitalizing of all datasets
+  train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
+    tg, task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
+  )
+
+  dataset_sizes = [int(len(val.dataset) * 5) for val in val_dataloaders]
 
   if exp["replay"]["cfg_rssb"]["bins"] == -1:
     exp["replay"]["cfg_rssb"]["bins"] = len(tg)
@@ -235,7 +241,7 @@ def train_task(
     return
 
   # MODEL
-  model = Network(exp=exp, env=env)
+  model = Network(exp=exp, env=env, dataset_sizes=dataset_sizes)
 
   # COLLECT CALLBACKS
   lr_monitor = LearningRateMonitor(**exp["lr_monitor"]["cfg"])
@@ -264,6 +270,11 @@ def train_task(
   cb_ls.append(FreezeCallback(**exp["model"]["freeze"]))
 
   # CHECKPOINT
+
+  # TODO: Jonas Frey REMOVE
+  if torch.cuda.get_device_properties(0).name == "GeForce GTX 1650":
+    exp["trainer"]["precision"] = 32
+
   if exp.get("checkpoint_restore", False):
     p = os.path.join(env["base"], exp["checkpoint_load"])
     trainer = Trainer(
@@ -310,11 +321,6 @@ def train_task(
     model._rssb.valid[:, :] = False
     model._rssb.bins[:, :] = 0
 
-  # What we can do now here is reinitalizing the datasets
-  train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
-    tg, task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
-  )
-
   if model_path.split("/")[-1].find("rank") != -1:
     pa = os.path.join(str(Path(model_path).parent), "main_visu")
   else:
@@ -345,11 +351,12 @@ def train_task(
   # not accessible in config optimiuzer
   if skip:
     # VALIDATION
-    trainer.limit_train_batches = 11
+    trainer.limit_train_batches = 10
     trainer.max_epochs = 1
     trainer.check_val_every_n_epoch = 1
-    model.length_train_dataloader = 11
-    model.max_epochs = 1
+
+    model.length_train_dataloader = 10000
+    model.max_epochs = 10000
     _ = trainer.fit(
       model=model, train_dataloader=train_dataloader, val_dataloaders=val_dataloaders
     )
@@ -369,13 +376,14 @@ def train_task(
     _ = trainer.fit(
       model=model, train_dataloader=train_dataloader, val_dataloaders=val_dataloaders
     )
-
   checkpoint_callback._last_global_step_saved = -999
   checkpoint_callback.save_checkpoint(trainer, model)
 
   val_res = model._val_epoch_results
   with open(fn, "wb") as handle:
     pickle.dump(val_res, handle, protocol=pickle.HIGHEST_PROTOCOL)
+
+    val_res[-2] = list(range(len(val_res[-2])))
     validation_acc_plot_stored(main_visu, val_res)
 
   res = trainer.logger_connector.callback_metrics

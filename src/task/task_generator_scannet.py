@@ -1,5 +1,6 @@
 import copy
 from task import TaskGenerator, Task
+import numpy as np
 
 __all__ = ["TaskGeneratorScannet"]
 
@@ -35,7 +36,8 @@ class TaskGeneratorScannet(TaskGenerator):
       self._scannet_25k_individual(**mode_cfg)
     elif mode == "scannet_25k_alternating":
       self._scannet_25k_alternating(**mode_cfg)
-
+    elif mode == "scannet_25k_reference":
+      self._scannet_25k_reference(**mode_cfg)
     else:
       raise AssertionError("TaskGeneratorScannet: Undefined Mode")
 
@@ -113,6 +115,22 @@ class TaskGeneratorScannet(TaskGenerator):
       number_of_tasks, scenes_per_task, label_setting, confidence_aux
     )
 
+  def _scannet_25k_reference(
+    self, number_of_tasks, scenes_per_task, label_setting, confidence_aux=0
+  ):
+    self._scannet_25k()
+    self._scannet_scenes(
+      number_of_tasks, scenes_per_task, label_setting, confidence_aux
+    )
+    sce = [t.dataset_train_cfg["scenes"] for t in self._task_list[1:]]
+    sce = (
+      np.array([t.dataset_train_cfg["scenes"] for t in self._task_list[1:]])
+      .flatten()
+      .tolist()
+    )
+    self._task_list[1].dataset_train_cfg["scenes"] = sce
+    self._task_list[1].dataset_val_cfg["scenes"] = sce
+
   def _scannet_pretrain(self):
     train = copy.deepcopy(scannet_template_dict)
     val = copy.deepcopy(scannet_template_dict)
@@ -138,7 +156,7 @@ class TaskGeneratorScannet(TaskGenerator):
     train["label_setting"] = label_setting
     train["confidence_aux"] = confidence_aux
 
-    val["label_setting"] = label_setting
+    val["label_setting"] = label_setting  # "default"
 
     start_scene_train = 0
     for i in range(number_of_tasks):

@@ -38,7 +38,7 @@ def wrap(s, length, hard=False):
 
 
 class Network(LightningModule):
-  def __init__(self, exp, env):
+  def __init__(self, exp, env, dataset_sizes):
     super().__init__()
     self._epoch_start_time = time.time()
     self._exp = exp
@@ -50,34 +50,38 @@ class Network(LightningModule):
     else:
       raise Exception("Model name not implemented")
 
-    self._rssb = ReplayStateSyncBack(**exp["replay"]["cfg_rssb"])
+    self._rssb = ReplayStateSyncBack(
+      **exp["replay"]["cfg_rssb"], dataset_sizes=dataset_sizes
+    )
 
     self._mode = "train"
 
-    self.train_acc = pl_metrics.classification.Accuracy()
-    self.train_aux_acc = pl_metrics.classification.Accuracy()
-    self.train_aux_vs_gt_acc = pl_metrics.classification.Accuracy()
+    self.train_acc = pl_metrics.classification.Accuracy(compute_on_step=False)
+    self.train_aux_acc = pl_metrics.classification.Accuracy(compute_on_step=False)
+    self.train_aux_vs_gt_acc = pl_metrics.classification.Accuracy(compute_on_step=False)
+    self.train_acc_real = pl_metrics.classification.Accuracy(compute_on_step=False)
+    self.train_acc_replayed = pl_metrics.classification.Accuracy(compute_on_step=False)
 
     self.val_acc = torch.nn.ModuleList(
       [
-        pl_metrics.classification.Accuracy()
+        pl_metrics.classification.Accuracy(compute_on_step=False)
         for i in range(exp["replay"]["cfg_rssb"]["bins"])
       ]
     )
     self.val_aux_acc = torch.nn.ModuleList(
       [
-        pl_metrics.classification.Accuracy()
+        pl_metrics.classification.Accuracy(compute_on_step=False)
         for i in range(exp["replay"]["cfg_rssb"]["bins"])
       ]
     )
     self.val_aux_vs_gt_acc = torch.nn.ModuleList(
       [
-        pl_metrics.classification.Accuracy()
+        pl_metrics.classification.Accuracy(compute_on_step=False)
         for i in range(exp["replay"]["cfg_rssb"]["bins"])
       ]
     )
 
-    self.test_acc = pl_metrics.classification.Accuracy()
+    self.test_acc = pl_metrics.classification.Accuracy(compute_on_step=False)
 
     self._task_name = "NotDefined"  # is used for model checkpoint nameing
     self._task_count = (
@@ -203,7 +207,7 @@ class Network(LightningModule):
     print(two_line(" CURRENT EPOCH: ", self.global_step))
     print(two_line(" RSSB STATE: ", self._rssb.valid.sum(dim=1)))
     for i in range(self._task_count):
-      m = min(5, self._rssb.nr_elements)
+      m = min(5, int(self._rssb.limits[i]))
       print(two_line("   RSSB INIDI TASK-" + str(i) + " :", self._rssb.bins[i, :m]))
 
     print(
@@ -212,6 +216,12 @@ class Network(LightningModule):
 
     for j, d in enumerate(self.trainer.val_dataloaders):
       print(two_line(f" VALIDATION DATASET {j} LENGTH:", len(d.dataset)))
+
+    if self._teacher.active:
+      s = 0
+      for n, p in self._teacher.teacher.named_parameters():
+        s += p.data.sum()
+      print(two_line(" Teacher start training: ", s))
 
     print(" =============  ON_TRAIN_START_DONE ===============")
 
@@ -237,7 +247,9 @@ class Network(LightningModule):
 
     if "aux_label" in ba.keys():
       ret["aux_label"] = ba["aux_label"]
-      ret["aux_vaild"] = ba["aux_valid"]
+      ret["aux_valid"] = ba["aux_valid"]
+
+    ret["replay"] = batch[2]
 
     return ret
 
@@ -254,12 +266,16 @@ class Network(LightningModule):
       step=self.global_step,
     )
 
-    if self.current_epoch % self._ltmene == 0 and (
-      self.current_epoch != 0 or self._ltmene == 0
-    ):
+    if self.current_epoch % self._ltmene == 0 and self._ltmene != 0:
       # LOG ACCURRACY
       self._acc_cal(
-        outputs, self.train_acc, self.train_aux_acc, self.train_aux_vs_gt_acc
+        outputs,
+        self.train_acc,
+        self.train_aux_acc,
+        self.train_aux_vs_gt_acc,
+        seperate_real_replayed=True,
+        acc_real=self.train_acc_real,
+        acc_replayed=self.train_acc_replayed,
       )
 
     return {"loss": outputs["loss"]}
@@ -270,6 +286,9 @@ class Network(LightningModule):
 
   def on_validation_epoch_start(self):
     self._mode = "val"
+    for a in [self.val_acc, self.val_aux_acc, self.val_aux_vs_gt_acc]:
+      for m in a:
+        m.reset()
 
   def validation_step(self, batch, batch_idx, dataloader_idx=0):
     images, label = batch[:2]
@@ -306,7 +325,16 @@ class Network(LightningModule):
     )
 
   @torch.no_grad()
-  def _acc_cal(self, outputs, acc, aux_acc, aux_vs_gt_acc):
+  def _acc_cal(
+    self,
+    outputs,
+    acc,
+    aux_acc,
+    aux_vs_gt_acc,
+    seperate_real_replayed=False,
+    acc_real=None,
+    acc_replayed=None,
+  ):
     pred = torch.argmax(outputs["pred"], 1)
 
     m = outputs["label"] > -1
@@ -317,8 +345,24 @@ class Network(LightningModule):
       on_epoch=True,
     )
 
-    acc(pred[m], outputs["label"][m])
+    acc.update(pred[m], outputs["label"][m])
     self.log(f"{self._mode}_acc", acc, on_step=False, on_epoch=True)
+
+    if seperate_real_replayed:
+
+      m1 = outputs["replay"] != -1
+      m2 = outputs["label"][m1] > -1
+      if m2.sum() > 0:
+        acc_replayed.update(pred[m1][m2], outputs["label"][m1][m2])
+        self.log(
+          f"{self._mode}_acc_replayed", acc_replayed, on_step=False, on_epoch=True
+        )
+
+      m1 = outputs["replay"] == -1
+      m2 = outputs["label"][m1] > -1
+      if m2.sum() > 0:
+        acc_real.update(pred[m1][m2], outputs["label"][m1][m2])
+        self.log(f"{self._mode}_acc_real", acc_real, on_step=False, on_epoch=True)
 
     if "aux_valid" in outputs.keys():
       aux_m = outputs["aux_label"] > -1
@@ -329,12 +373,12 @@ class Network(LightningModule):
         on_epoch=True,
       )
 
-      aux_acc(pred[aux_m], outputs["aux_label"][aux_m])
+      aux_acc.update(pred[aux_m], outputs["aux_label"][aux_m])
 
       self.log(f"{self._mode}_aux_acc", aux_acc, on_step=False, on_epoch=True)
 
       aux_m2 = aux_m * m
-      aux_vs_gt_acc(outputs["aux_label"][aux_m2], outputs["label"][aux_m2])
+      aux_vs_gt_acc.update(outputs["aux_label"][aux_m2], outputs["label"][aux_m2])
       self.log(
         f"{self._mode}_aux_vs_gt_acc", aux_vs_gt_acc, on_step=False, on_epoch=True
       )
@@ -366,13 +410,13 @@ class Network(LightningModule):
     try:
       # only works when multiple val-dataloader are set!
       if len(self._val_results) == 0:
-        for i in range(self._exp["replay"]["cfg_rssb"]["bins"]):
+        for i in range(self.trainer.val_dataloaders):
           self._val_results[f"val_acc/dataloader_idx_{i}"] = float(
             metrics[f"val_acc/dataloader_idx_{i}"]
           )
       else:
         val_results = {}
-        for i in range(self._exp["replay"]["cfg_rssb"]["bins"]):
+        for i in range(self.trainer.val_dataloaders):
           val_results[f"val_acc/dataloader_idx_{i}"] = float(
             metrics[f"val_acc/dataloader_idx_{i}"]
           )
@@ -425,6 +469,11 @@ class Network(LightningModule):
 
     self._epoch_start_time = time.time()
     print("VALIDATION_EPOCH_END: Should stop: " + str(self.trainer.should_stop))
+
+  def on_train_end(self):
+    if self._teacher.active:
+      print("ON TRAIN END: Absorbe model in teacher weights")
+      self._teacher.absorb(self.model)
 
   def on_test_epoch_start(self):
     """
@@ -547,7 +596,8 @@ class Network(LightningModule):
 
     stra = self._exp["replay"]["cfg_filling"]["strategy"]
     nr_indices = len(self.logs_test["indices"])
-    if nr_indices < self._rssb.nr_elements:
+    limit = int(self._rssb.limits[self._task_count])
+    if nr_indices < int(self._rssb.limits[self._task_count]):
       self._rssb.bins[self._task_count][:nr_indices] = torch.from_numpy(
         self.logs_test["indices"]
       )
@@ -555,13 +605,13 @@ class Network(LightningModule):
       self._rssb.valid[self._task_count, nr_indices:] = False
     elif stra == "random":
       ind = np.random.permutation(self.logs_test["indices"])[: self._rssb.nr_elements]
-      self._rssb.bins[self._task_count] = torch.from_numpy(ind)
-      self._rssb.valid[self._task_count, :] = True
+      self._rssb.bins[self._task_count, :limit] = torch.from_numpy(ind)
+      self._rssb.valid[self._task_count, :limit] = True
 
     elif (
-      stra == "metric_softmax_distance"
-      or stra == "metric_softmax_max"
-      or stra == "metric_softmax_entropy"
+      stra == "softmax_distance"
+      or stra == "softmax_max"
+      or stra == "softmax_entropy"
       or stra == "loss"
       or stra == "acc"
     ):
@@ -569,34 +619,32 @@ class Network(LightningModule):
       metric_mode = self._exp["replay"]["cfg_filling"]["metric_mode"]
 
       if metric_mode == "max":
-        sel = self.logs_test["indices"][sel[: self._rssb.nr_elements]]
+        sel = self.logs_test["indices"][sel[:limit]]
 
       elif metric_mode == "min":
-        sel = self.logs_test["indices"][sel[-self._rssb.nr_elements :]]
+        sel = self.logs_test["indices"][sel[-limit:]]
 
       elif metric_mode == "equal":
-        sel2 = np.round(
-          np.linspace(0, nr_indices - 1, self._rssb.nr_elements), 0
-        ).astype(np.uint32)
+        sel2 = np.round(np.linspace(0, nr_indices - 1, limit), 0).astype(np.uint32)
         sel = self.logs_test["indices"][sel[sel2]]
       else:
         raise ValueError("Not defined")
 
-      self._rssb.bins[self._task_count] = torch.from_numpy(sel)
-      self._rssb.valid[self._task_count, :] = True
+      self._rssb.bins[self._task_count, :limit] = torch.from_numpy(sel)
+      self._rssb.valid[self._task_count, :limit] = True
     elif stra == "cover_sequence":
       sel = np.round(np.linspace(0, nr_indices - 1, self._rssb.nr_elements), 0).astype(
         np.uint32
       )
-      self._rssb.bins[self._task_count] = torch.from_numpy(
+      self._rssb.bins[self._task_count, :limit] = torch.from_numpy(
         self.logs_test["indices"][sel]
       )
-      self._rssb.valid[self._task_count, :] = True
+      self._rssb.valid[self._task_count, :limit] = True
 
     else:
       raise Exception("Not implemented")
 
-    val = min(self._rssb.nr_elements, 10)
+    val = min(limit, 10)
     print(
       str(
         f"\nTEST_EPOCH_END: In Test overwritten bin {self._task_count} following indices: "
@@ -656,9 +704,8 @@ class Network(LightningModule):
           pct_start=cfg["pct_start"],
           anneal_strategy="linear",
           final_div_factor=cfg["final_div_factor"],
+          div_factor=float(cfg.get("div_factor", 10000.0)),
         )
-        # trainer.lr_schedulers[0]['scheduler']
-
         interval = "step"
       else:
         raise ValueError(f"The exp[lr_scheduler][name] is not well define {n}!")

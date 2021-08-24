@@ -57,6 +57,12 @@ def replay_cfg_to_probs(replay_cfg_ensemble, nr):
       # normalize and weight
       probs = [i / sum(imp) * cfg["ratio_replay"] for i in imp]
 
+    elif m == "adaptive":
+      probs = [1 / nr] * (nr - 1)
+
+    else:
+      raise ValueError("Not defined mode")
+
     probs += [1 - sum(probs)]
 
   else:
@@ -133,11 +139,11 @@ def adapter_tg_to_dataloader(tg, task_nr, loader_cfg, replay_cfg_ensemble, env):
   val_dataloaders = [
     DataLoader(
       d,
-      shuffle=loader_cfg.get("shuffle_val", False),
+      shuffle=False,
       num_workers=ceil(loader_cfg["num_workers"] / torch.cuda.device_count()),
       pin_memory=loader_cfg["pin_memory"],
       batch_size=loader_cfg["batch_size"],
-      drop_last=True,
+      drop_last=False,
     )
     for d in val_datasets
   ]

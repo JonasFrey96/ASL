@@ -31,6 +31,24 @@ except:
 
 
 __all__ = ["Visualizer", "MainVisualizer"]
+from PIL import ImageFont, ImageDraw, Image
+
+
+def find_font_size(text, font, image, target_width_ratio):
+  tested_font_size = 100
+  tested_font = ImageFont.truetype(font, tested_font_size)
+  observed_width, observed_height = get_text_size(text, image, tested_font)
+  estimated_font_size = (
+    tested_font_size / (observed_width / image.width) * target_width_ratio
+  )
+  return round(estimated_font_size)
+
+
+def get_text_size(text, image, font):
+  im = Image.new("RGB", (image.width, image.height))
+  draw = ImageDraw.Draw(im)
+  return draw.textsize(text, font)
+
 
 # define a function which returns an image as numpy array from figure
 def get_img_from_fig(fig, dpi=180):
@@ -212,6 +230,7 @@ class MainVisualizer:
     label_x=None,
     label_y=None,
     color_map="custom",
+    col_map=None,
     **kwargs,
   ):
 
@@ -237,16 +256,19 @@ class MainVisualizer:
       label_x = ["Test " + str(i) for i in range(max_tests)]
 
     fig, ax = plt.subplots()
-    if higher_is_better:
-      if color_map == "custom":
-        im = ax.imshow(data_matrix, cmap=RG_PASTEL)
-      else:
-        im = ax.imshow(data_matrix, cmap=cm.get_cmap("PiYG"))
+    if col_map != None:
+      im = ax.imshow(data_matrix, cmap=col_map)
     else:
-      if color_map == "custom":
-        im = ax.imshow(data_matrix, cmap=RG_PASTEL_r)
+      if higher_is_better:
+        if color_map == "custom":
+          im = ax.imshow(data_matrix, cmap=RG_PASTEL)
+        else:
+          im = ax.imshow(data_matrix, cmap=cm.get_cmap("PiYG"))
       else:
-        im = ax.imshow(data_matrix, cmap=cm.get_cmap("PiYG_r"))
+        if color_map == "custom":
+          im = ax.imshow(data_matrix, cmap=RG_PASTEL_r)
+        else:
+          im = ax.imshow(data_matrix, cmap=cm.get_cmap("PiYG_r"))
 
     # We want to show all ticks...
     ax.set_xticks(np.arange(len(label_x)))
@@ -513,7 +535,18 @@ class Visualizer:
     self._meta_data = DotDict(self._meta_data)
 
   @image_functionality
-  def plot_detectron(self, img, label, **kwargs):
+  def plot_detectron(
+    self,
+    img,
+    label,
+    text_off=False,
+    alpha=0.5,
+    draw_bound=True,
+    scale=1,
+    shift=2.5,
+    font_size=12,
+    **kwargs,
+  ):
     img = self.plot_image(img, not_log=True)
     try:
       label = label.clone().cpu().numpy()
@@ -533,7 +566,8 @@ class Visualizer:
       labels_mask = measure.label(m)
       regions = measure.regionprops(labels_mask)
       regions.sort(key=lambda x: x.area, reverse=True)
-      cen = np.mean(regions[0].coords, axis=0).astype(np.uint32)
+      cen = np.mean(regions[0].coords, axis=0).astype(np.uint32)[::-1]
+
       centers.append((self._meta_data["stuff_classes"][u], cen))
 
     back = np.zeros((H, W, 4))
@@ -541,20 +575,111 @@ class Visualizer:
     back[:, :, 3] = 255
     fore = np.zeros((H, W, 4))
     fore[:, :, :3] = overlay
-    fore[:, :, 3] = 100
+    fore[:, :, 3] = alpha * 255
     img_new = Image.alpha_composite(
       Image.fromarray(np.uint8(back)), Image.fromarray(np.uint8(fore))
     )
     draw = ImageDraw.Draw(img_new)
-    for i in centers:
-      draw.text(tuple(i[1]), str(i[0]), fill=(255, 255, 255, 128))
+
+    if not text_off:
+
+      for i in centers:
+        pose = i[1]
+        pose[0] -= len(str(i[0])) * shift
+        pose[1] -= font_size / 2
+
+        font = ImageFont.truetype("cfg/arial.ttf", font_size)
+
+        # font = ImageFont.truetype("/usr/share/fonts/truetype/arial.ttf", font_size)
+
+        draw.text(tuple(pose), str(i[0]), fill=(255, 255, 255, 128), font=font)
 
     img_new = img_new.convert("RGB")
     mask = mark_boundaries(img_new, label, color=(255, 255, 255))
     mask = mask.sum(axis=2)
     m = mask == mask.max()
     img_new = np.array(img_new)
-    img_new[m] = (255, 255, 255)
+    if draw_bound:
+      img_new[m] = (255, 255, 255)
+    return np.uint8(img_new)
+
+  @image_functionality
+  def plot_detectron_true_false(
+    self,
+    img,
+    pred,
+    gt,
+    text_off=False,
+    alpha=0.7,
+    draw_bound=True,
+    scale=1,
+    shift=2.5,
+    font_size=12,
+    **kwargs,
+  ):
+    img = self.plot_image(img, not_log=True)
+    try:
+      pred = pred.clone().cpu().numpy()
+    except:
+      pass
+
+    try:
+      gt = gt.clone().cpu().numpy()
+    except:
+      pass
+
+    label = (gt == pred).astype(np.long)
+
+    H, W, C = img.shape
+    uni = np.unique(label)
+    overlay = np.zeros_like(img)
+
+    centers = []
+    for u in uni:
+      m = label == u
+      if u == 0:
+        col = np.array(COL_DICT["red"])
+      else:
+        col = np.array(COL_DICT["green"])
+      overlay[m] = col
+      labels_mask = measure.label(m)
+      regions = measure.regionprops(labels_mask)
+      regions.sort(key=lambda x: x.area, reverse=True)
+      cen = np.mean(regions[0].coords, axis=0).astype(np.uint32)[::-1]
+
+      centers.append((self._meta_data["stuff_classes"][u], cen))
+
+    back = np.zeros((H, W, 4))
+    back[:, :, :3] = img
+    back[:, :, 3] = 255
+    fore = np.zeros((H, W, 4))
+    fore[:, :, :3] = overlay
+    fore[:, :, 3] = alpha * 255
+    img_new = Image.alpha_composite(
+      Image.fromarray(np.uint8(back)), Image.fromarray(np.uint8(fore))
+    )
+    draw = ImageDraw.Draw(img_new)
+
+    if not text_off:
+
+      for i in centers:
+        pose = i[1]
+        pose[0] -= len(str(i[0])) * shift
+        pose[1] -= font_size / 2
+
+        font = ImageFont.truetype("cfg/arial.ttf", font_size)
+
+        # font = ImageFont.truetype("/usr/share/fonts/truetype/arial.ttf", font_size)
+
+        draw.text(tuple(pose), str(i[0]), fill=(255, 255, 255, 128), font=font)
+
+    img_new = img_new.convert("RGB")
+    mask = mark_boundaries(img_new, label, color=(255, 255, 255))
+    mask = mask.sum(axis=2)
+    m = mask == mask.max()
+    img_new = np.array(img_new)
+    if draw_bound:
+      img_new[m] = (255, 255, 255)
     return np.uint8(img_new)
 
   @property
