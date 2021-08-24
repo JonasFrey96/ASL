@@ -1,6 +1,0 @@
-- hard labels
-- soft labels
-- with augmentation
-- without augmentation
-- latent replay
-- full replay

@@ -15,9 +15,8 @@ def _create_or_get_experiment2(self):
       "dry-run/project"
     )
   else:
-    # project_qualified_name='jonasfrey96/ASL', api_token=os.environ["NEPTUNE_API_TOKEN"], proxies=proxies
     session = neptune.init(
-      project_qualified_name="jonasfrey96/ASL", api_token=self.api_key, proxies=proxies
+      project_qualified_name="ASL/MT-JonasFrey", api_token=self.api_key, proxies=proxies
     )  # add your credential
     print(type(session))
     session = neptune.Session(api_token=self.api_key, proxies=proxies)

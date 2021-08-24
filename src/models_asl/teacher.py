@@ -33,7 +33,7 @@ class Teacher(nn.Module):
       self.teacher.eval()
       self.overwrite = cfg["overwrite"]
       self.soft = cfg["soft"]
-      # TODO: MAPPING
+      self.only_replayed = cfg["only_replayed"]
 
   def modify_batch(self, batch):
     if not self.active:
@@ -51,16 +51,43 @@ class Teacher(nn.Module):
       else:
         aux_label = torch.nn.functional.softmax(outputs[0], dim=1)
 
+      if self.only_replayed:
+        aux_valid = batch[2].clone() != -1
+      else:
+        aux_valid = torch.tensor([True] * BS, device=outputs[0].device)
+
       if len(batch) == 3:
         batch = batch[:3] + [
           aux_label,
-          torch.tensor([True] * BS, device=outputs[0].device),
+          aux_valid,
         ]
-      if len(batch) == 4:
+      elif len(batch) == 4:
         batch = batch[:3] + [
           aux_label,
-          torch.tensor([True] * BS, device=outputs[0].device),
+          aux_valid,
           batch[3],
         ]
+      else:
+        raise ValueError("Batch length is not supported")
 
     return batch
+
+  def absorb(self, reference_model):
+    reference_state = reference_model.state_dict()
+    s1 = 0
+    for n, p in self.teacher.named_parameters():
+      s1 += p.data.sum()
+
+    s2 = 0
+    for n, p in reference_model.named_parameters():
+      s2 += p.data.sum()
+
+    # COPYING WEIGHTS OVER
+    for n, p in self.teacher.named_parameters():
+      p.data.copy_(reference_state[n])
+
+    s3 = 0
+    for n, p in self.teacher.named_parameters():
+      s3 += p.data.sum()
+    print("Teacher Absorbing Result: ", s1, s2, s3)
+    assert s2 == s3, "Failed absorbing waits at end of train to teacher"

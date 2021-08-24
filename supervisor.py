@@ -24,7 +24,7 @@ if __name__ == "__main__":
   parser.add_argument(
     "--exp",
     type=file_path,
-    default="cfg/exp/MA_final/templates/template_mlhypersim.yml",
+    default="cfg/exp/MA/scannet_self_supervision/retrain_network/4_scenes/fast/debug_mem.yml",
     help="The main experiment yaml file.",
   )
   parser.add_argument(

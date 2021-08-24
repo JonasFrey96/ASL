@@ -9,16 +9,16 @@ __all__ = ["LabelLoaderAuto"]
 
 
 class LabelLoaderAuto:
-  def __init__(self, root_scannet=None, confidence=0):
+  def __init__(self, root_scannet=None, confidence=0, H=968, W=1296):
     assert root_scannet is not None
     self._get_mapping(root_scannet)
     self._confidence = confidence
     # return label between 0-40
 
     self.max_classes = 40
-    H, W = imageio.imread(
-      os.path.join(root_scannet, "scans/scene0000_00/label-filt/0.png")
-    ).shape
+    # H, W = imageio.imread(
+    #   os.path.join(root_scannet, "scans/scene0000_00/label-filt/0.png")
+    # ).shape
     self.label = np.zeros((H, W, self.max_classes))
     iu16 = np.iinfo(np.uint16)
     mask = np.full((H, W), iu16.max, dtype=np.uint16)

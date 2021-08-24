@@ -435,6 +435,14 @@ class ScanNet(Dataset):
                 np.uint8(aux_label),
               )
 
+          def parallel2(aux_pths, label_loader):
+            for a in aux_pths:
+              aux_label, method = label_loader.get(a)
+              imageio.imwrite(
+                a.replace(".png", "_.png"),
+                np.uint8(aux_label),
+              )
+
           cores = 16
           tasks = [
             t.tolist()
@@ -445,8 +453,11 @@ class ScanNet(Dataset):
 
           for i in range(cores):
             p = Process(
-              target=parallel,
-              args=(tasks[i], self.aux_label_pths, self._label_loader),
+              target=parallel2,
+              args=(
+                np.array(self.aux_label_pths)[np.array(tasks[i])].tolist(),
+                self._label_loader,
+              ),
             )
             p.start()
           p.join()
@@ -491,7 +502,7 @@ def test():
     mode="val",
     scenes=[],
     output_trafo=output_transform,
-    output_size=(640, 1280),
+    output_size=(480, 640),
     degrees=10,
     flip_p=0.5,
     jitter_bcsh=[0.3, 0.3, 0.3, 0.05],

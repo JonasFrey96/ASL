@@ -5,7 +5,7 @@ weights_restore: true
 checkpoint_restore: false
 checkpoint_load: pretrain24/run_full_24h_small_bs/task0-epoch=141--step=268095.ckpt
 tramac_restore: false
-lr: 0.002
+lr: 0.05
 tag_list:
   - scannet
   - replay
@@ -17,27 +17,23 @@ tag_list:
 start_at_task: 0
 max_tasks: 1
 task_specific_early_stopping:
-  active: True
+  active: true
   cfg:
     patience: 2000
     timelimit_in_min: 30
     verbose: True
 
-teaching:
-  active: False
-  soft_labels: False
-  soft_labels_weight: 10
-  loss_function: MSE
+
 
 # Standard Setting
 lr_scheduler:
-  active: true
+  active: false
   cfg:
     power: 0.9
     max_epochs: 2000
     target_lr: 1.0e-05
 optimizer:
-  name: ADAM
+  name: SGD
   sgd_cfg:
     momentum: 0.9
     weight_decay: 4.0e-05
@@ -45,8 +41,8 @@ trainer:
   precision: 16
   accumulate_grad_batches: 1
   fast_dev_run: false
-  limit_train_batches: 10
-  limit_val_batches: 10
+  limit_train_batches: 1.0
+  limit_val_batches: 1.0
   limit_test_batches: 10
   progress_bar_refresh_rate: 10
   max_epochs: 1000
@@ -86,7 +82,7 @@ model:
       - false
 replay:
   cfg_ensemble:
-    active: True
+    active: true
     probs: 0.2
 
 task_generator:

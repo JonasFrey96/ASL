@@ -41,11 +41,11 @@ class ReplayCallback(Callback):
       bin_fill_status = pl_module._rssb.valid.sum(dim=1)
 
       for bin, ls in enumerate(ls_global_indices):
-        if bin_fill_status[bin] == pl_module._rssb.valid.shape[1]:
+        if bin_fill_status[bin] == int(pl_module._rssb.limits[bin]):
           # DONT FILL BECAUSE ALREADY VALID ENTRIES
           continue
 
-        el = pl_module._rssb.nr_elements
+        el = int(pl_module._rssb.limits[bin])
         torch_ls = torch.tensor(ls, dtype=torch.long)
 
         if el >= len(ls):
@@ -56,7 +56,7 @@ class ReplayCallback(Callback):
           pl_module._rssb.valid[bin, : len(ls)] = True
           pl_module._rssb.valid[bin, len(ls) :] = False
         else:
-          pl_module._rssb.bins[bin, :] = torch_ls[torch.randperm(len(ls))[:el]]
-          pl_module._rssb.valid[bin, :] = True
+          pl_module._rssb.bins[bin, :el] = torch_ls[torch.randperm(len(ls))[:el]]
+          pl_module._rssb.valid[bin, :el] = True
         val = min(el, 5)
         print(f"Set for bin {bin} following indices: ", pl_module._rssb.bins[bin, :val])
