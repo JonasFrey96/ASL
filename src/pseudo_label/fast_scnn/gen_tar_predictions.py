@@ -72,10 +72,8 @@ def label_generation(**kwargs):
   scenes = kwargs["scenes"]
   exp = kwargs["exp"]
 
-  if os.environ["ENV_WORKSTATION_NAME"] == "ptarmigan":
-    base = os.path.join(env["scannet"], "scans")
-    scratchdir = "/media/scratch1/jonfrey/labels_generated"
-  elif os.environ["ENV_WORKSTATION_NAME"] == "ws":
+
+  if os.environ["ENV_WORKSTATION_NAME"] == "ws":
     base = os.path.join(env["scannet"], "scans")
     scratchdir = "/home/jonfrey/Datasets/labels_generated"
   else:
@@ -207,7 +205,7 @@ if __name__ == "__main__":
   parser = argparse.ArgumentParser()
   parser.add_argument(
     "--exp",
-    default="cfg/exp/MA/scannet_self_supervision/create_labels_from_pretrained.yml",
+    default="/home/jonfrey/ASL/cfg/exp/scannet_self_supervision/create_labels_from_pretrained.yml",
     help="The main experiment yaml file.",
   )
   args = parser.parse_args()

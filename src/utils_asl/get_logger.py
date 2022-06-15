@@ -1,4 +1,3 @@
-from log import _create_or_get_experiment2
 from pytorch_lightning.loggers.neptune import NeptuneLogger
 from pytorch_lightning.loggers import TensorBoardLogger
 import os
@@ -33,9 +32,7 @@ def get_neptune_logger(exp, env, exp_p, env_p):
   files.append(env_p)
 
   t1 = str(os.environ["ENV_WORKSTATION_NAME"])
-  if not env["workstation"]:
-    NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
-
+  
   gpus = "gpus_" + str(torch.cuda.device_count())
   return NeptuneLogger(
     api_key=os.environ["NEPTUNE_API_TOKEN"],

@@ -384,7 +384,12 @@ def train_task(
     pickle.dump(val_res, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
     val_res[-2] = list(range(len(val_res[-2])))
-    validation_acc_plot_stored(main_visu, val_res)
+    try:
+      validation_acc_plot_stored(main_visu, val_res)
+    except:
+      print("Valied to generate ACC plot.")
+      print("Currently not implemented if not started from task > 1 ?")
+      pass
 
   res = trainer.logger_connector.callback_metrics
   res_store = {}

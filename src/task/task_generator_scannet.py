@@ -108,11 +108,20 @@ class TaskGeneratorScannet(TaskGenerator):
       idx += 2
 
   def _scannet_25k_individual(
-    self, number_of_tasks, scenes_per_task, label_setting, confidence_aux=0
+    self,
+    number_of_tasks,
+    scenes_per_task,
+    label_setting,
+    confidence_aux=0,
+    start_scene=0,
   ):
     self._scannet_25k()
     self._scannet_scenes(
-      number_of_tasks, scenes_per_task, label_setting, confidence_aux
+      number_of_tasks,
+      scenes_per_task,
+      label_setting,
+      confidence_aux,
+      start_scene=start_scene,
     )
 
   def _scannet_25k_reference(
@@ -147,7 +156,12 @@ class TaskGeneratorScannet(TaskGenerator):
     self._task_list.append(t)
 
   def _scannet_scenes(
-    self, number_of_tasks, scenes_per_task, label_setting="default", confidence_aux=0
+    self,
+    number_of_tasks,
+    scenes_per_task,
+    label_setting="default",
+    confidence_aux=0,
+    start_scene=0,
   ):
     train = copy.deepcopy(scannet_template_dict)
     val = copy.deepcopy(scannet_template_dict)
@@ -158,7 +172,7 @@ class TaskGeneratorScannet(TaskGenerator):
 
     val["label_setting"] = label_setting  # "default"
 
-    start_scene_train = 0
+    start_scene_train = start_scene
     for i in range(number_of_tasks):
       # GENERATE TRAIN TASK
       train["scenes"] = [

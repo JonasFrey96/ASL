@@ -1,1 +1,0 @@
-docker build ~/ASL/docker/semantics --no-cache -t semantics

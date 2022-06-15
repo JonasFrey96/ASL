@@ -9,8 +9,7 @@ __all__ = ["LabelLoaderAuto"]
 
 
 class LabelLoaderAuto:
-  def __init__(self, root_scannet=None, confidence=0, H=968, W=1296):
-    assert root_scannet is not None
+  def __init__(self, root_scannet="no_path", confidence=0, H=968, W=1296):
     self._get_mapping(root_scannet)
     self._confidence = confidence
     # return label between 0-40
@@ -45,6 +44,8 @@ class LabelLoaderAuto:
       self.label = img.astype(np.int32)
       method = "FAST"
     elif len(img.shape) == 2 and img.dtype == np.uint16:
+      if not self.scannet:
+        raise Exception("ScanNet Mapping was not loaded given wrong Scannet Path")
       self.label = torch.from_numpy(img.astype(np.int32)).type(torch.float32)[
         None, :, :
       ]
@@ -72,14 +73,19 @@ class LabelLoaderAuto:
     return probs
 
   def _get_mapping(self, root):
-    tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
-    df = pandas.read_csv(tsv, sep="\t")
-    mapping_source = np.array(df["id"])
-    mapping_target = np.array(df["nyu40id"])
+    try:
+      tsv = os.path.join(root, "scannetv2-labels.combined.tsv")
+      df = pandas.read_csv(tsv, sep="\t")
+      mapping_source = np.array(df["id"])
+      mapping_target = np.array(df["nyu40id"])
 
-    self.mapping = torch.zeros((int(mapping_source.max() + 1)), dtype=torch.int64)
-    for so, ta in zip(mapping_source, mapping_target):
-      self.mapping[so] = ta
+      self.mapping = torch.zeros((int(mapping_source.max() + 1)), dtype=torch.int64)
+      for so, ta in zip(mapping_source, mapping_target):
+        self.mapping[so] = ta
+      self.scannet = True
+    except:
+      print("LabelLoaderAuto failed to load ScanNet labels")
+      self.scannet = False
 
 
 if __name__ == "__main__":

@@ -1,1 +1,0 @@
-cd ~/ASL && nohup /home/jonfrey/miniconda3/envs/track3/bin/python supervisor.py &

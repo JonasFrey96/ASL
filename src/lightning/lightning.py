@@ -699,11 +699,11 @@ class Network(LightningModule):
         scheduler = torch.optim.lr_scheduler.OneCycleLR(
           optimizer,
           self.hparams["lr"],
-          epochs=int(self.max_epochs) + 1,
-          steps_per_epoch=int(self.length_train_dataloader),
+          total_steps=int((self.max_epochs * self.length_train_dataloader) + 100),
           pct_start=cfg["pct_start"],
           anneal_strategy="linear",
           final_div_factor=cfg["final_div_factor"],
+          cycle_momentum=False,
           div_factor=float(cfg.get("div_factor", 10000.0)),
         )
         interval = "step"
@@ -712,7 +712,7 @@ class Network(LightningModule):
 
       lr_scheduler = {"scheduler": scheduler, "interval": interval}
 
-      ret = {"optimizer": optimizer, "lr_scheduler": lr_scheduler}
+      ret = [optimizer], [lr_scheduler]
     else:
       ret = [optimizer]
     return ret

@@ -272,4 +272,3 @@ cocostuff164k
 - The authors of [RAFT](https://github.com/princeton-vl/RAFT)  
 -  The authors of [ORBSLAM2](https://github.com/appliedAI-Initiative/orb_slam_2_ros)  
 - People at <http://continualai.org> for the inspiration
-

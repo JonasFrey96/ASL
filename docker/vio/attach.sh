@@ -1,1 +1,0 @@
-docker exec -it vio_new tmux
