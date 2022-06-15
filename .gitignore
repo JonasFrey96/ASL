@@ -1,4 +1,6 @@
 **.pt
+notebooks/Report/visu_paper.ipynb
+notebooks/*
 *ws.codeworkspace
 *launch.json
 *Untitled*
