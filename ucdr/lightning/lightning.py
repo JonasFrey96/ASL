@@ -4,23 +4,18 @@ import time
 
 # MISC
 import numpy as np
+import datetime
+import pickle
+import os
 
 # DL-framework
 import torch
 from pytorch_lightning.core.lightning import LightningModule
 from pytorch_lightning import metrics as pl_metrics
 from torch.nn import functional as F
-import datetime
-import pickle
-import os
 
 # MODULES
 from ucdr.models import FastSCNN, ReplayStateSyncBack, Teacher
-
-# BUFFER FILLING
-from uncertainty import get_softmax_uncertainty_max
-from uncertainty import get_softmax_uncertainty_distance
-from uncertainty import get_softmax_uncertainty_entropy
 
 __all__ = ["Network"]
 

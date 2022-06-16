@@ -5,10 +5,7 @@ from pathlib import Path
 import torch
 import logging
 
-try:
-    from .utils import flatten_dict
-except Exception:
-    from ucdr.utils import flatten_dict
+from ucdr.utils import flatten_dict
 
 __all__ = ["get_neptune_logger", "get_tensorboard_logger"]
 
@@ -28,21 +25,24 @@ def get_neptune_logger(exp, env, exp_p, env_p):
     files.append(env_p)
 
     t1 = str(os.environ["ENV_WORKSTATION_NAME"])
-
+    
     gpus = "gpus_" + str(torch.cuda.device_count())
+    if os.environ["ENV_WORKSTATION_NAME"] == "euler":
+        proxies = {"http": "http://proxy.ethz.ch:3128", "https": "http://proxy.ethz.ch:3128"}
+    else:
+        proxies = None    
+    
     return NeptuneLogger(
         api_key=os.environ["NEPTUNE_API_TOKEN"],
-        project_name=project_name,
-        experiment_name=exp["name"].split("/")[-2] + "_" + exp["name"].split("/")[-1],  # Optional,
-        params=params,  # Optional,
-        tags=[t1, exp["name"].split("/")[-2], exp["name"].split("/")[-1], gpus] + exp["tag_list"],  # Optional,
-        close_after_fit=False,
-        offline_mode=exp.get("offline_mode", False),
+        project=project_name,
+        name=name_short,
+        tags=[t1, exp["name"].split("/")[-2], exp["name"].split("/")[-1], gpus] + exp["tag_list"],
         upload_source_files=files,
         upload_stdout=True,
         upload_stderr=True,
+        proxies=proxies,
+        params=params,
     )
-
 
 def get_tensorboard_logger(exp, env, exp_p, env_p):
     params = log_important_params(exp)

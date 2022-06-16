@@ -1,5 +1,4 @@
 from torch.utils.data import Dataset
-
 import numpy as np
 import torch
 from torchvision import transforms as tf
@@ -7,18 +6,13 @@ import random
 import os
 from pathlib import Path
 import copy
-
-try:
-    from .helper import AugmentationList
-except Exception:
-    from helper import AugmentationList
-
-
 import imageio
 import pandas
-
 import pickle
+
+from ucdr.datasets import AugmentationList
 from ucdr.utils import LabelLoaderAuto
+from ucdr import UCDR_ROOT_DIR
 
 __all__ = ["ScanNet"]
 
@@ -209,8 +203,9 @@ class ScanNet(Dataset):
         self._get_mapping(root)
 
         self.train_test, self.scenes, self.image_pths, self.label_pths = self._load_cfg(root, train_val_split)
-        self.image_pths = [os.path.join(root, i[1:]) for i in self.image_pths if i.find("scene0088_03") == -1]
-        self.label_pths = [os.path.join(root, i[1:]) for i in self.label_pths if i.find("scene0088_03") == -1]
+        
+        self.image_pths = [os.path.join(root, i) for i in self.image_pths]
+        self.label_pths = [os.path.join(root, i) for i in self.label_pths]
 
         if label_setting != "default":
             self.aux_label_pths = [i.replace("label-filt", label_setting) for i in self.label_pths]
@@ -229,6 +224,7 @@ class ScanNet(Dataset):
             self.aux_labels = False
 
         if mode.find("_strict") != -1:
+            # TODO This is broken
             r = os.path.join(root, "scans")
             colors = [str(p) for p in Path(r).rglob("*color/*.jpg") if str(p).find("scene0088_03") == -1]
             fun = (
@@ -299,27 +295,30 @@ class ScanNet(Dataset):
         for s in scenes:
             for sub in sub_scene[s]:
                 print(s)
-            colors = [str(p) for p in Path(sub).rglob("*color/*.jpg")]
-            labels = [str(p) for p in Path(sub).rglob("*label-filt/*.png")]
-            fun = lambda x: int(x.split("/")[-1][:-4])
-            colors.sort(key=fun)
-            labels.sort(key=fun)
+                colors = [str(p) for p in Path(sub).rglob("*color/*.jpg")]
+                labels = [str(p) for p in Path(sub).rglob("*label-filt/*.png")]
+                fun = lambda x: int(x.split("/")[-1][:-4])
+                colors.sort(key=fun)
+                labels.sort(key=fun)
 
-            for i, j in zip(colors, labels):
-                assert int(i.split("/")[-1][:-4]) == int(j.split("/")[-1][:-4])
+                for i, j in zip(colors, labels):
+                    assert int(i.split("/")[-1][:-4]) == int(j.split("/")[-1][:-4])
 
-            if len(colors) > 0:
-                assert len(colors) == len(labels)
+                if len(colors) > 0:
+                    assert len(colors) == len(labels)
 
-                nr_train = int(len(colors) * (1 - train_val_split))
-                nr_test = int(len(colors) - nr_train)
-                train_test += ["train"] * nr_train
-                train_test += ["test"] * nr_test
-                scenes_out += [s.split("/")[-1]] * len(colors)
-                image_pths += colors
-                label_pths += labels
-            else:
-                print(sub, "Color not found")
+                    nr_train = int(len(colors) * (1 - train_val_split))
+                    nr_test = int(len(colors) - nr_train)
+                    train_test += ["train"] * nr_train
+                    train_test += ["test"] * nr_test
+                    scenes_out += [s.split("/")[-1]] * len(colors)
+                    image_pths += colors
+                    label_pths += labels
+                else:
+                    print(sub, "Color not found")
+        
+        if root[-1] != "/":
+            root += "/"  
         image_pths = [i.replace(root, "") for i in image_pths]
         label_pths = [i.replace(root, "") for i in label_pths]
         data = {

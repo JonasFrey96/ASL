@@ -1,9 +1,8 @@
-# TODO: Jonas Frey write test for this
 from pytorch_lightning.callbacks import Callback
-
 import torch
 from torchvision.utils import make_grid
 import os
+
 from ucdr.visu import Visualizer
 
 __all__ = ["VisuCallback"]

@@ -5,7 +5,9 @@ import imageio
 import pandas
 import numpy as np
 
-__all__ = ["file_path", "load_yaml", "load_label_scannet", "load_mapping_scannet"]
+from ucdr import UCDR_ROOT_DIR
+
+__all__ = ["file_path", "load_yaml", "load_env", "load_label_scannet", "load_mapping_scannet"]
 
 
 def file_path(string):
@@ -20,6 +22,16 @@ def load_yaml(path):
         res = yaml.load(file, Loader=yaml.FullLoader)
     return res
 
+def load_env():
+    env_cfg_path = os.path.join(UCDR_ROOT_DIR, "cfg/env", os.environ["ENV_WORKSTATION_NAME"] + ".yml")
+    env = load_yaml(env_cfg_path)
+    for k in env.keys():
+        if k == "workstation":
+            continue
+        if not os.path.isabs(env[k]):
+            env[k] = os.path.join(UCDR_ROOT_DIR, env[k])
+            
+    return env
 
 def load_label_scannet(p, mapping_scannet):
     label_gt = imageio.imread(p)

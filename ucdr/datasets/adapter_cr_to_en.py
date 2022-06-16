@@ -152,10 +152,10 @@ def test():
     sys.path.insert(0, os.getcwd())
     sys.path.append(os.path.join(os.getcwd() + "/src"))
 
-    from ucdr.utils import load_yaml
+    from ucdr.utils import load_yaml, load_env
 
     exp = load_yaml(os.path.join(os.getcwd() + "/cfg/test/test.yml"))
-    env = load_yaml(os.path.join("cfg/env", os.environ["ENV_WORKSTATION_NAME"] + ".yml"))
+    env = load_env()
 
     from ucdr.task import TaskGeneratorScannet
 

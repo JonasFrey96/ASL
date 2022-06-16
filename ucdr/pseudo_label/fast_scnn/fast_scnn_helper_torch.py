@@ -13,7 +13,7 @@ import numpy as np
 import pickle
 import torch
 import torch.nn.functional as F
-from ucdr.utils import file_path, load_yaml
+from ucdr.utils import file_path, load_yaml, load_env
 from ucdr.models import FastSCNN
 
 __all__ = ["FastSCNNHelperTorch"]
@@ -21,8 +21,7 @@ __all__ = ["FastSCNNHelperTorch"]
 
 class FastSCNNHelperTorch:
     def __init__(self, device, exp={}):
-        env_cfg_path = os.path.join("cfg/env", os.environ["ENV_WORKSTATION_NAME"] + ".yml")
-        env_cfg = load_yaml(env_cfg_path)
+        env_cfg = load_env()
         self.device = device
         self.model = FastSCNN(**exp["model"]["cfg"])
 

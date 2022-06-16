@@ -1,0 +1,7 @@
+workstation: True
+
+base: results/learning
+labels_generic: results/labels_generated
+
+scannet: /media/Data/Datasets/scannet
+scannet_frames_25k: /home/jonfrey/Datasets/scannet/scannet_frames_25k

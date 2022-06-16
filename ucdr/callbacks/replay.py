@@ -1,5 +1,3 @@
-# TODO: Write a test and verify replaycallback always acts strictly contracting.
-
 from pytorch_lightning.callbacks import Callback
 import torch
 

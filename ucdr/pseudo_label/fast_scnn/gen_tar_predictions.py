@@ -22,7 +22,7 @@ import imageio
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
-from ucdr.utils import load_yaml
+from ucdr.utils import load_yaml, load_env
 from ucdr.visu import Visualizer
 from ucdr.pseudo_label import readImage
 from ucdr.utils import label_to_png
@@ -33,10 +33,10 @@ from ucdr.utils import LabelLoaderAuto
 
 
 class FastDataset(Dataset):
-    def __init__(self, paths):
+    def __init__(self, paths, root_scannet):
         self.paths = paths
         self.output_transform = tf.Compose([tf.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
-        self.lla = LabelLoaderAuto(root_scannet="/media/jonfrey/Fieldtrip1/Jonas_Frey_Master_Thesis/scannet")
+        self.lla = LabelLoaderAuto(root_scannet=root_scannet)
 
     def __len__(self):
         return len(self.paths)
@@ -71,8 +71,7 @@ def label_generation(**kwargs):
     # load model .ckpt
     # set scenes to pred
     # store as png to fil
-    env_cfg_path = os.path.join("cfg/env", os.environ["ENV_WORKSTATION_NAME"] + ".yml")
-    env = load_yaml(env_cfg_path)
+    env = load_yaml()
     idfs = str(kwargs["identifier"])
     confidence = kwargs["confidence"]
     scenes = kwargs["scenes"]
