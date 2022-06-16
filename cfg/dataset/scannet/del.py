@@ -9,8 +9,9 @@ from pathlib import Path
 
 
 import os
-d = '/home/jonfrey/datasets/scannet/scans'
-subdirs = [os.path.join(d, o) for o in os.listdir(d) if os.path.isdir(os.path.join(d,o))]
+
+d = "/home/jonfrey/datasets/scannet/scans"
+subdirs = [os.path.join(d, o) for o in os.listdir(d) if os.path.isdir(os.path.join(d, o))]
 subdirs.sort()
 
 folders = [s[-12:] for s in subdirs]
@@ -24,7 +25,7 @@ dl_paths = [str(s) for s in Path(d).rglob("*.jpg") if str(s).find("label_detectr
 print(dl_paths, len(dl_paths))
 
 for p in dl_paths:
-	os.system(f"rm {p}")
+    os.system(f"rm {p}")
 # for s in folders:
 # 	path = os.path.join(depth_base, s, "depth/0.png")
 # 	p2 = "/media/scratch1/jonfrey/old/sensefiles/" + s + f"/{s}.sens"

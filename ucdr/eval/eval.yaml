@@ -1,0 +1,19 @@
+checkpoint_load: scannet25k_24h_lr_decay_from_scratch/2021-06-05T14:36:26_scannet25k_24h_lr_decay_from_scratch/task0-epoch=64--step=158340.ckpt
+model:
+  name: Fast-SCNN
+  input_size:
+    - 320
+    - 640
+  cfg:
+    num_classes: 40
+    aux: false
+    extraction:
+      active: false
+      layer: 'learn_to_down'
+  freeze:
+    active: false
+    mask:
+      - false
+      - false
+      - false 
+      - false
