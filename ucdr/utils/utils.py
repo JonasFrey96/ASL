@@ -1,6 +1,7 @@
 import torch
+
 # from pytorch_lightning.metrics.functional.classification import (
-    # stat_scores_multiple_classes,
+# stat_scores_multiple_classes,
 # )
 
 __all__ = ["iIoU_class", "IoU_SCNN", "IoU_class"]

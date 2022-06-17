@@ -15,7 +15,7 @@ class SemanticsMeter:
     def __init__(self, number_classes):
         self.conf_mat = None
         self.number_classes = number_classes
-        self.mask = np.zeros( ( number_classes,), dtype=np.bool)
+        self.mask = np.zeros((number_classes,), dtype=np.bool)
 
     def clear(self):
         self.conf_mat = None
@@ -32,7 +32,7 @@ class SemanticsMeter:
     def update(self, preds, truths):
         preds, truths = self.prepare_inputs(preds, truths)  # [B, N, 3] or [B, H, W, 3], range[0, 1]
         un = np.unique(truths)
-        self.mask[un[un!= -1].astype(np.uint32)] = True
+        self.mask[un[un != -1].astype(np.uint32)] = True
         preds = preds.flatten()
         truths = truths.flatten()
         valid_pix_ids = truths != -1

@@ -25,13 +25,13 @@ def get_neptune_logger(exp, env, exp_p, env_p):
     files.append(env_p)
 
     t1 = str(os.environ["ENV_WORKSTATION_NAME"])
-    
+
     gpus = "gpus_" + str(torch.cuda.device_count())
     if os.environ["ENV_WORKSTATION_NAME"] == "euler":
         proxies = {"http": "http://proxy.ethz.ch:3128", "https": "http://proxy.ethz.ch:3128"}
     else:
-        proxies = None    
-    
+        proxies = None
+
     return NeptuneLogger(
         api_key=os.environ["NEPTUNE_API_TOKEN"],
         project=project_name,
@@ -43,6 +43,7 @@ def get_neptune_logger(exp, env, exp_p, env_p):
         proxies=proxies,
         params=params,
     )
+
 
 def get_tensorboard_logger(exp, env, exp_p, env_p):
     params = log_important_params(exp)

@@ -203,7 +203,7 @@ class ScanNet(Dataset):
         self._get_mapping(root)
 
         self.train_test, self.scenes, self.image_pths, self.label_pths = self._load_cfg(root, train_val_split)
-        
+
         self.image_pths = [os.path.join(root, i) for i in self.image_pths]
         self.label_pths = [os.path.join(root, i) for i in self.label_pths]
 
@@ -316,9 +316,9 @@ class ScanNet(Dataset):
                     label_pths += labels
                 else:
                     print(sub, "Color not found")
-        
+
         if root[-1] != "/":
-            root += "/"  
+            root += "/"
         image_pths = [i.replace(root, "") for i in image_pths]
         label_pths = [i.replace(root, "") for i in label_pths]
         data = {

@@ -49,9 +49,9 @@ def train(exp_cfg_path):
     seed_everything(42)
     exp = load_yaml(exp_cfg_path)
     env = load_env()
-    
+
     @rank_zero_only
-    def create_experiment_folder():    
+    def create_experiment_folder():
         # Set in name the correct model path
         if exp.get("timestamp", True):
             timestamp = datetime.datetime.now().replace(microsecond=0).isoformat()
@@ -70,14 +70,12 @@ def train(exp_cfg_path):
         print(f"Copy {exp_cfg_path} to {model_path}/{exp_cfg_fn}")
         shutil.copy(exp_cfg_path, f"{model_path}/{exp_cfg_fn}")
         exp["name"] = model_path
-        
-    
+
     if not exp.get("offline_mode", False):
         logger = get_neptune_logger(exp=exp, env=env, exp_p=exp_cfg_path)
     else:
         logger = get_tensorboard_logger(exp=exp, env=env, exp_p=exp_cfg_path)
-    
-    
+
     # SET GPUS
     if (exp["trainer"]).get("gpus", -1) == -1:
         nr = torch.cuda.device_count()
@@ -91,7 +89,7 @@ def train(exp_cfg_path):
         name=exp["task_generator"]["name"],
         mode=exp["task_generator"]["mode"],
         cfg=exp["task_generator"]["cfg"],
-    ) 
+    )
     print(str(tg))
 
     # Reinitalizing of all datasets
@@ -103,7 +101,6 @@ def train(exp_cfg_path):
 
     if exp["replay"]["cfg_rssb"]["bins"] == -1:
         exp["replay"]["cfg_rssb"]["bins"] = len(tg)
-    
 
     # MODEL
     model = Network(exp=exp, env=env, dataset_sizes=dataset_sizes)
@@ -130,8 +127,7 @@ def train(exp_cfg_path):
                 cb_ls.append(checkpoint_callback)
     cb_ls.append(VisuCallback(exp))
     cb_ls.append(ReplayCallback())
-    
-    
+
     if exp.get("checkpoint_restore", False):
         p = os.path.join(env["base"], exp["checkpoint_load"])
         trainer = Trainer(
@@ -178,7 +174,7 @@ def train(exp_cfg_path):
         pa = os.path.join(str(Path(model_path).parent), "main_visu")
     else:
         pa = os.path.join(model_path, "main_visu")
-        
+
     main_visu = MainVisualizer(
         p_visu=pa,
         logger=logger,
@@ -200,8 +196,6 @@ def train(exp_cfg_path):
             val_res = pickle.load(handle)
             model._val_epoch_results = val_res
 
-
-    
     if skip:
         # VALIDATION
         trainer.limit_train_batches = 10
@@ -223,7 +217,7 @@ def train(exp_cfg_path):
             model.length_train_dataloader = exp["trainer"]["limit_train_batches"]
         model.max_epochs = exp["task_specific_early_stopping"]["cfg"]["max_epoch_count"]
         _ = trainer.fit(model=model, train_dataloader=train_dataloader, val_dataloaders=val_dataloaders)
-    
+
     checkpoint_callback._last_global_step_saved = -999
     checkpoint_callback.save_checkpoint(trainer, model)
 
@@ -304,12 +298,8 @@ if __name__ == "__main__":
         "--exp",
         type=file_path,
         default="cfg/exp/scannet/exp.yml",
-        help="The main experiment yaml file.",
+        help="Experiment yaml file.",
     )
-    parser.add_argument("--task_nr", type=int, default=0, help="Task nr.")
-    parser.add_argument("--init", type=int, default=1, help="Task nr.")
-    parser.add_argument("--close", type=int, default=1, help="Task nr.")
-    parser.add_argument("--skip", type=int, default=0, help="Task nr.")
 
     args = parser.parse_args()
 

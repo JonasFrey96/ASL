@@ -56,9 +56,11 @@ class FastDataset(Dataset):
         label = self.lla.get(p.replace("color", "label-filt").replace("jpg", "png"))[0]
         label = torch.from_numpy(label - 1)
 
-        label = torch.round(torch.nn.functional.interpolate(label[None,None].type(torch.float32), (320, 640), mode="nearest")[:,0])
+        label = torch.round(
+            torch.nn.functional.interpolate(label[None, None].type(torch.float32), (320, 640), mode="nearest")[:, 0]
+        )
         label = label.type(torch.int32)
-        
+
         return img[0], label, p
 
 
