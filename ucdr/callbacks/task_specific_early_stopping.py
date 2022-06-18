@@ -17,7 +17,6 @@ class TaskSpecificEarlyStopping(Callback):
         max_epoch_count=-1,
     ):
         super().__init__()
-
         self.verbose = verbose
         self.timelimit_in_min = timelimit_in_min
         self.patience = patience
@@ -33,15 +32,7 @@ class TaskSpecificEarlyStopping(Callback):
             rank_zero_info(f"TimeLimitCallback is set to {self.timelimit_in_min}min")
 
     def on_validation_end(self, trainer, pl_module):
-        if trainer.running_sanity_check:
-            return
-
         self._run_early_stopping_check(trainer, pl_module)
-
-    def on_validation_epoch_end(self, trainer, pl_module):
-        # trainer.callback_metrics['task_count/dataloader_idx_0']
-        if trainer.running_sanity_check:
-            return
 
     def on_train_start(self, trainer, pl_module):
         """Called when the train begins."""
@@ -52,6 +43,10 @@ class TaskSpecificEarlyStopping(Callback):
         self.training_start_epoch = pl_module.current_epoch
 
     def _run_early_stopping_check(self, trainer, pl_module):
+        return
+
+        # TODO Jonas reimplemnt new etrics
+
         should_stop = False
         nr = pl_module._task_count
 

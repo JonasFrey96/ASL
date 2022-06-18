@@ -116,11 +116,6 @@ def adapter_tg_to_en(tg, task_nr, replay_cfg_ensemble, env):
 def adapter_tg_to_dataloader(tg, task_nr, loader_cfg, replay_cfg_ensemble, env):
     train_dataset, val_datasets, task_name = adapter_tg_to_en(tg, task_nr, replay_cfg_ensemble, env)
 
-    # TODO: Jonas Frey remove this for future
-    if os.environ["ENV_WORKSTATION_NAME"] == "ws":
-        loader_cfg["batch_size"] = 2
-        loader_cfg["num_workers"] = 0
-
     train_dataloader = DataLoader(
         train_dataset,
         shuffle=loader_cfg["shuffle"],

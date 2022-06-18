@@ -143,9 +143,6 @@ def train(exp_cfg_path):
         checkpoint_callback = ModelCheckpoint(
             dirpath=model_path, filename="task" + str(i) + "-{epoch:02d}--{step:06d}", **exp["cb_checkpoint"]["cfg"]
         )
-        trainer = Trainer(
-            **exp["trainer"], default_root_dir=model_path, callbacks=cb_ls + [checkpoint_callback], logger=logger
-        )
 
         train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
             tg, task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
@@ -158,18 +155,24 @@ def train(exp_cfg_path):
         skip = exp["supervisor"]["start_task"] > task_nr
         if skip:
             # VALIDATION
-            trainer.limit_train_batches = 10
-            trainer.max_epochs = 1
-            trainer.check_val_every_n_epoch = 1
+            cfg = copy.deepcopy(exp["trainer"])
+            cfg["max_epochs"] = 1
+            cfg["limit_train_batches"] = 10
+            cfg["limit_val_batches"] = 10
+            cfg["check_val_every_n_epoch"] = 1
 
+            trainer = Trainer(
+                **cfg, default_root_dir=model_path, callbacks=cb_ls + [checkpoint_callback], logger=logger
+            )
+            # set params to to determin lr_schedule
             model.length_train_dataloader = 10000
             model.max_epochs = 10000
-            _ = trainer.fit(model=model, train_dataloader=train_dataloader, val_dataloaders=val_dataloaders)
-            trainer.max_epochs = exp["trainer"]["max_epochs"]
-            trainer.check_val_every_n_epoch = exp["trainer"]["check_val_every_n_epoch"]
-            trainer.limit_val_batches = exp["trainer"]["limit_val_batches"]
-            trainer.limit_train_batches = exp["trainer"]["limit_train_batches"]
+
+            res = trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloaders)
         else:
+            trainer = Trainer(
+                **exp["trainer"], default_root_dir=model_path, callbacks=cb_ls + [checkpoint_callback], logger=logger
+            )
             # FULL TRAINING
             if exp["trainer"]["limit_train_batches"] <= 1.0:
                 model.length_train_dataloader = len(train_dataloader) * exp["trainer"]["limit_train_batches"]

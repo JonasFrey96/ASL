@@ -15,7 +15,7 @@ from torch.nn import functional as F
 
 # MODULES
 from ucdr.models import FastSCNN
-from ucdr.utils import SemanticsMeter
+from ucdr.utils import SemanticsMeter, TorchSemanticsMeter
 
 __all__ = ["Network"]
 
@@ -46,11 +46,14 @@ class Network(LightningModule):
             raise Exception("Model name not implemented")
 
         self._mode = "train"
-        self.meters = {
-            "train": SemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
-            "test": SemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
-            "val": SemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
-        }
+
+        self.meters_t = torch.nn.ModuleDict(
+            {
+                "train_meter": TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
+                "test_meter": TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
+                "val_meter": TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
+            }
+        )
 
         self._task_name = "NotDefined"  # is used for model checkpoint nameing
         self._task_count = 0  # so this here might be a bad idea. Decide if we know the task or not
@@ -59,19 +62,6 @@ class Network(LightningModule):
 
         self._replayed_samples = 0
         self._real_samples = 0
-
-    def append_training_epoch_results(self, results):
-        if len(self._val_epoch_results) == 0:
-            for r in results:
-                self._val_epoch_results.append([r])
-            self._val_epoch_results.append([self.current_epoch])
-            self._val_epoch_results.append([self._task_count])
-        else:
-            assert len(self._val_epoch_results) - 2 == len(results)
-            for j, r in enumerate(results):
-                self._val_epoch_results[j].append(r)
-            self._val_epoch_results[-2].append(self.current_epoch)
-            self._val_epoch_results[-1].append(self._task_count)
 
     def forward(self, batch, **kwargs):
         outputs = self.model(batch)
@@ -96,15 +86,16 @@ class Network(LightningModule):
 
         # compute auxillary loss
         if aux_valid.sum() != 0:
-            if len(aux_label.shape) == 4:
-                # soft labels provided
-                aux_loss = F.mse_loss(torch.nn.functional.softmax(pred, dim=1), aux_label, reduction="none")
-                aux_loss = aux_loss.mean(dim=[1, 2, 3])
-                aux_loss *= self._exp.get("loss", {}).get("soft_aux_label_factor", 1)
-            else:
-                # hard labels provided
-                aux_loss = F.cross_entropy(pred, aux_label, ignore_index=-1, reduction="none")
-                aux_loss = aux_loss.mean(dim=[1, 2])
+            # if len(aux_label.shape) == 4:
+            #     # soft labels provided
+            #     aux_loss = F.mse_loss(torch.nn.functional.softmax(pred, dim=1), aux_label, reduction="none")
+            #     aux_loss = aux_loss.mean(dim=[1, 2, 3])
+            #     aux_loss *= self._exp.get("loss", {}).get("soft_aux_label_factor", 1)
+            # else:
+
+            # hard labels provided
+            aux_loss = F.cross_entropy(pred, aux_label, ignore_index=-1, reduction="none")
+            aux_loss = aux_loss.mean(dim=[1, 2])
         else:
             aux_loss = torch.zeros((BS), device=pred.device)
         aux_loss *= self._exp.get("loss", {}).get("aux_label_factor", 1)
@@ -156,6 +147,7 @@ class Network(LightningModule):
 
     def on_train_epoch_start(self):
         self._mode = "train"
+        self.meters_t[self._mode + "_meter"].clear()
 
     def training_step(self, batch, batch_idx):
         ba = self.parse_batch(batch)
@@ -164,7 +156,15 @@ class Network(LightningModule):
         if not ("aux_valid" in ba.keys()):
             ba["aux_valid"] = torch.zeros((ba["images"].shape[0]), device=ba["images"].device, dtype=torch.bool)
         loss = self.compute_loss(pred=outputs[0], **ba)
-        self.log(f"{self._mode}_loss", loss, on_step=False, on_epoch=True)
+
+        import time
+
+        st = time.time()
+        # self.meters[self._mode].update(outputs[0].argmax(dim=1), ba["label"])
+        self.meters_t[f"{self._mode}_meter"].update(outputs[0].argmax(dim=1), ba["label"])
+
+        print(time.time() - st)
+        self.log(f"{self._mode}_loss", loss.item(), on_step=False, on_epoch=True)
         ret = {
             "loss": loss,
             "pred": outputs[0],
@@ -178,12 +178,11 @@ class Network(LightningModule):
 
         ret["replay"] = batch[2]
 
+        self._visu_callback.training_step_end(self.trainer, self, ret)
+
         return ret
 
     def training_step_end(self, outputs):
-        with torch.no_grad():
-            self._visu_callback.training_step_end(self.trainer, self, outputs)
-
         # LOG REPLAY / REAL
         self.logger.log_metrics(
             metrics={
@@ -195,12 +194,26 @@ class Network(LightningModule):
 
         return {"loss": outputs["loss"]}
 
+    def training_epoch_end(self, outputs):
+        res = self.meters_t[f"train_meter"].measure()
+
+        self.logger.log_metrics(
+            metrics={
+                f"{self._mode}_mIoU": res[0].item(),
+                f"{self._mode}_tAcc": res[1].item(),
+                f"{self._mode}_cAcc": res[2].item(),
+            },
+            step=self.global_step,
+        )
+
     ####################
     #   VALIDATION     #
     ####################
 
     def on_validation_epoch_start(self):
         # maybe reset semantic meter
+        self._mode = "val"
+        self.meters_t[self._mode + "_meter"].clear()
         pass
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
@@ -209,24 +222,25 @@ class Network(LightningModule):
         loss = F.cross_entropy(outputs[0], label, ignore_index=-1)
 
         ret = {
-            "pred": outputs[0],
-            "label": label,
+            "pred": outputs[0].detach(),
+            "label": label.detach(),
             "dataloader_idx": dataloader_idx,
-            "loss_ret": loss,
+            "loss_ret": loss.detach(),
         }
 
         if len(batch) == 3:
-            ret["ori_img"] = batch[2]
+            ret["ori_img"] = batch[2].detach()
         if len(batch) > 3:
-            ret["aux_label"] = batch[2]
-            ret["aux_valid"] = batch[3]
-            ret["ori_img"] = batch[4]
+            ret["aux_label"] = batch[2].detach()
+            ret["aux_valid"] = batch[3].detach()
+            ret["ori_img"] = batch[4].detach()
 
-        return ret
+        self._visu_callback.validation_step_end(self.trainer, self, ret)
+
+        return loss.detach()
 
     def validation_step_end(self, outputs):
-        with torch.no_grad():
-            self._visu_callback.validation_step_end(self.trainer, self, outputs)
+        pass
 
     def validation_epoch_end(self, outputs):
         pass
