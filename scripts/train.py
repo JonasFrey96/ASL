@@ -127,6 +127,16 @@ def train(exp_cfg_path):
         else:
             raise Exception("Checkpoint not a file")
 
+    # add distributed plugin
+    if exp["trainer"]["gpus"] > 1:
+        if exp["trainer"]["accelerator"] == "ddp" or exp["trainer"]["accelerator"] is None:
+            ddp_plugin = DDPPlugin(find_unused_parameters=exp["trainer"].get("find_unused_parameters", False))
+        elif exp["trainer"]["accelerator"] == "ddp_spawn":
+            ddp_plugin = DDPSpawnPlugin(find_unused_parameters=exp["trainer"].get("find_unused_parameters", False))
+        elif exp["trainer"]["accelerator"] == "ddp2":
+            ddp_plugin = DDP2Plugin(find_unused_parameters=exp["trainer"].get("find_unused_parameters", False))
+        exp["trainer"]["plugins"] = [ddp_plugin]
+
     for task_nr in range(0, exp["supervisor"]["stop_task"]):
         # Reinitalizing of all datasets
 
