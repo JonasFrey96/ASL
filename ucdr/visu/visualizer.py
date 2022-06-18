@@ -20,15 +20,8 @@ from PIL import Image, ImageDraw
 import skimage
 from skimage import measure
 from skimage.segmentation import mark_boundaries, find_boundaries
-
-
-try:
-    from .colors import *
-    from .flow_viz import *
-except:
-    from colors import *
-    from flow_viz import *
-
+from ucdr.visu.colors import *
+from ucdr.visu.flow_viz import *
 
 __all__ = ["Visualizer", "MainVisualizer"]
 from PIL import ImageFont, ImageDraw, Image
@@ -88,7 +81,7 @@ def image_functionality(func):
             log = True
         log *= not kwargs.get("not_log", False)
         if log:
-            log_exp = args[0].logger is not None
+            log_exp = args[0].pl_module.logger is not None
             tag = kwargs.get("tag", "TagNotDefined")
             jupyter = kwargs.get("jupyter", False)
             # Each logging call is able to override the setting that is stored in the visualizer
@@ -110,14 +103,16 @@ def image_functionality(func):
             if log_exp:
                 H, W, C = img.shape
                 ds = cv2.resize(img, dsize=(int(W / 2), int(H / 2)), interpolation=cv2.INTER_CUBIC)
-                if args[0].logger is not None:
+                if args[0].pl_module.logger is not None:
                     try:
+                        from neptune.new.types import File
+
                         # logger == neptuneai
-                        args[0].logger.log_image(log_name=tag, image=np.float32(ds) / 255, step=epoch)
+                        args[0].pl_module.logger.experiment[tag].log(File.as_image(np.float32(ds) / 255), step=epoch)
                     except:
                         try:
                             # logger == tensorboard
-                            args[0].logger.experiment.add_image(
+                            args[0].pl_module.logger.experiment.add_image(
                                 tag=tag, img_tensor=ds, global_step=epoch, dataformats="HWC"
                             )
                         except:
@@ -133,9 +128,9 @@ def image_functionality(func):
 
 
 class MainVisualizer:
-    def __init__(self, p_visu, logger=None, epoch=0, store=True, num_classes=22):
+    def __init__(self, p_visu, pl_module=None, epoch=0, store=True, num_classes=22):
         self.p_visu = p_visu
-        self.logger = logger
+        self.pl_module = pl_module
 
         if not os.path.exists(self.p_visu):
             os.makedirs(self.p_visu)
@@ -478,9 +473,9 @@ def colorize(value, vmin=0.1, vmax=10, cmap="plasma"):
 
 
 class Visualizer:
-    def __init__(self, p_visu, logger=None, epoch=0, store=True, num_classes=22):
+    def __init__(self, p_visu, pl_module=None, epoch=0, store=True, num_classes=22):
         self.p_visu = p_visu
-        self.logger = logger
+        self.pl_module = pl_module
 
         if not os.path.exists(self.p_visu):
             os.makedirs(self.p_visu)
@@ -564,14 +559,13 @@ class Visualizer:
                 pose[0] -= len(str(i[0])) * shift
                 pose[1] -= font_size / 2
 
-                font = ImageFont.truetype("cfg/arial.ttf", font_size)
-
+                # font = ImageFont.truetype("cfg/arial.ttf", font_size)
                 # font = ImageFont.truetype("/usr/share/fonts/truetype/arial.ttf", font_size)
 
-                draw.text(tuple(pose), str(i[0]), fill=(255, 255, 255, 128), font=font)
+                draw.text(tuple(pose), str(i[0]), fill=(255, 255, 255, 128))
 
         img_new = img_new.convert("RGB")
-        mask = mark_boundaries(img_new, label, color=(255, 255, 255))
+        mask = mark_boundaries(np.array(img_new), label, color=(255, 255, 255))
         mask = mask.sum(axis=2)
         m = mask == mask.max()
         img_new = np.array(img_new)
@@ -829,7 +823,7 @@ class Visualizer:
 
 def test():
     # pytest -q -s src/visu/visualizer.py
-    visu = Visualizer(os.getenv("HOME") + "/tmp", logger=None, epoch=0, store=False, num_classes=41)
+    visu = Visualizer(os.getenv("HOME") + "/tmp", pl_module=None, epoch=0, store=False, num_classes=41)
     # vis = MainVisualizer( p_visu='/home/jonfrey/tmp', logger=None, epoch=0, store=True, num_classes=41)
     # x = np.arange(100)
     # y = [ np.random.normal(0, 1, 100), np.random.normal(0.5, 0.2, 100), np.random.normal(-0.5, 0.1, 100), np.random.normal(0.2, 1, 100)]

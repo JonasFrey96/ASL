@@ -1,24 +1,18 @@
-if __name__ == "__main__":
-    import os
-    import sys
-
-    os.chdir(os.path.join(os.getenv("HOME"), "ASL"))
-    sys.path.insert(0, os.path.join(os.getenv("HOME"), "ASL"))
-    sys.path.append(os.path.join(os.path.join(os.getenv("HOME"), "ASL") + "/src"))
-
 import os
 import sys
-import numpy as np
-import torch
-
-import sys
-import os
-from PIL import Image
 import argparse
 from pathlib import Path
-from torchvision import transforms as tf
-import imageio
+import time
+from multiprocessing import Pool
 
+import imageio
+import numpy as np
+from PIL import Image
+import yaml
+
+import torch
+from torchvision import transforms as tf
+import torch.nn.functional as F
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 
@@ -27,8 +21,7 @@ from ucdr.visu import Visualizer
 from ucdr.pseudo_label import readImage
 from ucdr.utils import label_to_png
 
-from ucdr.pseudo_label.fast_scnn import FastSCNNHelper
-from ucdr.pseudo_label.fast_scnn import FastSCNNHelperTorch
+from ucdr.pseudo_label import FastSCNNHelper
 from ucdr.utils import LabelLoaderAuto
 
 
@@ -43,6 +36,8 @@ class FastDataset(Dataset):
 
     def __getitem__(self, index):
         p = self.paths[index]
+
+        # LOAD IMAGE AND SCALE
         i1 = readImage(p, H=640, W=1280, scale=False)
         h, w, c = i1.shape
         img = torch.nn.functional.interpolate(
@@ -53,6 +48,7 @@ class FastDataset(Dataset):
         img = (img / 255).permute(2, 0, 1)[None]
         img = self.output_transform(img)
 
+        # LOAD LABEL AND SCALE
         label = self.lla.get(p.replace("color", "label-filt").replace("jpg", "png"))[0]
         label = torch.from_numpy(label - 1)
 
@@ -61,36 +57,35 @@ class FastDataset(Dataset):
         )
         label = label.type(torch.int32)
 
-        return img[0], label, p
+        return img[0], label, p, index
 
 
 def imwr(a, b, c, d):
     imageio.imwrite(a, b, format=c, compression=d)
 
 
-def label_generation(**kwargs):
-    # idea:
-    # load model .ckpt
-    # set scenes to pred
-    # store as png to fil
-    env = load_yaml()
-    idfs = str(kwargs["identifier"])
-    confidence = kwargs["confidence"]
-    scenes = kwargs["scenes"]
-    exp = kwargs["exp"]
-
-    if os.environ["ENV_WORKSTATION_NAME"] == "ws":
-        base = os.path.join(env["scannet"], "scans")
-        scratchdir = "/home/jonfrey/Datasets/labels_generated"
-    else:
-        scratchdir = os.getenv("TMPDIR")
-        base = os.path.join(scratchdir, "scannet", "scans")
-
+@torch.no_grad()
+def label_generation(identifier, confidence, scenes, model_cfg, checkpoint_load):
+    env = load_env()
+    base = os.path.join(env["scannet"], "scans")
     device = "cuda"
-    fsh = FastSCNNHelperTorch(device=device, exp=exp)
-    export = os.path.join(scratchdir, idfs)
+    fsh = FastSCNNHelper(device=device, model_cfg=model_cfg, checkpoint_load=checkpoint_load)
+
+    export = os.path.join(env["labels_generic"], identifier)
+
+    with open(os.path.join(export, f"generation_cfg.yaml"), "w") as stream:
+        cfg = {
+            "identifier": identifier,
+            "confidence": confidence,
+            "scenes": scenes,
+            "model_cfg": model_cfg,
+            "checkpoint_load": checkpoint_load,
+        }
+        stream.write(yaml.dump(cfg, sort_keys=False))
+
     paths = [str(s) for s in Path(base).rglob("*.jpg") if str(s).find("color") != -1]
     # filter to get evey 10 image
+
     paths = [s for s in paths if int(s.split("/")[-1][:-4]) % 10 == 0]
     paths.sort(key=lambda x: int(x.split("/")[-3][-7:]) * 10000 + int(x.split("/")[-1][:-4]))
     # filter only scenes of interrest
@@ -98,10 +93,8 @@ def label_generation(**kwargs):
     for scene in scenes:
         pa += [s for s in paths if s.find(scene) != -1]
 
-    dataset = FastDataset(pa)
+    dataset = FastDataset(paths=pa, root_scannet=env["scannet"])
     dataloader = DataLoader(dataset, shuffle=False, num_workers=4, pin_memory=False, batch_size=2)
-    import torch.nn.functional as F
-    import time
 
     h, w, _ = readImage(pa[0], H=640, W=1280, scale=False).shape
 
@@ -110,26 +103,23 @@ def label_generation(**kwargs):
 
     ringbuffer = []
 
-    from multiprocessing import Pool
-
     with Pool(processes=max_cores) as pool:
         for j, batch in enumerate(dataloader):
             print(f"Progress: {j}/{len(dataloader)}")
-
             st = time.time()
-            with torch.no_grad():
-                img = batch[0][:, 0].to(device)
-                pred, _ = fsh.model(img)
-                pred = F.softmax(pred, dim=1)
-                pred = torch.nn.functional.interpolate(pred, (h, w), mode="bilinear")
-                pred = pred.permute((0, 2, 3, 1))
+            img, label, path, index = batch
+            img = img.to(device)
+            index = index.tolist()
 
-                index = batch[1].tolist()
+            pred, _ = fsh.model(img)
+            pred = F.softmax(pred, dim=1)
+            pred = torch.nn.functional.interpolate(pred, (h, w), mode="bilinear")
+            pred = pred.permute((0, 2, 3, 1))
 
             ress = []
             for i in index:
                 outpath = pa[i]
-                outpath = outpath.replace("color", idfs)[:-4] + ".png"
+                outpath = outpath.replace("color", identifier)[:-4] + ".png"
                 ress.append(os.path.join(export, outpath[outpath.find("scans/") :]))
                 Path(ress[-1]).parent.mkdir(exist_ok=True, parents=True)
 
@@ -184,27 +174,5 @@ def label_generation(**kwargs):
             except:
                 pass
 
-    os.system(f"cd {scratchdir} && tar -cvf {scratchdir}/{idfs}.tar {idfs}")
-
-    if not env["workstation"]:
-        os.system(f"cd {scratchdir} && mv {idfs}.tar $DATASETS")
-    else:
-        print(f"On cluster execute: ", "cd {scratchdir} && mv {idfs}.tar $DATASETS")
-
-
-def test(exp_cfg_path):
-    exp = load_yaml(exp_cfg_path)
-    label_generation(**exp["label_generation"], exp=exp)
-
-
-if __name__ == "__main__":
-    import argparse
-
-    parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--exp",
-        default="/home/jonfrey/ASL/cfg/exp/scannet_self_supervision/create_labels_from_pretrained.yml",
-        help="The main experiment yaml file.",
-    )
-    args = parser.parse_args()
-    test(args.exp)
+    scratchdir = env["labels_generic"]
+    os.system(f"cd {scratchdir} && tar -cvf {scratchdir}/{identifier}.tar {identifier}")

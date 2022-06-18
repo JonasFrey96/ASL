@@ -9,20 +9,18 @@ __all__ = ["VisuCallback"]
 
 
 class VisuCallback(Callback):
-    def __init__(self, exp):
+    def __init__(self, exp, pl_module):
         self.visualizer = Visualizer(
             p_visu=os.path.join(exp["name"], "visu"),
-            logger=None,
+            pl_module=pl_module,
             store=False,
             num_classes=exp["model"]["cfg"]["num_classes"] + 1,
         )
-
         self.logged_images = {"train": 0, "val": 0, "test": 0}
         self.visu_cfg = exp["visu"]
 
     def on_train_start(self, trainer, pl_module):
         # Set the Logger given that on init not initalized yet-
-        self.visualizer.logger = pl_module.logger
         pl_module._visu_callback = self
 
     def on_epoch_start(self, trainer, pl_module):
@@ -138,13 +136,14 @@ class VisuCallback(Callback):
             method="left",
         )
 
-        self.visualizer.plot_detectron(img=grid_image, label=grid_label[0], method="left", alpha=0.5)
+        self.visualizer.plot_detectron(img=grid_image, label=grid_label[0], method="left", alpha=0.5, text_off=True)
         self.visualizer.plot_detectron(
             img=grid_image,
             label=grid_pred[0],
             method="right",
             alpha=0.5,
             tag=f"{pl_module._mode}_Task{task_nr}_{optional_key}_gt_left_pred_right_overlay_{nr}",
+            text_off=True,
         )
 
         self.logged_images[pl_module._mode] += 1

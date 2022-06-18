@@ -32,6 +32,7 @@ class ScanNet(Dataset):
         data_augmentation=True,
         label_setting="default",
         confidence_aux=0,
+        labels_generic="",
     ):
 
         """
@@ -50,6 +51,7 @@ class ScanNet(Dataset):
         if mode.find("val") != -1:
             mode = mode.replace("val", "test")
 
+        self._labels_generic = labels_generic
         self._sub = sub
         self._mode = mode
 
@@ -76,7 +78,7 @@ class ScanNet(Dataset):
         self.aux_labels_fake = False
 
         self._label_loader = LabelLoaderAuto(root_scannet=root, confidence=self._confidence_aux)
-        if self.aux_labels:
+        if self.aux_labels and False:  # TODO to increase speed
             self._preprocessing_hack()
 
     def set_aux_labels_fake(self, flag=True):
@@ -210,16 +212,15 @@ class ScanNet(Dataset):
         if label_setting != "default":
             self.aux_label_pths = [i.replace("label-filt", label_setting) for i in self.label_pths]
             if not os.path.isfile(self.aux_label_pths[0]):
-                # TODO: Jonas Frey might need
                 print("LABEL FILE DOSENT EXIST -> MAYBE ON JONAS LOCAL PC")
-            self.aux_label_pths = [
-                i.replace(
-                    "/home/jonfrey/Datasets/scannet/",
-                    f"/home/jonfrey/Datasets/labels_generated/{label_setting}/",
-                )
-                for i in self.aux_label_pths
-            ]
-            self.aux_labels = True
+                self.aux_label_pths = [
+                    i.replace(
+                        root,
+                        os.path.join(self._labels_generic, label_setting),
+                    )
+                    for i in self.aux_label_pths
+                ]
+                self.aux_labels = True
         else:
             self.aux_labels = False
 

@@ -1,1 +1,1 @@
-from .lightning import *
+from .lightning import Network

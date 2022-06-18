@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import torch
 import logging
+from neptune.new.types import File
 
 from ucdr.utils import flatten_dict
 
@@ -16,13 +17,12 @@ def log_important_params(exp):
     return dic
 
 
-def get_neptune_logger(exp, env, exp_p, env_p):
+def get_neptune_logger(exp, env, exp_p):
     project_name = exp["neptune_project_name"]
     params = log_important_params(exp)
     cwd = os.getcwd()
     files = [str(p).replace(cwd + "/", "") for p in Path(cwd).rglob("*.py") if str(p).find("vscode") == -1]
     files.append(exp_p)
-    files.append(env_p)
 
     t1 = str(os.environ["ENV_WORKSTATION_NAME"])
 
@@ -32,31 +32,27 @@ def get_neptune_logger(exp, env, exp_p, env_p):
     else:
         proxies = None
 
-    return NeptuneLogger(
+    logger = NeptuneLogger(
         api_key=os.environ["NEPTUNE_API_TOKEN"],
         project=project_name,
-        name=name_short,
+        name=exp["name"],
         tags=[t1, exp["name"].split("/")[-2], exp["name"].split("/")[-1], gpus] + exp["tag_list"],
-        upload_source_files=files,
-        upload_stdout=True,
-        upload_stderr=True,
+        # upload_source_files=files,
+        # upload_stdout=True,
+        # upload_stderr=True,
         proxies=proxies,
-        params=params,
     )
+    for k in params:
+        logger.experiment["params/" + k] = params[k]
+    logger.experiment["source_files"].upload_files(files)
+    return logger
 
 
-def get_tensorboard_logger(exp, env, exp_p, env_p):
+def get_tensorboard_logger(exp, env, exp_p):
     params = log_important_params(exp)
     cwd = os.getcwd()
     files = [str(p).replace(cwd + "/", "") for p in Path(cwd).rglob("*.py") if str(p).find("vscode") == -1]
     files.append(exp_p)
-    files.append(env_p)
-
-    if env["workstation"]:
-        t1 = "workstation"
-    else:
-        t1 = "leonhard"
-        NeptuneLogger._create_or_get_experiment = _create_or_get_experiment2
     gpus = "gpus_" + str(torch.cuda.device_count())
 
     logging.debug("Use Tensorboard Logger with exp['name]: " + exp["name"])

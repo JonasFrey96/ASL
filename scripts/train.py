@@ -34,13 +34,13 @@ from ucdr.visu import (
 from ucdr.callbacks import (
     TaskSpecificEarlyStopping,
     VisuCallback,
-    FreezeCallback,
     ReplayCallback,
 )
-from ucdr.utils import load_yaml, file_path
+from ucdr.utils import load_yaml, file_path, load_env
 from ucdr.utils import get_neptune_logger, get_tensorboard_logger
 from ucdr.datasets import adapter_tg_to_dataloader
 from ucdr.task import get_task_generator
+from ucdr import UCDR_ROOT_DIR
 
 __all__ = ["train_task"]
 
@@ -69,7 +69,10 @@ def train(exp_cfg_path):
         exp_cfg_fn = os.path.split(exp_cfg_path)[-1]
         print(f"Copy {exp_cfg_path} to {model_path}/{exp_cfg_fn}")
         shutil.copy(exp_cfg_path, f"{model_path}/{exp_cfg_fn}")
-        exp["name"] = model_path
+        return model_path
+
+    model_path = create_experiment_folder()
+    exp["name"] = model_path
 
     if not exp.get("offline_mode", False):
         logger = get_neptune_logger(exp=exp, env=env, exp_p=exp_cfg_path)
@@ -92,203 +95,79 @@ def train(exp_cfg_path):
     )
     print(str(tg))
 
-    # Reinitalizing of all datasets
-    train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
-        tg, task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
-    )
-
-    dataset_sizes = [int(len(val.dataset) * 5) for val in val_dataloaders]
-
-    if exp["replay"]["cfg_rssb"]["bins"] == -1:
-        exp["replay"]["cfg_rssb"]["bins"] = len(tg)
-
     # MODEL
-    model = Network(exp=exp, env=env, dataset_sizes=dataset_sizes)
+    model = Network(exp=exp, env=env)
 
     # COLLECT CALLBACKS
-    lr_monitor = LearningRateMonitor(**exp["lr_monitor"]["cfg"])
+    cb_ls = [LearningRateMonitor(**exp["lr_monitor"]["cfg"])]
+
     if exp["cb_early_stopping"]["active"]:
         early_stop_callback = EarlyStopping(**exp["cb_early_stopping"]["cfg"])
-        cb_ls = [early_stop_callback, lr_monitor]
-    else:
-        cb_ls = [lr_monitor]
+        cb_ls.appned(early_stop_callback)
+
     if exp["task_specific_early_stopping"]["active"]:
         tses = TaskSpecificEarlyStopping(nr_tasks=len(tg), **exp["task_specific_early_stopping"]["cfg"])
         cb_ls.append(tses)
 
-    if exp["cb_checkpoint"]["active"]:
-        for i in range(len(tg)):
-            if i == task_nr:
-                m = "/".join([a for a in model_path.split("/") if a.find("rank") == -1])
-                dic = copy.deepcopy(exp["cb_checkpoint"]["cfg"])
-                checkpoint_callback = ModelCheckpoint(
-                    dirpath=m, filename="task" + str(i) + "-{epoch:02d}--{step:06d}", **dic
-                )
-                cb_ls.append(checkpoint_callback)
-    cb_ls.append(VisuCallback(exp))
-    cb_ls.append(ReplayCallback())
-
-    if exp.get("checkpoint_restore", False):
-        p = os.path.join(env["base"], exp["checkpoint_load"])
-        trainer = Trainer(
-            **exp["trainer"],
-            default_root_dir=model_path,
-            callbacks=cb_ls,
-            resume_from_checkpoint=p,
-            logger=logger,
-        )
-        res = model.load_state_dict(torch.load(p)["state_dict"], strict=True)
-        print("Weight restore:" + str(res))
-    else:
-        trainer = Trainer(**exp["trainer"], default_root_dir=model_path, callbacks=cb_ls, logger=logger)
+    cb_ls.append(VisuCallback(exp, model))
 
     if exp["weights_restore"]:
         # it is not strict since the latent replay buffer is not always available
         p = os.path.join(env["base"], exp["checkpoint_load"])
         if os.path.isfile(p):
             state_dict_loaded = torch.load(p, map_location=lambda storage, loc: storage)["state_dict"]
-            if state_dict_loaded["_rssb.bins"].shape != model._rssb.bins.shape:
-                state_dict_loaded["_rssb.bins"] = model._rssb.bins
-                state_dict_loaded["_rssb.valid"] = model._rssb.valid
-
             res = model.load_state_dict(state_dict_loaded, strict=False)
+            # check if some key is missing
+            missing_keys_in_dict = res[0]
+            assert len(missing_keys_in_dict) == 0
+            # assert if to many weights ("here filter for legacy modules")
+            missing_keys_in_model = [k for k in res[1] if k.find("rssb") == -1 and k.find("teacher") == -1]
+            assert len(missing_keys_in_model) == 0
 
-            if len(res[1]) != 0:
-                if res[1][0].find("teacher") != -1 and res[1][-1].find("teacher") != -1:
-                    print("Restore weights: Got incompatiple teacher keys in file: " + p)
-                else:
-                    print("Restoring weights: Got incompatiple keys in file: " + p + str(res))
-            if len(res[0]) != 0:
-                if res[0][0].find("teacher") != -1 and res[0][-1].find("teacher") != -1:
-                    print("Restore weights: Missing teacher keys in file: " + p)
-                else:
-                    print("Restoring weights: Missing keys in file: " + p + str(res))
         else:
             raise Exception("Checkpoint not a file")
 
-    if exp.get("weights_restore_reset_buffer", False):
-        model._rssb.valid[:, :] = False
-        model._rssb.bins[:, :] = 0
+    for task_nr in range(0, exp["supervisor"]["stop_task"]):
+        # Reinitalizing of all datasets
 
-    if model_path.split("/")[-1].find("rank") != -1:
-        pa = os.path.join(str(Path(model_path).parent), "main_visu")
-    else:
-        pa = os.path.join(model_path, "main_visu")
+        checkpoint_callback = ModelCheckpoint(
+            dirpath=model_path, filename="task" + str(i) + "-{epoch:02d}--{step:06d}", **exp["cb_checkpoint"]["cfg"]
+        )
+        trainer = Trainer(
+            **exp["trainer"], default_root_dir=model_path, callbacks=cb_ls + [checkpoint_callback], logger=logger
+        )
 
-    main_visu = MainVisualizer(
-        p_visu=pa,
-        logger=logger,
-        epoch=0,
-        store=True,
-        num_classes=exp["model"]["cfg"]["num_classes"] + 1,
-    )
-    main_visu.epoch = task_nr
+        train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
+            tg, task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
+        )
 
-    # New Logger
-    model._task_name = task_name
-    model._task_count = task_nr
+        # New Logger
+        model._task_name = task_name
+        model._task_count = task_nr
 
-    # Training the model
-    trainer.should_stop = False
-    fn = os.path.join(exp["name"], "val_res.pkl")
-    if os.path.exists(fn):
-        with open(fn, "rb") as handle:
-            val_res = pickle.load(handle)
-            model._val_epoch_results = val_res
+        skip = exp["supervisor"]["start_task"] > task_nr
+        if skip:
+            # VALIDATION
+            trainer.limit_train_batches = 10
+            trainer.max_epochs = 1
+            trainer.check_val_every_n_epoch = 1
 
-    if skip:
-        # VALIDATION
-        trainer.limit_train_batches = 10
-        trainer.max_epochs = 1
-        trainer.check_val_every_n_epoch = 1
-
-        model.length_train_dataloader = 10000
-        model.max_epochs = 10000
-        _ = trainer.fit(model=model, train_dataloader=train_dataloader, val_dataloaders=val_dataloaders)
-        trainer.max_epochs = exp["trainer"]["max_epochs"]
-        trainer.check_val_every_n_epoch = exp["trainer"]["check_val_every_n_epoch"]
-        trainer.limit_val_batches = exp["trainer"]["limit_val_batches"]
-        trainer.limit_train_batches = exp["trainer"]["limit_train_batches"]
-    else:
-        # FULL TRAINING
-        if exp["trainer"]["limit_train_batches"] <= 1.0:
-            model.length_train_dataloader = len(train_dataloader) * exp["trainer"]["limit_train_batches"]
+            model.length_train_dataloader = 10000
+            model.max_epochs = 10000
+            _ = trainer.fit(model=model, train_dataloader=train_dataloader, val_dataloaders=val_dataloaders)
+            trainer.max_epochs = exp["trainer"]["max_epochs"]
+            trainer.check_val_every_n_epoch = exp["trainer"]["check_val_every_n_epoch"]
+            trainer.limit_val_batches = exp["trainer"]["limit_val_batches"]
+            trainer.limit_train_batches = exp["trainer"]["limit_train_batches"]
         else:
-            model.length_train_dataloader = exp["trainer"]["limit_train_batches"]
-        model.max_epochs = exp["task_specific_early_stopping"]["cfg"]["max_epoch_count"]
-        _ = trainer.fit(model=model, train_dataloader=train_dataloader, val_dataloaders=val_dataloaders)
+            # FULL TRAINING
+            if exp["trainer"]["limit_train_batches"] <= 1.0:
+                model.length_train_dataloader = len(train_dataloader) * exp["trainer"]["limit_train_batches"]
+            else:
+                model.length_train_dataloader = exp["trainer"]["limit_train_batches"]
 
-    checkpoint_callback._last_global_step_saved = -999
-    checkpoint_callback.save_checkpoint(trainer, model)
-
-    val_res = model._val_epoch_results
-    with open(fn, "wb") as handle:
-        pickle.dump(val_res, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-        val_res[-2] = list(range(len(val_res[-2])))
-        try:
-            validation_acc_plot_stored(main_visu, val_res)
-        except:
-            print("Valied to generate ACC plot.")
-            print("Currently not implemented if not started from task > 1 ?")
-            pass
-
-    res = trainer.logger_connector.callback_metrics
-    res_store = {}
-    for k in res.keys():
-        try:
-            res_store[k] = float(res[k])
-        except:
-            pass
-    base_path = "/".join([a for a in model_path.split("/") if a.find("rank") == -1])
-    with open(f"{base_path}/res{task_nr}.pkl", "wb") as f:
-        pickle.dump(res_store, f)
-
-    print(f"FINISHED TRAIN-TASK IDX: {task_nr} TASK NAME : " + task_name)
-
-    if exp["replay"]["cfg_rssb"]["elements"] != 0 and exp["replay"]["cfg_filling"]["strategy"] != "random":
-        from torch.utils.data import DataLoader
-
-        test_dataloader = DataLoader(
-            train_dataloader.dataset.main_dataset,
-            shuffle=False,
-            num_workers=train_dataloader.num_workers,
-            pin_memory=True,
-            batch_size=train_dataloader.batch_size,
-            drop_last=False,
-        )
-
-        _ = trainer.test(model=model, test_dataloaders=test_dataloader)
-        print(f"\n\nTEST IS DONE WITH TASK {task_nr}: ")
-        for i in range(task_nr + 1):
-            m = min(5, model._rssb.nr_elements)
-            logging.debug(f" RSSB STATE {i}: " + str(model._rssb.bins[i, :m]))
-
-    trainer.checkpoint_connector.save_checkpoint(exp["checkpoint_load_2"])
-
-    if exp["replay"]["cfg_rssb"]["elements"] != 0:
-        # visualize rssb
-        bins, valids = model._rssb.get()
-        fill_status = (bins != 0).sum(axis=1)
-        main_visu.plot_bar(
-            fill_status,
-            x_label="Bin",
-            y_label="Filled",
-            title="Fill Status per Bin",
-            sort=False,
-            reverse=False,
-            tag="Buffer_Fill_Status",
-        )
-    try:
-        validation_acc_plot(main_visu, logger, nr_eval_tasks=len(val_dataloaders))
-    except Exception as e:
-        rank_zero_warn("FAILED while validation acc plot in train task: " + str(e))
-
-    if task_nr == len(tg):
-        try:
-            logger.experiment.stop()
-        except:
-            pass
+            model.max_epochs = exp["task_specific_early_stopping"]["cfg"]["max_epoch_count"]
+            _ = trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloaders)
 
 
 if __name__ == "__main__":
@@ -296,20 +175,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--exp",
-        type=file_path,
-        default="cfg/exp/scannet/exp.yml",
+        default="exp.yml",
         help="Experiment yaml file.",
     )
 
     args = parser.parse_args()
 
-    print("Train Task called as MAIN with the following arguments: " + str(args))
+    exp_cfg_path = args.exp
+    if not os.path.isabs(exp_cfg_path):
+        exp_cfg_path = os.path.join(UCDR_ROOT_DIR, "cfg/exp", args.exp)
 
-    train_task(
-        bool(args.init),
-        bool(args.close),
-        args.exp,
-        args.task_nr,
-        skip=bool(args.skip),
-    )
+    train(exp_cfg_path)
     torch.cuda.empty_cache()
