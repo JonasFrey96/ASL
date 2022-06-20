@@ -5,11 +5,13 @@ import torch
 from sklearn.metrics import confusion_matrix
 from torchmetrics import ConfusionMatrix
 
+
 def np_nanmean(data, **args):
     # This makes it ignore the first 'background' class
     return np.ma.masked_array(data, np.isnan(data)).mean(**args)
     # In np.ma.masked_array(data, np.isnan(data), elements of data == np.nan is invalid and will be ingorned during computation of np.mean()
-    
+
+
 def nanmean(data, **args):
     """Finding the mean along dim"""
     mask = ~torch.isnan(data)
@@ -76,8 +78,6 @@ class TorchSemanticsMeter(torch.nn.Module):
             )
 
         miou_valid_class = torch.mean(ious[existing_class_mask])
-        # miou_valid_class_np = np.mean(ious_np[existing_class_mask_np])
-
         return miou_valid_class, total_accuracy, class_average_accuracy
 
 

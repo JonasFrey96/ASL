@@ -31,7 +31,8 @@ class TaskSpecificEarlyStopping(Callback):
         if self.verbose:
             rank_zero_info(f"TimeLimitCallback is set to {self.timelimit_in_min}min")
 
-    def on_validation_end(self, trainer, pl_module):
+    def on_train_epoch_end(self, trainer, pl_module):
+        # Train and Validation callback_metrics already here
         self._run_early_stopping_check(trainer, pl_module)
 
     def on_train_start(self, trainer, pl_module):
@@ -43,10 +44,6 @@ class TaskSpecificEarlyStopping(Callback):
         self.training_start_epoch = pl_module.current_epoch
 
     def _run_early_stopping_check(self, trainer, pl_module):
-        return
-
-        # TODO Jonas reimplemnt new etrics
-
         should_stop = False
         nr = pl_module._task_count
 
@@ -62,10 +59,7 @@ class TaskSpecificEarlyStopping(Callback):
                     print("TSES: Stopped due to timelimit reached!")
                 should_stop = True
 
-            try:
-                metric = trainer.callback_metrics[f"val_acc/dataloader_idx_{nr}"]
-            except:
-                metric = trainer.callback_metrics[f"val_acc"]
+            metric = trainer.callback_metrics[f"{nr}_val_cAcc"]
 
             if metric > self.best_metric_buffer[nr] + self.minimal_increase:
                 self.best_metric_buffer[nr] = metric

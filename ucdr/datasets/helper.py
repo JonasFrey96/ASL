@@ -1,5 +1,6 @@
 from torchvision import transforms as tf
 from torchvision.transforms import functional as F
+from torch.nn.functional import interpolate
 import torch
 import PIL
 import random
@@ -21,7 +22,6 @@ def get_output_size(output_size):
 
 class AugmentationList:
     def __init__(self, output_size=400, degrees=10, flip_p=0.5, jitter_bcsh=[0.3, 0.3, 0.3, 0.05]):
-
         # training transforms
         output_size = get_output_size(output_size)
         self._output_size = output_size
@@ -42,6 +42,14 @@ class AugmentationList:
         self._crop_center = tf.CenterCrop(self._output_size)
 
     def apply(self, img, label, only_crop=False):
+        if only_crop:
+            s = img.shape[2] / self._output_size[1]
+            h = int(img.shape[1] / s)
+            img = self._crop_center(interpolate(img[None], (h, 640), mode="bilinear", align_corners=True)[0])
+            label = [self._crop_center(interpolate(l[None], (h, 640), mode="nearest")[0]) for l in label]
+
+            return img, label
+
         scale = False
         # Check if rescaling is neccessary based on image height and output height
         if img.shape[1] >= 2 * self._output_size[0]:
@@ -62,12 +70,13 @@ class AugmentationList:
                 scale_factor=(sf, sf),
                 mode="bilinear",
                 recompute_scale_factor=False,
-                align_corners=False,
+                align_corners=True,
             )[0]
             for _i, l in enumerate(label):
                 label[_i] = torch.nn.functional.interpolate(
                     l[None], scale_factor=(sf, sf), mode="nearest", recompute_scale_factor=False
                 )[0]
+
         if not only_crop:
             # Color Jitter
             img = self._jitter(img)

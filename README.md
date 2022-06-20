@@ -15,6 +15,21 @@ Jonas Frey, Hermann Blum, Francesco Milano, Roland Siegwart, Cesar Cadena, **Con
 
 # Installation
 
+
+# Preperation
+# Dataset Tar Files
+Move to the directory that contains the individual scenes (scene0000_00, ...)
+Tar it without compression:
+```
+tar -cvf scannet.tar ./
+```
+
+Repeat this for the folder containing 
+- scannet25k (without scene 0-10).
+- scannet (scene 0-10 only with all images subsampled correctly).
+- generated labels directory (scene 0-10). 
+
+
 # Acknowledgment 
 - The authors of [Fast-SCNN](https://arxiv.org/pdf/1902.04502.pdf)  
 - TRAMAC implementing [Fast-SCNN in PyTorch](https://github.com/Tramac/Fast-SCNN-pytorch)   

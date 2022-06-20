@@ -1,18 +1,13 @@
 .neptune/**
 results/**
+local/**
 **.pt
-notebooks/Report/visu_paper.ipynb
 notebooks/*
 *ws.codeworkspace
 *launch.json
 *Untitled*
-tools/private/*
-!cfg/exp/
 cfg/exp/*
-!cfg/exp/MA_final/
-tools/private
-src/datasets/test_results/*
-notebooks/private/*
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

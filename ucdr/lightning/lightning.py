@@ -33,8 +33,9 @@ def wrap(s, length, hard=False):
 
 
 class Network(LightningModule):
-    def __init__(self, exp, env):
+    def __init__(self, exp, env, total_tasks=2):
         super().__init__()
+
         self._epoch_start_time = time.time()
         self._exp = exp
         self._env = env
@@ -47,17 +48,16 @@ class Network(LightningModule):
 
         self._mode = "train"
 
-        self.meters_t = torch.nn.ModuleDict(
-            {
-                "train_meter": TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
-                "test_meter": TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
-                "val_meter": TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]),
-            }
+        keys = ["train_meter", "test_meter"]
+        keys = keys + [f"{i}_val_meter" for i in range(total_tasks)]
+        self.meters = torch.nn.ModuleDict(
+            {k: TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]) for k in keys}
         )
+
+        self._total_tasks = total_tasks
 
         self._task_name = "NotDefined"  # is used for model checkpoint nameing
         self._task_count = 0  # so this here might be a bad idea. Decide if we know the task or not
-        self._type = torch.float16 if exp["trainer"].get("precision", 32) == 16 else torch.float32
         self._train_start_time = time.time()
 
         self._replayed_samples = 0
@@ -147,9 +147,12 @@ class Network(LightningModule):
 
     def on_train_epoch_start(self):
         self._mode = "train"
-        self.meters_t[self._mode + "_meter"].clear()
+
+        for k in self.meters.keys():
+            self.meters[k].clear()
 
     def training_step(self, batch, batch_idx):
+        self._mode = "train"
         ba = self.parse_batch(batch)
         outputs = self(batch=ba["images"])
 
@@ -157,14 +160,9 @@ class Network(LightningModule):
             ba["aux_valid"] = torch.zeros((ba["images"].shape[0]), device=ba["images"].device, dtype=torch.bool)
         loss = self.compute_loss(pred=outputs[0], **ba)
 
-        import time
+        self.meters[f"{self._mode}_meter"].update(outputs[0].argmax(dim=1), ba["label"])
 
-        st = time.time()
-        # self.meters[self._mode].update(outputs[0].argmax(dim=1), ba["label"])
-        self.meters_t[f"{self._mode}_meter"].update(outputs[0].argmax(dim=1), ba["label"])
-
-        print(time.time() - st)
-        self.log(f"{self._mode}_loss", loss.item(), on_step=False, on_epoch=True)
+        self.log(f"train_loss", loss.item(), on_step=False, on_epoch=True)
         ret = {
             "loss": loss,
             "pred": outputs[0],
@@ -186,8 +184,8 @@ class Network(LightningModule):
         # LOG REPLAY / REAL
         self.logger.log_metrics(
             metrics={
-                "real": torch.tensor(self._real_samples),
-                "replayed": torch.tensor(self._replayed_samples),
+                f"{self._task_count}_real": torch.tensor(self._real_samples),
+                f"{self._task_count}_replayed": torch.tensor(self._replayed_samples),
             },
             step=self.global_step,
         )
@@ -195,16 +193,21 @@ class Network(LightningModule):
         return {"loss": outputs["loss"]}
 
     def training_epoch_end(self, outputs):
-        res = self.meters_t[f"train_meter"].measure()
+        self._mode = "train"
+        res = self.meters[f"{self._mode}_meter"].measure()
 
         self.logger.log_metrics(
             metrics={
-                f"{self._mode}_mIoU": res[0].item(),
-                f"{self._mode}_tAcc": res[1].item(),
-                f"{self._mode}_cAcc": res[2].item(),
+                f"{self._task_count}_{self._mode}_mIoU": res[0].item(),
+                f"{self._task_count}_{self._mode}_tAcc": res[1].item(),
+                f"{self._task_count}_{self._mode}_cAcc": res[2].item(),
             },
             step=self.global_step,
         )
+
+        self.log(f"{self._task_count}_{self._mode}_mIoU", res[0].item(), on_step=False, on_epoch=True)
+        self.log(f"{self._task_count}_{self._mode}_tAcc", res[1].item(), on_step=False, on_epoch=True)
+        self.log(f"{self._task_count}_{self._mode}_cAcc", res[2].item(), on_step=False, on_epoch=True)
 
     ####################
     #   VALIDATION     #
@@ -213,37 +216,49 @@ class Network(LightningModule):
     def on_validation_epoch_start(self):
         # maybe reset semantic meter
         self._mode = "val"
-        self.meters_t[self._mode + "_meter"].clear()
-        pass
 
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
+        self._mode = "val"
         images, label = batch[:2]
         outputs = self(images)
         loss = F.cross_entropy(outputs[0], label, ignore_index=-1)
+
+        self.meters[f"{dataloader_idx}_{self._mode}_meter"].update(outputs[0].argmax(dim=1), label)
 
         ret = {
             "pred": outputs[0].detach(),
             "label": label.detach(),
             "dataloader_idx": dataloader_idx,
             "loss_ret": loss.detach(),
+            "aux_label": batch[2].detach(),
+            "aux_valid": batch[3].detach(),
+            "ori_img": batch[4].detach(),
         }
+        with torch.no_grad():
+            self._visu_callback.validation_step_end(self.trainer, self, ret)
 
-        if len(batch) == 3:
-            ret["ori_img"] = batch[2].detach()
-        if len(batch) > 3:
-            ret["aux_label"] = batch[2].detach()
-            ret["aux_valid"] = batch[3].detach()
-            ret["ori_img"] = batch[4].detach()
-
-        self._visu_callback.validation_step_end(self.trainer, self, ret)
-
-        return loss.detach()
+        return loss.item()
 
     def validation_step_end(self, outputs):
         pass
 
-    def validation_epoch_end(self, outputs):
-        pass
+    def on_validation_epoch_end(self):
+        self._mode = "val"
+
+        for i in range(self._total_tasks):
+            res = self.meters[f"{i}_{self._mode}_meter"].measure()
+            self.logger.log_metrics(
+                metrics={
+                    f"{i}_{self._mode}_mIoU": res[0].item(),
+                    f"{i}_{self._mode}_tAcc": res[1].item(),
+                    f"{i}_{self._mode}_cAcc": res[2].item(),
+                },
+                step=self.global_step,
+            )
+
+            self.log(f"{i}_{self._mode}_mIoU", res[0].item(), on_step=False, on_epoch=True)
+            self.log(f"{i}_{self._mode}_tAcc", res[1].item(), on_step=False, on_epoch=True)
+            self.log(f"{i}_{self._mode}_cAcc", res[2].item(), on_step=False, on_epoch=True)
 
     def on_train_end(self):
         pass

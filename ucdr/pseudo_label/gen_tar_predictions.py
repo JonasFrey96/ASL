@@ -44,6 +44,7 @@ class FastDataset(Dataset):
             torch.from_numpy(i1.astype(np.float32))[None].permute(0, 3, 1, 2),
             (320, 640),
             mode="bilinear",
+            align_corners=True,
         )[0].permute(1, 2, 0)
         img = (img / 255).permute(2, 0, 1)[None]
         img = self.output_transform(img)
@@ -53,7 +54,9 @@ class FastDataset(Dataset):
         label = torch.from_numpy(label - 1)
 
         label = torch.round(
-            torch.nn.functional.interpolate(label[None, None].type(torch.float32), (320, 640), mode="nearest")[:, 0]
+            torch.nn.functional.interpolate(
+                label[None, None].type(torch.float32), (320, 640), mode="nearest", align_corners=True
+            )[:, 0]
         )
         label = label.type(torch.int32)
 
@@ -113,7 +116,7 @@ def label_generation(identifier, confidence, scenes, model_cfg, checkpoint_load)
 
             pred, _ = fsh.model(img)
             pred = F.softmax(pred, dim=1)
-            pred = torch.nn.functional.interpolate(pred, (h, w), mode="bilinear")
+            pred = torch.nn.functional.interpolate(pred, (h, w), mode="bilinear", align_corners=True)
             pred = pred.permute((0, 2, 3, 1))
 
             ress = []

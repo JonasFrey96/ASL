@@ -12,6 +12,8 @@ import pickle
 import logging as logg
 
 logging = logg.getLogger("lightning")
+from os.path import join
+import shutil
 
 # Frameworks
 import torch
@@ -36,7 +38,7 @@ from ucdr.callbacks import (
     VisuCallback,
     ReplayCallback,
 )
-from ucdr.utils import load_yaml, file_path, load_env
+from ucdr.utils import load_yaml, file_path, load_env, move_datasets
 from ucdr.utils import get_neptune_logger, get_tensorboard_logger
 from ucdr.datasets import adapter_tg_to_dataloader
 from ucdr.task import get_task_generator
@@ -49,6 +51,9 @@ def train(exp_cfg_path):
     seed_everything(42)
     exp = load_yaml(exp_cfg_path)
     env = load_env()
+
+    # Only moves dataset for cluster
+    move_datasets(env, exp.get("move_datasets", []))
 
     @rank_zero_only
     def create_experiment_folder():
@@ -145,16 +150,15 @@ def train(exp_cfg_path):
         )
 
         train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
-            tg, task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
+            copy.deepcopy(tg), task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
         )
 
         # New Logger
         model._task_name = task_name
         model._task_count = task_nr
 
-        skip = exp["supervisor"]["start_task"] > task_nr
-        if skip:
-            # VALIDATION
+        if exp["supervisor"]["start_task"] > task_nr:
+            # ONLY VALIDATION
             cfg = copy.deepcopy(exp["trainer"])
             cfg["max_epochs"] = 1
             cfg["limit_train_batches"] = 10
@@ -164,16 +168,19 @@ def train(exp_cfg_path):
             trainer = Trainer(
                 **cfg, default_root_dir=model_path, callbacks=cb_ls + [checkpoint_callback], logger=logger
             )
-            # set params to to determin lr_schedule
+            # Params to to determin lr_schedule
             model.length_train_dataloader = 10000
             model.max_epochs = 10000
 
             res = trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloaders)
         else:
+            # TRAINING
+
             trainer = Trainer(
                 **exp["trainer"], default_root_dir=model_path, callbacks=cb_ls + [checkpoint_callback], logger=logger
             )
-            # FULL TRAINING
+
+            # Params to to determin lr_schedule
             if exp["trainer"]["limit_train_batches"] <= 1.0:
                 model.length_train_dataloader = len(train_dataloader) * exp["trainer"]["limit_train_batches"]
             else:
@@ -181,6 +188,8 @@ def train(exp_cfg_path):
 
             model.max_epochs = exp["task_specific_early_stopping"]["cfg"]["max_epoch_count"]
             _ = trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloaders)
+
+        shutil.copy(join(model_path, "last.ckpt"), join(model_path, f"task{task_nr}-last.ckpt"))
 
 
 if __name__ == "__main__":

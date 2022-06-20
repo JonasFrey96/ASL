@@ -1,13 +1,7 @@
 workstation: False
 
-base: /cluster/work/riner/users/jonfrey/models/master_thesis
-cityscapes: /cluster/work/riner/users/jonfrey/datasets/cityscapes
-nyuv2: /cluster/work/riner/users/jonfrey/datasets/nyuv2
-coco2014: /cluster/work/riner/users/jonfrey/datasets/coco
-mlhypersim: /cluster/work/riner/users/jonfrey/datasets/mlhypersim
-scannet: /cluster/work/riner/users/jonfrey/datasets/scannet
-cocostuff164k: /cluster/work/riner/users/jonfrey/datasets/cocostuff164k
+base: /cluster/work/rsl/jonfrey/ucdr/learning
+labels_generic: /cluster/work/rsl/jonfrey/ucdr/labels_generated
 
-scannet_frames_25k: /cluster/work/riner/users/jonfrey/datasets/scannet_frames_25k
-
-labels_generic: /cluster/work/riner/users/jonfrey/datasets/
+scannet_tar: /cluster/work/rsl/jonfrey/ucdr/datasets
+scannet: overwritte_in_move_datasets

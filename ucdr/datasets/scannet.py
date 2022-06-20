@@ -62,10 +62,8 @@ class ScanNet(Dataset):
         if mode.find("_25k") == -1:
             self._load(root, mode, label_setting=label_setting)
             self._filter_scene(scenes)
-
         else:
             self._load_25k(root, mode)
-            self.aux_labels = False
 
         self._augmenter = AugmentationList(output_size, degrees, flip_p, jitter_bcsh)
 
@@ -75,50 +73,27 @@ class ScanNet(Dataset):
         self._scenes_loaded = scenes
         self.unique = False
 
-        self.aux_labels_fake = False
-
         self._label_loader = LabelLoaderAuto(root_scannet=root, confidence=self._confidence_aux)
-        if self.aux_labels and False:  # TODO to increase speed
+
+        if self.aux_labels:
             self._preprocessing_hack()
 
-    def set_aux_labels_fake(self, flag=True):
-        self.aux_labels_fake = flag
-        self.aux_labels = flag
+    def make_replay(self, percentage=0.1):
+        torch.manual_seed(0)
+        s = self.global_to_local_idx.shape[0]
+        sel_indices = torch.randperm(s)[: int(s * percentage)]
+        self.global_to_local_idx = self.global_to_local_idx[sel_indices.numpy()]
+        self.length = self.global_to_local_idx.shape[0]
 
     def __getitem__(self, index):
         """
-        Returns
-        -------
-        Option 1 (FAILED):
-          False: Unique is set and label is invalid
-
-        Option 2 (VANILLA):
-        img
-        label
-
-        Option 3 (VANILLA + VISU):
-        img
-        label
-        img_orginal
-
-        Option 4 (AUX_LABEL):
-        img
-        label
-        aux_label
-        aux_valid
-
         Option 5 (AUX_LABEL + VISU):
         img
         label
         aux_label
         aux_valid
         img_orginal
-
         """
-        # TESTING IF IO BOUND
-        # return (torch.zeros( (3, 320,640) ),
-        #        torch.ones( (320,640) ) .type(torch.int64),
-        #        torch.zeros( (3, 320,640) ))
 
         global_idx = self.global_to_local_idx[index]
 
@@ -126,7 +101,9 @@ class ScanNet(Dataset):
         label, _ = self._label_loader.get(self.label_pths[global_idx])
         label = torch.from_numpy(label).type(torch.float32)[None, :, :]  # C H W -> contains 0-40
         label = [label]
-        if self.aux_labels and not self.aux_labels_fake:
+
+        # Fetch auxilary label
+        if self.aux_labels:
             _p = self.aux_label_pths[global_idx]
             if os.path.isfile(_p):
                 aux_label, _ = self._label_loader.get(_p)
@@ -145,6 +122,7 @@ class ScanNet(Dataset):
         img = imageio.imread(self.image_pths[global_idx])
         img = torch.from_numpy(img).type(torch.float32).permute(2, 0, 1) / 255  # C H W range 0-1
 
+        # Apply data augmentations
         if self._mode.find("train") != -1 and self._data_augmentation:
             img, label = self._augmenter.apply(img, label)
         else:
@@ -159,6 +137,7 @@ class ScanNet(Dataset):
 
         # REJECT LABEL
         if (label[0] != -1).sum() < 10:
+            assert False
             idx = random.randint(0, len(self) - 1)
             if not self.unique:
                 return self[idx]
@@ -166,11 +145,11 @@ class ScanNet(Dataset):
                 return False
 
         ret = (img, label[0].type(torch.int64)[0, :, :])
-        if self.aux_labels:
-            if self.aux_labels_fake:
-                ret += (label[0].type(torch.int64)[0, :, :], torch.tensor(False))
-            else:
-                ret += (label[1].type(torch.int64)[0, :, :], torch.tensor(True))
+
+        if not self.aux_labels:
+            ret += (label[0].type(torch.int64)[0, :, :], torch.tensor(False))
+        else:
+            ret += (label[1].type(torch.int64)[0, :, :], torch.tensor(True))
 
         ret += (img_ori,)
         return ret
@@ -211,8 +190,9 @@ class ScanNet(Dataset):
 
         if label_setting != "default":
             self.aux_label_pths = [i.replace("label-filt", label_setting) for i in self.label_pths]
+            
             if not os.path.isfile(self.aux_label_pths[0]):
-                print("LABEL FILE DOSENT EXIST -> MAYBE ON JONAS LOCAL PC")
+                print("LABEL FILE DOSENT EXIST -> MAYBE ON Workstation")
                 self.aux_label_pths = [
                     i.replace(
                         root,
@@ -370,14 +350,7 @@ class ScanNet(Dataset):
 
         # check if this has already been performed
         aux_label, method = self._label_loader.get(self.aux_label_pths[self.global_to_local_idx[0]])
-        print("Meethod ", method)
-        print(
-            "self.global_to_local_idx[0] ",
-            self.global_to_local_idx[0],
-            self.aux_label_pths[self.global_to_local_idx[0]],
-        )
         if method == "RGBA":
-
             # This should always evaluate to true
             if self.aux_label_pths[self.global_to_local_idx[0]].find("_.png") == -1:
                 print(
@@ -432,6 +405,7 @@ class ScanNet(Dataset):
                     self.aux_label_pths = [a.replace(".png", "_.png") for a in self.aux_label_pths]
 
     def _load_25k(self, root, mode, ratio=0.8):
+        self.aux_labels = False
         self._get_mapping(root)
         pa = Path(os.path.join(root, "scannet_frames_25k"))
         paths = [str(s) for s in pa.rglob("*.jpg") if str(s).find("color") != -1]

@@ -81,6 +81,7 @@ def adapter_tg_to_en(tg, task_nr, replay_cfg_ensemble, env):
 
     train_dataset_list = []
     val_datasets = []
+
     for idx, task in enumerate(tg):
         if idx < task_nr + 1:
             # add it train_dataset_list
@@ -97,6 +98,7 @@ def adapter_tg_to_en(tg, task_nr, replay_cfg_ensemble, env):
                     output_trafo=output_transform,
                 )
             )
+
         val_datasets.append(
             get_dataset(
                 **task.dataset_val_cfg,
