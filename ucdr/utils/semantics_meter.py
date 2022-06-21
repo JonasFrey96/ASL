@@ -63,23 +63,37 @@ class TorchSemanticsMeter(torch.nn.Module):
             self.conf_mat += conf_mat_current
 
     @torch.no_grad()
-    def measure(self):
+    def measure(self, classwise=False):
         conf_mat = self.conf_mat
         conf_mat_np = self.conf_mat_np
         norm_conf_mat = (conf_mat.T / conf_mat.type(torch.float32).sum(axis=1)).T
         missing_class_mask = torch.isnan(norm_conf_mat.sum(1))
         existing_class_mask = ~missing_class_mask
-        class_average_accuracy = nanmean(torch.diagonal(norm_conf_mat))
+        
+        classwise_accuracy = torch.diagonal(norm_conf_mat)
+        class_average_accuracy = nanmean(classwise_accuracy)
         total_accuracy = torch.sum(torch.diagonal(conf_mat)) / torch.sum(conf_mat)
         ious = torch.zeros(self.number_classes, device=self.conf_mat.device)
         for class_id in range(self.number_classes):
             ious[class_id] = conf_mat[class_id, class_id] / (
                 torch.sum(conf_mat[class_id, :]) + torch.sum(conf_mat[:, class_id]) - conf_mat[class_id, class_id]
             )
-
         miou_valid_class = torch.mean(ious[existing_class_mask])
+        
+        if classwise:
+            return miou_valid_class, total_accuracy, class_average_accuracy, ious, classwise_accuracy
+        
         return miou_valid_class, total_accuracy, class_average_accuracy
 
+    def __str__(self):
+        res = self.measure(classwise=True)
+        s = "TorchSemanticsMeter: \n"
+        s += f"   MIoU: {round(res[0].item()*100,2)}%"
+        s += f"   Acc:  {round(res[1].item()*100,2)}%"
+        s += f"   mAcc: {round(res[2].item()*100,2)}% \n"
+        s += f"   IoUs - classwise: " + str(np.round( res[3].cpu().numpy()*100,2)) + "\n"
+        s += f"   Acc  - classwise: " + str(np.round( res[4].cpu().numpy()*100,2))+ "\n"
+        return s
 
 class SemanticsMeter:
     def __init__(self, number_classes):

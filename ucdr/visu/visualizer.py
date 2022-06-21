@@ -81,7 +81,10 @@ def image_functionality(func):
             log = True
         log *= not kwargs.get("not_log", False)
         if log:
-            log_exp = args[0].pl_module.logger is not None
+            if args[0].pl_module is not None:
+                log_exp = args[0].pl_module.logger is not None
+            else:
+                log_exp = False
             tag = kwargs.get("tag", "TagNotDefined")
             jupyter = kwargs.get("jupyter", False)
             # Each logging call is able to override the setting that is stored in the visualizer
@@ -103,21 +106,21 @@ def image_functionality(func):
             if log_exp:
                 H, W, C = img.shape
                 ds = cv2.resize(img, dsize=(int(W / 2), int(H / 2)), interpolation=cv2.INTER_CUBIC)
-                if args[0].pl_module.logger is not None:
-                    try:
-                        from neptune.new.types import File
 
-                        # logger == neptuneai
-                        args[0].pl_module.logger.experiment[tag].log(File.as_image(np.float32(ds) / 255), step=epoch)
+                try:
+                    from neptune.new.types import File
+
+                    # logger == neptuneai
+                    args[0].pl_module.logger.experiment[tag].log(File.as_image(np.float32(ds) / 255), step=epoch)
+                except:
+                    try:
+                        # logger == tensorboard
+                        args[0].pl_module.logger.experiment.add_image(
+                            tag=tag, img_tensor=ds, global_step=epoch, dataformats="HWC"
+                        )
                     except:
-                        try:
-                            # logger == tensorboard
-                            args[0].pl_module.logger.experiment.add_image(
-                                tag=tag, img_tensor=ds, global_step=epoch, dataformats="HWC"
-                            )
-                        except:
-                            print("Tensorboard Logging and Neptune Logging failed !!!")
-                            pass
+                        print("Tensorboard Logging and Neptune Logging failed !!!")
+                        pass
 
             if jupyter:
                 display(Image.fromarray(img))

@@ -1,1 +1,1 @@
-from .fast_scnn import FastSCNN
+from .fast_scnn import FastSCNN, Classifer

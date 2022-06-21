@@ -12,7 +12,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-__all__ = ["FastSCNN"]
+__all__ = ["FastSCNN", "Classifer"]
 
 
 def inject(x, injection_features, injection_mask):
