@@ -190,7 +190,7 @@ class ScanNet(Dataset):
 
         if label_setting != "default":
             self.aux_label_pths = [i.replace("label-filt", label_setting) for i in self.label_pths]
-            
+
             if not os.path.isfile(self.aux_label_pths[0]):
                 print("LABEL FILE DOSENT EXIST -> MAYBE ON Workstation")
                 self.aux_label_pths = [
