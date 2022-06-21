@@ -17,6 +17,20 @@ Jonas Frey, Hermann Blum, Francesco Milano, Roland Siegwart, Cesar Cadena, **Con
 
 
 # Preperation
+# Create Conda Environment
+```
+conda env create -f cfg/conda/ucdr.yml
+```
+
+
+# Create Docker Container
+```
+cd cfg/docker && ./build.sh
+mkdir exports && cd exports && SINGULARITY_NOHTTPS=1 singularity build --sandbox ucdr.sif docker-daemon://ucdr:latest
+sudo tar -cvf ucdr.tar ucdr.sif
+scp ucdr.tar username@euler:/cluster/work/rsl/username/ucdr/containers
+```
+
 # Dataset Tar Files
 Move to the directory that contains the individual scenes (scene0000_00, ...)
 Tar it without compression:
