@@ -5,7 +5,7 @@ from pytorch_lightning.utilities import rank_zero_only
 @rank_zero_only
 def move_datasets(env, dataset_list):
     if not env["workstation"]:
-        tmp_dir = os.getenv("TMPDIR")
+        tmp_dir = "/home/tmpdir" #os.getenv("TMPDIR")
         scans = os.path.join(tmp_dir, "scannet", "scans")
         os.mkdir(scans_dir)
         os.mv(os.path.join(env["scannet_tar"], "scannetv2-labels.combined.tsv"), os.path.join(tmp_dir, "scannet"))

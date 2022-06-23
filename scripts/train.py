@@ -22,7 +22,7 @@ from pytorch_lightning import seed_everything, Trainer
 from pytorch_lightning.callbacks import EarlyStopping
 from pytorch_lightning.callbacks import ModelCheckpoint
 from pytorch_lightning.callbacks import LearningRateMonitor
-
+from pytorch_lightning.profiler import AdvancedProfiler
 from pytorch_lightning.utilities import rank_zero_warn, rank_zero_only
 from pytorch_lightning.loggers.neptune import NeptuneLogger
 
@@ -38,7 +38,7 @@ from ucdr.callbacks import (
     VisuCallback,
     ReplayCallback,
 )
-from ucdr.utils import load_yaml, file_path, load_env, move_datasets
+from ucdr.utils import load_yaml, file_path, load_env
 from ucdr.utils import get_neptune_logger, get_tensorboard_logger
 from ucdr.datasets import adapter_tg_to_dataloader
 from ucdr.task import get_task_generator
@@ -51,9 +51,6 @@ def train(exp_cfg_path):
     seed_everything(42)
     exp = load_yaml(exp_cfg_path)
     env = load_env()
-
-    # Only moves dataset for cluster
-    move_datasets(env, exp.get("move_datasets", []))
 
     @rank_zero_only
     def create_experiment_folder():
@@ -103,6 +100,12 @@ def train(exp_cfg_path):
     # MODEL
     model = Network(exp=exp, env=env)
 
+    # profiler
+    if exp["trainer"].get("profiler", False) == "advanced":
+        exp["trainer"]["profiler"] = AdvancedProfiler(dirpath=model_path, filename="profile.txt")
+    else:
+        exp["trainer"]["profiler"] = False
+        
     # COLLECT CALLBACKS
     cb_ls = [LearningRateMonitor(**exp["lr_monitor"]["cfg"])]
 
@@ -130,7 +133,7 @@ def train(exp_cfg_path):
             assert len(missing_keys_in_model) == 0
 
         else:
-            raise Exception("Checkpoint not a file")
+            raise Exception(f"Checkpoint not a file {p}")
 
     # add distributed plugin
     if exp["trainer"]["gpus"] > 1:
@@ -146,7 +149,7 @@ def train(exp_cfg_path):
         # Reinitalizing of all datasets
 
         checkpoint_callback = ModelCheckpoint(
-            dirpath=model_path, filename="task" + str(i) + "-{epoch:02d}--{step:06d}", **exp["cb_checkpoint"]["cfg"]
+            dirpath=model_path, filename="task" + str(task_nr) + "-{epoch:02d}--{step:06d}", **exp["cb_checkpoint"]["cfg"]
         )
 
         train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
@@ -162,7 +165,6 @@ def train(exp_cfg_path):
             cfg = copy.deepcopy(exp["trainer"])
             cfg["max_epochs"] = 1
             cfg["limit_train_batches"] = 10
-            cfg["limit_val_batches"] = 10
             cfg["check_val_every_n_epoch"] = 1
 
             trainer = Trainer(
@@ -204,8 +206,10 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     exp_cfg_path = args.exp
+    print(UCDR_ROOT_DIR, args.exp)
     if not os.path.isabs(exp_cfg_path):
         exp_cfg_path = os.path.join(UCDR_ROOT_DIR, "cfg/exp", args.exp)
-
+    print(exp_cfg_path)
+    
     train(exp_cfg_path)
     torch.cuda.empty_cache()

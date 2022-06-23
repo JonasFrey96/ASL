@@ -64,7 +64,7 @@ class ScanNet(Dataset):
             self._filter_scene(scenes)
         else:
             self._load_25k(root, mode)
-
+            
         self._augmenter = AugmentationList(output_size, degrees, flip_p, jitter_bcsh)
 
         self._output_trafo = output_trafo
@@ -136,13 +136,14 @@ class ScanNet(Dataset):
             label[k] = label[k] - 1  # 0 == chairs 39 other prop  -1 invalid
 
         # REJECT LABEL
-        if (label[0] != -1).sum() < 10:
-            assert False
-            idx = random.randint(0, len(self) - 1)
-            if not self.unique:
-                return self[idx]
-            else:
-                return False
+        # if (label[0] != -1).sum() < 10:
+        #     print(self.label_pths[global_idx])
+        #     assert False
+        #     idx = random.randint(0, len(self) - 1)
+        #     if not self.unique:
+        #         return self[idx]
+        #     else:
+        #         return False
 
         ret = (img, label[0].type(torch.int64)[0, :, :])
 
@@ -200,7 +201,7 @@ class ScanNet(Dataset):
                     )
                     for i in self.aux_label_pths
                 ]
-                self.aux_labels = True
+            self.aux_labels = True
         else:
             self.aux_labels = False
 
@@ -341,7 +342,8 @@ class ScanNet(Dataset):
                     print("AuxLa not found ", self.aux_label_pths[global_idx])
             if not os.path.exists(self.image_pths[global_idx]):
                 print("Image not found ", self.image_pths[global_idx])
-
+        
+        
     def _preprocessing_hack(self, force=False):
         """
         If training with aux_labels ->
@@ -353,11 +355,6 @@ class ScanNet(Dataset):
         if method == "RGBA":
             # This should always evaluate to true
             if self.aux_label_pths[self.global_to_local_idx[0]].find("_.png") == -1:
-                print(
-                    "self.aux_label_pths[self.global_to_local_idx[0]]",
-                    self.aux_label_pths[self.global_to_local_idx[0]],
-                    self.global_to_local_idx[0],
-                )
                 if (
                     os.path.isfile(self.aux_label_pths[self.global_to_local_idx[0]].replace(".png", "_.png"))
                     and os.path.isfile(self.aux_label_pths[self.global_to_local_idx[-1]].replace(".png", "_.png"))

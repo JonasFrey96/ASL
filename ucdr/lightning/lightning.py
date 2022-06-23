@@ -51,7 +51,7 @@ class Network(LightningModule):
         keys = ["train_meter", "test_meter"]
         keys = keys + [f"{i}_val_meter" for i in range(total_tasks)]
         self.meters = torch.nn.ModuleDict(
-            {k: TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"]) for k in keys}
+            {k: TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"], only_acc=True) for k in keys}
         )
 
         self._total_tasks = total_tasks
@@ -151,17 +151,21 @@ class Network(LightningModule):
         for k in self.meters.keys():
             self.meters[k].clear()
 
-    def training_step(self, batch, batch_idx):
+    def training_step(self, batch, batch_idx):    
         self._mode = "train"
         ba = self.parse_batch(batch)
+        if (ba["label"] != -1).any() == False:
+            # Allows to skip training step.
+            # This happens if all data within the training batch is invalid.
+            return None
+        
         outputs = self(batch=ba["images"])
-
         if not ("aux_valid" in ba.keys()):
             ba["aux_valid"] = torch.zeros((ba["images"].shape[0]), device=ba["images"].device, dtype=torch.bool)
         loss = self.compute_loss(pred=outputs[0], **ba)
-
+        
         self.meters[f"{self._mode}_meter"].update(outputs[0].argmax(dim=1), ba["label"])
-
+        
         self.log(f"train_loss", loss.item(), on_step=False, on_epoch=True)
         ret = {
             "loss": loss,
@@ -177,7 +181,6 @@ class Network(LightningModule):
         ret["replay"] = batch[2]
 
         self._visu_callback.training_step_end(self.trainer, self, ret)
-
         return ret
 
     def training_step_end(self, outputs):

@@ -83,7 +83,7 @@ class TaskGeneratorScannet(TaskGenerator):
         val = copy.deepcopy(scannet_template_dict)
         train["mode"] = "train_25k"
         val["mode"] = "val_25k"
-
+        val["data_augmentation"] = False
         t = Task(
             name=f"Train_25k",
             dataset_train_cfg=copy.deepcopy(train),
@@ -130,7 +130,7 @@ class TaskGeneratorScannet(TaskGenerator):
         val = copy.deepcopy(scannet_template_dict)
         train["mode"] = "train"
         val["mode"] = "val"
-
+        val["data_augmentation"] = False
         train["scenes"] = [f"scene{s:04d}" for s in range(10, 60)]
         val["scenes"] = train["scenes"]
         t = Task(
@@ -156,7 +156,8 @@ class TaskGeneratorScannet(TaskGenerator):
         train["confidence_aux"] = confidence_aux
 
         val["label_setting"] = label_setting  # "default"
-
+        val["data_augmentation"] = False
+        
         start_scene_train = start_scene
         for i in range(number_of_tasks):
             # GENERATE TRAIN TASK

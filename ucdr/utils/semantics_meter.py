@@ -4,7 +4,7 @@ import os
 import torch
 from sklearn.metrics import confusion_matrix
 from torchmetrics import ConfusionMatrix
-
+from torchmetrics import Accuracy
 
 def np_nanmean(data, **args):
     # This makes it ignore the first 'background' class
@@ -20,34 +20,31 @@ def nanmean(data, **args):
 
 
 class TorchSemanticsMeter(torch.nn.Module):
-    def __init__(self, number_classes):
+    def __init__(self, number_classes, only_acc):
         super().__init__()
         self.conf_mat = None
         self.conf_mat_np = None
         self.number_classes = number_classes
         self.mask = torch.zeros((number_classes,), requires_grad=False, dtype=torch.bool)
-
-        self.mask_np = np.zeros((number_classes,), dtype=np.bool)
-
         self.cm = ConfusionMatrix(num_classes=number_classes)
+        self.only_acc = only_acc
+        self.pos = 0
+        self.tot = 0 
+        self.acc = Accuracy(ignore_index=-1,num_classes=number_classes)        
 
     def clear(self):
         self.conf_mat = None
         self.conf_mat_np = None
 
-    def prepare_inputs(self, *inputs):
-        outputs = []
-        for i, inp in enumerate(inputs):
-            if torch.is_tensor(inp):
-                inp = inp.detach().cpu().numpy()
-            outputs.append(inp)
-
-        return outputs
-
     @torch.no_grad()
     def update(self, preds, truths):
         truths = truths.detach()
         preds = preds.detach()
+        if self.only_acc:
+            self.acc((preds).flatten(),(truths).flatten())
+            return
+        
+
         un = torch.unique(truths)
         self.mask[un[un != -1].type(torch.long)] = True
         preds = preds.flatten()
@@ -55,8 +52,11 @@ class TorchSemanticsMeter(torch.nn.Module):
         valid_pix_ids = truths != -1
         preds = preds[valid_pix_ids]
         truths = truths[valid_pix_ids]
+        if valid_pix_ids.sum() == 0:
+            # skipp this sample given that no valid label is given
+            return
+        
         conf_mat_current = self.cm(truths, preds).T
-
         if self.conf_mat is None:
             self.conf_mat = conf_mat_current
         else:
@@ -64,6 +64,9 @@ class TorchSemanticsMeter(torch.nn.Module):
 
     @torch.no_grad()
     def measure(self, classwise=False):
+        if self.only_acc:
+            return [self.acc.compute()]*3
+        
         conf_mat = self.conf_mat
         conf_mat_np = self.conf_mat_np
         norm_conf_mat = (conf_mat.T / conf_mat.type(torch.float32).sum(axis=1)).T
