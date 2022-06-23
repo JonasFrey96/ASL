@@ -15,7 +15,6 @@ Jonas Frey, Hermann Blum, Francesco Milano, Roland Siegwart, Cesar Cadena, **Con
 
 # Installation
 
-
 # Preperation
 # Create Conda Environment
 ```

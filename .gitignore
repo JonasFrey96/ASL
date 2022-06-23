@@ -1,5 +1,6 @@
 .neptune/**
 results/**
+cfg/docker/exports/**
 local/**
 **.pt
 notebooks/*

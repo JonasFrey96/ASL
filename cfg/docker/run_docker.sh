@@ -1,0 +1,1 @@
+docker run --network=host -it -v /home/jonfrey/git:/home/git ucdr bash

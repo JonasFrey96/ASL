@@ -6,4 +6,8 @@ echo $h
 export ENV_WORKSTATION_NAME=euler
 
 cd /home/git/ASL
-exec bash -c "/root/miniconda3/envs/lightning/bin/python3 -u scripts/train.py --headless $h"
+python -m pip install --root ./  ./
+pip install torchmetrics==0.9.1 
+export PYTHONPATH=$PYTHONPATH:/home/git/ASL
+
+exec bash -c "python3 -u scripts/train.py $h"
