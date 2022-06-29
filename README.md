@@ -1,6 +1,6 @@
 # Continual Adaptation of Semantic Segmentation **U**sing **C**omplementary 2D-3D **D**ata **R**epresentations
 ---
-<h4 align="center">Code, Model Checkpoints, Generated Data, Documentation, Installation Instructions.</h4>
+<h4 align="center">Contains code, checkpoints, documentation and installation instructions for RA-L paper.</h4>
 
 <p align="center">
   <a href="#overview">Overview</a> •
@@ -10,9 +10,11 @@
   <a href="#credits">Credits</a>
 </p>
 
+<p float="center">
+  <img src="https://github.com/JonasFrey96/continual_adaptation_ucdr/blob/main/docs/main.png" width="95%" />
+</p>
 
-<img align="left" height="300" src="https://github.com/JonasFrey96/continual_adaptation_ucdr/blob/main/docs/scene_0000_00_seg.png" alt="MultiView"> 
-<img align="right"  height="300" src="https://github.com/JonasFrey96/continual_adaptation_ucdr/blob/main/docs/scene_0000_00_multiview.png" alt="MultiView"> 
+# Overview
 
 # Citation
 
@@ -60,7 +62,7 @@ Repeat this for the folder containing
 
 
 
-# Experiments Reproduce Results
+# Experiments
 Generate Score for 1-Pseudo Adap:
 ```
 python scripts/eval_pseudo_labels.py --pseudo_label_idtf=labels_individual_scenes_map_2 --mode=val --scene=scene0000,scene0001,scene0002,scene0003,scene0004
