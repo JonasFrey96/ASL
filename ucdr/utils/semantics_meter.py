@@ -6,6 +6,7 @@ from sklearn.metrics import confusion_matrix
 from torchmetrics import ConfusionMatrix
 from torchmetrics import Accuracy
 
+
 def np_nanmean(data, **args):
     # This makes it ignore the first 'background' class
     return np.ma.masked_array(data, np.isnan(data)).mean(**args)
@@ -29,8 +30,8 @@ class TorchSemanticsMeter(torch.nn.Module):
         self.cm = ConfusionMatrix(num_classes=number_classes)
         self.only_acc = only_acc
         self.pos = 0
-        self.tot = 0 
-        self.acc = Accuracy(ignore_index=-1,num_classes=number_classes)        
+        self.tot = 0
+        self.acc = Accuracy(ignore_index=-1, num_classes=number_classes)
 
     def clear(self):
         self.conf_mat = None
@@ -41,9 +42,8 @@ class TorchSemanticsMeter(torch.nn.Module):
         truths = truths.detach()
         preds = preds.detach()
         if self.only_acc:
-            self.acc((preds).flatten(),(truths).flatten())
+            self.acc((preds).flatten(), (truths).flatten())
             return
-        
 
         un = torch.unique(truths)
         self.mask[un[un != -1].type(torch.long)] = True
@@ -55,8 +55,9 @@ class TorchSemanticsMeter(torch.nn.Module):
         if valid_pix_ids.sum() == 0:
             # skipp this sample given that no valid label is given
             return
-        
+
         conf_mat_current = self.cm(truths, preds).T
+
         if self.conf_mat is None:
             self.conf_mat = conf_mat_current
         else:
@@ -65,10 +66,9 @@ class TorchSemanticsMeter(torch.nn.Module):
     @torch.no_grad()
     def measure(self, classwise=False):
         if self.only_acc:
-            return [self.acc.compute()]*3
-        
+            return [self.acc.compute()] * 3
+
         conf_mat = self.conf_mat
-        conf_mat_np = self.conf_mat_np
         norm_conf_mat = (conf_mat.T / conf_mat.type(torch.float32).sum(axis=1)).T
         missing_class_mask = torch.isnan(norm_conf_mat.sum(1))
         existing_class_mask = ~missing_class_mask

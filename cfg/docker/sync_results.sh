@@ -1,0 +1,2 @@
+#!/bin/bash
+rsync -r -v --exclude=.git/* --exclude=*.pyc --exclude=cfg/docker/exports/* --exclude=results/* --exclude=build/* --exclude=.neptune/*  $USER@euler:/cluster/work/rsl/jonfrey/ucdr/learning/$1 /home/jonfrey/git/ASL/results/learning/cluster/

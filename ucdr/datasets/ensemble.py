@@ -1,9 +1,3 @@
-# Idee pass in mutiple datasets
-# Pass in the ratios according to which they should be sampled
-# Allows internally masking a dataset such that only a subset of elements is accessible via filtering
-# Fully replace the memory thing
-
-# TODO: Jonas Frey added atomatically switching on aux labels if needed
 from torch.utils.data import Dataset
 import numpy as np
 import torch

@@ -1,0 +1,2 @@
+#!/bin/bash
+rsync -r -v --exclude=ucdr.egg-info/* --exclude=.git/* --exclude=*.pyc --exclude=cfg/docker/exports/* --exclude=results/* --exclude=build/* --exclude=.neptune/* $HOME/git/ASL/ $USER@euler:/cluster/home/jonfrey/ASL

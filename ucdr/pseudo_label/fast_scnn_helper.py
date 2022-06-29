@@ -32,7 +32,6 @@ class FastSCNNHelper:
             raise Exception("Checkpoint not a file")
         del res
         torch.cuda.empty_cache()
-        self.output_transform = tf.Compose([tf.Normalize([0.485, 0.456, 0.406], [0.229, 0.224, 0.225])])
 
         self.model.to(device)
         self.model.eval()
@@ -41,9 +40,10 @@ class FastSCNNHelper:
         with torch.no_grad():
             # H,W,C 0-255 uint8 np
             outputs = self.model(img)
-            return torch.argmax(outputs[0], 1).cpu().numpy()[0]
+            return torch.argmax(outputs[0], 1).cpu().numpy()
 
     def get_label_prob(self, img):
+        raise Exception("not tested")
         with torch.no_grad():
             # H,W,C 0-255 uint8 np
             outputs = self.model(img)

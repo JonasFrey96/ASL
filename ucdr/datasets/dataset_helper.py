@@ -1,7 +1,8 @@
 import torch
-from ucdr.datasets import get_dataset
 from torchvision import transforms
 from math import ceil
+
+from ucdr.datasets import get_dataset
 
 __all__ = ["eval_lists_into_dataloaders", "get_dataloader_test", "get_dataloader_train"]
 
@@ -32,7 +33,7 @@ def get_dataloader_test(d_test, env, exp):
         num_workers=max(1, ceil(exp["loader"]["num_workers"] / torch.cuda.device_count())),
         pin_memory=exp["loader"]["pin_memory"],
         batch_size=exp["loader"]["batch_size"],
-        drop_last=True,
+        drop_last=False,
     )
     return dataloader_test
 

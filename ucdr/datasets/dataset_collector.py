@@ -1,4 +1,4 @@
-from .scannet import ScanNet
+from ucdr.datasets.scannet import ScanNet
 
 datasets = {
     "scannet": ScanNet,

@@ -12,10 +12,11 @@ import os
 import torch
 from pytorch_lightning.core.lightning import LightningModule
 from torch.nn import functional as F
+from torchmetrics import Accuracy
 
 # MODULES
 from ucdr.models import FastSCNN
-from ucdr.utils import SemanticsMeter, TorchSemanticsMeter
+from ucdr.utils import SemanticsMeter
 
 __all__ = ["Network"]
 
@@ -48,10 +49,14 @@ class Network(LightningModule):
 
         self._mode = "train"
 
-        keys = ["train_meter", "test_meter"]
+        keys = ["train_meter"]
         keys = keys + [f"{i}_val_meter" for i in range(total_tasks)]
-        self.meters = torch.nn.ModuleDict(
-            {k: TorchSemanticsMeter(self._exp["model"]["cfg"]["num_classes"], only_acc=True) for k in keys}
+        keys = keys + [f"{i}_test_meter" for i in range(total_tasks)]
+
+        self.meters = {k: SemanticsMeter(self._exp["model"]["cfg"]["num_classes"]) for k in keys}
+
+        self.accs = torch.nn.ModuleDict(
+            {k: Accuracy(ignore_index=-1, num_classes=self._exp["model"]["cfg"]["num_classes"]) for k in keys}
         )
 
         self._total_tasks = total_tasks
@@ -151,21 +156,24 @@ class Network(LightningModule):
         for k in self.meters.keys():
             self.meters[k].clear()
 
-    def training_step(self, batch, batch_idx):    
+    def training_step(self, batch, batch_idx):
         self._mode = "train"
         ba = self.parse_batch(batch)
         if (ba["label"] != -1).any() == False:
             # Allows to skip training step.
             # This happens if all data within the training batch is invalid.
             return None
-        
+
         outputs = self(batch=ba["images"])
         if not ("aux_valid" in ba.keys()):
             ba["aux_valid"] = torch.zeros((ba["images"].shape[0]), device=ba["images"].device, dtype=torch.bool)
         loss = self.compute_loss(pred=outputs[0], **ba)
-        
-        self.meters[f"{self._mode}_meter"].update(outputs[0].argmax(dim=1), ba["label"])
-        
+
+        argm = outputs[0].argmax(dim=1)
+        if self._exp["meters"]["train"]:
+            self.meters[f"{self._mode}_meter"].update(argm, ba["label"])
+        self.accs[f"{self._mode}_meter"].update(argm, ba["label"])
+
         self.log(f"train_loss", loss.item(), on_step=False, on_epoch=True)
         ret = {
             "loss": loss,
@@ -181,14 +189,14 @@ class Network(LightningModule):
         ret["replay"] = batch[2]
 
         self._visu_callback.training_step_end(self.trainer, self, ret)
-        return ret
+        return {"loss": loss}
 
     def training_step_end(self, outputs):
         # LOG REPLAY / REAL
         self.logger.log_metrics(
             metrics={
-                f"{self._task_count}_real": torch.tensor(self._real_samples),
-                f"{self._task_count}_replayed": torch.tensor(self._replayed_samples),
+                f"CurrentTask_{self._task_count}_real": torch.tensor(self._real_samples),
+                f"CurrentTask_{self._task_count}_replayed": torch.tensor(self._replayed_samples),
             },
             step=self.global_step,
         )
@@ -197,20 +205,27 @@ class Network(LightningModule):
 
     def training_epoch_end(self, outputs):
         self._mode = "train"
-        res = self.meters[f"{self._mode}_meter"].measure()
+        try:
+            res = list(self.meters[f"{self._mode}_meter"].measure())
+            self.meters[f"{self._mode}_meter"].clear()
+        except:
+            res = torch.zeros((3,))
+
+        tacc = self.accs[f"{self._mode}_meter"].compute()
+        res[1] = tacc
 
         self.logger.log_metrics(
             metrics={
-                f"{self._task_count}_{self._mode}_mIoU": res[0].item(),
-                f"{self._task_count}_{self._mode}_tAcc": res[1].item(),
-                f"{self._task_count}_{self._mode}_cAcc": res[2].item(),
+                f"CurrentTask_{self._task_count}_{self._mode}_mIoU": res[0].item(),
+                f"CurrentTask_{self._task_count}_{self._mode}_tAcc": res[1].item(),
+                f"CurrentTask_{self._task_count}_{self._mode}_cAcc": res[2].item(),
             },
             step=self.global_step,
         )
 
-        self.log(f"{self._task_count}_{self._mode}_mIoU", res[0].item(), on_step=False, on_epoch=True)
-        self.log(f"{self._task_count}_{self._mode}_tAcc", res[1].item(), on_step=False, on_epoch=True)
-        self.log(f"{self._task_count}_{self._mode}_cAcc", res[2].item(), on_step=False, on_epoch=True)
+        self.log(f"CurrentTask_{self._task_count}_{self._mode}_mIoU", res[0].item(), on_step=False, on_epoch=True)
+        self.log(f"CurrentTask_{self._task_count}_{self._mode}_tAcc", res[1].item(), on_step=False, on_epoch=True)
+        self.log(f"CurrentTask_{self._task_count}_{self._mode}_cAcc", res[2].item(), on_step=False, on_epoch=True)
 
     ####################
     #   VALIDATION     #
@@ -223,10 +238,21 @@ class Network(LightningModule):
     def validation_step(self, batch, batch_idx, dataloader_idx=0):
         self._mode = "val"
         images, label = batch[:2]
+        if (label != -1).any() == False:
+            # Allows to skip training step.
+            # This happens if all data within the training batch is invalid.
+            return None
+
         outputs = self(images)
         loss = F.cross_entropy(outputs[0], label, ignore_index=-1)
+        argm = outputs[0].argmax(dim=1)
+        if (
+            self._exp["meters"][f"val_{dataloader_idx}"]
+            or self.current_epoch == self._exp["meters"][f"log_val_dataloader_{dataloader_idx}"]
+        ):
+            self.meters[f"{dataloader_idx}_{self._mode}_meter"].update(argm, label)
 
-        self.meters[f"{dataloader_idx}_{self._mode}_meter"].update(outputs[0].argmax(dim=1), label)
+        self.accs[f"{dataloader_idx}_{self._mode}_meter"].update(argm, label)
 
         ret = {
             "pred": outputs[0].detach(),
@@ -242,26 +268,36 @@ class Network(LightningModule):
 
         return loss.item()
 
-    def validation_step_end(self, outputs):
-        pass
-
     def on_validation_epoch_end(self):
         self._mode = "val"
-
         for i in range(self._total_tasks):
-            res = self.meters[f"{i}_{self._mode}_meter"].measure()
+            try:
+                res = list(self.meters[f"{i}_{self._mode}_meter"].measure())
+                self.meters[f"{i}_{self._mode}_meter"].clear()
+            except:
+                res = torch.zeros((3,))
+
+            tacc = self.accs[f"{i}_{self._mode}_meter"].compute()
+            res[1] = tacc
+
             self.logger.log_metrics(
                 metrics={
-                    f"{i}_{self._mode}_mIoU": res[0].item(),
-                    f"{i}_{self._mode}_tAcc": res[1].item(),
-                    f"{i}_{self._mode}_cAcc": res[2].item(),
+                    f"CurrentTask_{self._task_count}_{self._mode}_{i}_mIoU": res[0].item(),
+                    f"CurrentTask_{self._task_count}_{self._mode}_{i}_tAcc": res[1].item(),
+                    f"CurrentTask_{self._task_count}_{self._mode}_{i}_cAcc": res[2].item(),
                 },
                 step=self.global_step,
             )
 
-            self.log(f"{i}_{self._mode}_mIoU", res[0].item(), on_step=False, on_epoch=True)
-            self.log(f"{i}_{self._mode}_tAcc", res[1].item(), on_step=False, on_epoch=True)
-            self.log(f"{i}_{self._mode}_cAcc", res[2].item(), on_step=False, on_epoch=True)
+            self.log(
+                f"CurrentTask_{self._task_count}_{self._mode}_{i}_mIoU", res[0].item(), on_step=False, on_epoch=True
+            )
+            self.log(
+                f"CurrentTask_{self._task_count}_{self._mode}_{i}_tAcc", res[1].item(), on_step=False, on_epoch=True
+            )
+            self.log(
+                f"CurrentTask_{self._task_count}_{self._mode}_{i}_cAcc", res[2].item(), on_step=False, on_epoch=True
+            )
 
     def on_train_end(self):
         pass
@@ -269,11 +305,65 @@ class Network(LightningModule):
     def on_test_epoch_start(self):
         pass
 
-    def test_step(self, batch, batch_idx):
-        pass
+    def test_step(self, batch, batch_idx, dataloader_idx):
+        self._mode = "test"
+        images, label = batch[:2]
+        if (label != -1).any() == False:
+            # Allows to skip training step.
+            # This happens if all data within the training batch is invalid.
+            return None
+
+        outputs = self(images)
+        loss = F.cross_entropy(outputs[0], label, ignore_index=-1)
+        argm = outputs[0].argmax(dim=1)
+
+        self.meters[f"{dataloader_idx}_{self._mode}_meter"].update(argm, label)
+        self.accs[f"{dataloader_idx}_{self._mode}_meter"].update(argm, label)
+
+        ret = {
+            "pred": outputs[0].detach(),
+            "label": label.detach(),
+            "dataloader_idx": dataloader_idx,
+            "loss_ret": loss.detach(),
+            "aux_label": batch[2].detach(),
+            "aux_valid": batch[3].detach(),
+            "ori_img": batch[4].detach(),
+        }
+        with torch.no_grad():
+            self._visu_callback.validation_step_end(self.trainer, self, ret)
+
+        return loss.item()
 
     def test_epoch_end(self, outputs):
-        pass
+        self._mode = "test"
+        for i in range(self._total_tasks):
+            try:
+                res = list(self.meters[f"{i}_{self._mode}_meter"].measure())
+                self.meters[f"{i}_{self._mode}_meter"].clear()
+            except:
+                res = torch.zeros((3,))
+
+            tacc = self.accs[f"{i}_{self._mode}_meter"].compute()
+            res[1] = tacc
+
+            self.logger.log_metrics(
+                metrics={
+                    f"CurrentTask_{self._task_count}_{self._mode}_{i}_mIoU": res[0].item(),
+                    f"CurrentTask_{self._task_count}_{self._mode}_{i}_tAcc": res[1].item(),
+                    f"CurrentTask_{self._task_count}_{self._mode}_{i}_cAcc": res[2].item(),
+                },
+                step=self.global_step,
+            )
+
+            self.log(
+                f"CurrentTask_{self._task_count}_{self._mode}_{i}_mIoU", res[0].item(), on_step=False, on_epoch=True
+            )
+            self.log(
+                f"CurrentTask_{self._task_count}_{self._mode}_{i}_tAcc", res[1].item(), on_step=False, on_epoch=True
+            )
+            self.log(
+                f"CurrentTask_{self._task_count}_{self._mode}_{i}_cAcc", res[2].item(), on_step=False, on_epoch=True
+            )
 
     def on_save_checkpoint(self, params):
         pass
@@ -307,7 +397,6 @@ class Network(LightningModule):
 
             elif n == "ONE_CYCLE_LR":
                 assert self.max_epochs != -1
-                assert self._exp["task_specific_early_stopping"]["active"]
 
                 cfg = self._exp["lr_scheduler"]["one_cycle_lr_cfg"]
                 scheduler = torch.optim.lr_scheduler.OneCycleLR(

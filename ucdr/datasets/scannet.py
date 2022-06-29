@@ -33,6 +33,7 @@ class ScanNet(Dataset):
         label_setting="default",
         confidence_aux=0,
         labels_generic="",
+        return_path=False,
     ):
 
         """
@@ -64,7 +65,7 @@ class ScanNet(Dataset):
             self._filter_scene(scenes)
         else:
             self._load_25k(root, mode)
-            
+
         self._augmenter = AugmentationList(output_size, degrees, flip_p, jitter_bcsh)
 
         self._output_trafo = output_trafo
@@ -74,6 +75,8 @@ class ScanNet(Dataset):
         self.unique = False
 
         self._label_loader = LabelLoaderAuto(root_scannet=root, confidence=self._confidence_aux)
+
+        self.return_path = return_path
 
         if self.aux_labels:
             self._preprocessing_hack()
@@ -153,6 +156,10 @@ class ScanNet(Dataset):
             ret += (label[1].type(torch.int64)[0, :, :], torch.tensor(True))
 
         ret += (img_ori,)
+
+        if self.return_path:
+            ret += (self.image_pths[global_idx],)
+
         return ret
 
     def __len__(self):
@@ -342,8 +349,7 @@ class ScanNet(Dataset):
                     print("AuxLa not found ", self.aux_label_pths[global_idx])
             if not os.path.exists(self.image_pths[global_idx]):
                 print("Image not found ", self.image_pths[global_idx])
-        
-        
+
     def _preprocessing_hack(self, force=False):
         """
         If training with aux_labels ->

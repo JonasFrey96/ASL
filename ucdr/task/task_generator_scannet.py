@@ -157,7 +157,7 @@ class TaskGeneratorScannet(TaskGenerator):
 
         val["label_setting"] = label_setting  # "default"
         val["data_augmentation"] = False
-        
+
         start_scene_train = start_scene
         for i in range(number_of_tasks):
             # GENERATE TRAIN TASK
@@ -181,7 +181,7 @@ def test():
 
     from ucdr.utils import load_yaml
 
-    exp = load_yaml(os.path.join(os.getcwd() + "/cfg/test/test.yml"))
+    exp = load_yaml(os.path.join(os.getcwd() + "/cfg/test/test.yaml"))
 
     tg = TaskGeneratorScannet(mode=exp["task_generator"]["mode"], cfg=exp["task_generator"]["cfg"])
     print(tg)

@@ -26,7 +26,7 @@ class TaskSpecificEarlyStopping(Callback):
         self.k_not_in_best_buffer = [0] * nr_tasks
         self.minimal_increase = minimal_increase
         self.training_start_epoch = 0
-        self.max_epoch_count = max_epoch_count
+        self.max_epoch_count = max_epoch_count - 1
 
         if self.verbose:
             rank_zero_info(f"TimeLimitCallback is set to {self.timelimit_in_min}min")
@@ -59,7 +59,7 @@ class TaskSpecificEarlyStopping(Callback):
                     print("TSES: Stopped due to timelimit reached!")
                 should_stop = True
 
-            metric = trainer.callback_metrics[f"{nr}_val_cAcc"]
+            metric = trainer.callback_metrics[f"CurrentTask_{nr}_val_{nr}_tAcc"]
 
             if metric > self.best_metric_buffer[nr] + self.minimal_increase:
                 self.best_metric_buffer[nr] = metric

@@ -1,0 +1,31 @@
+global_checkpoint_load: nan
+model:
+  name: Fast-SCNN
+  input_size:
+  - 320
+  - 640
+  cfg:
+    num_classes: 40
+    aux: false
+    extraction:
+      active: false
+      layer: learn_to_down
+
+label_generations:
+  - identifier: pred_3_02
+    scenes: [scene0000]
+    checkpoint_load: results/learning/cluster/pred3/scene0000_r02/task1-last.ckpt
+  - identifier: pred_3_02
+    scenes: [scene0001]
+    checkpoint_load: results/learning/cluster/pred3/scene0001_r02/task1-last.ckpt
+  - identifier: pred_3_02
+    scenes: [scene0002]
+    checkpoint_load: results/learning/cluster/pred3/scene0002_r02/task1-last.ckpt
+  - identifier: pred_3_02
+    scenes: [scene0003]
+    checkpoint_load: results/learning/cluster/pred3/scene0003_r02/task1-last.ckpt
+  - identifier: pred_3_02
+    scenes: [scene0004]
+    checkpoint_load: results/learning/cluster/pred3/scene0004_r02/task1-last.ckpt
+
+

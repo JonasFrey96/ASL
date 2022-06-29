@@ -36,7 +36,6 @@ from ucdr.visu import (
 from ucdr.callbacks import (
     TaskSpecificEarlyStopping,
     VisuCallback,
-    ReplayCallback,
 )
 from ucdr.utils import load_yaml, file_path, load_env
 from ucdr.utils import get_neptune_logger, get_tensorboard_logger
@@ -84,9 +83,9 @@ def train(exp_cfg_path):
     # SET GPUS
     if (exp["trainer"]).get("gpus", -1) == -1:
         nr = torch.cuda.device_count()
-        logging.debug(f"Set GPU Count for Trainer to {nr}!")
+        print(f"Set GPU Count for Trainer to {nr}!")
         for i in range(nr):
-            logging.debug(f"Device {i}: " + str(torch.cuda.get_device_name(i)))
+            print(f"Device {i}: " + str(torch.cuda.get_device_name(i)))
         exp["trainer"]["gpus"] = -1
 
     # TASK GENERATOR
@@ -105,7 +104,7 @@ def train(exp_cfg_path):
         exp["trainer"]["profiler"] = AdvancedProfiler(dirpath=model_path, filename="profile.txt")
     else:
         exp["trainer"]["profiler"] = False
-        
+
     # COLLECT CALLBACKS
     cb_ls = [LearningRateMonitor(**exp["lr_monitor"]["cfg"])]
 
@@ -149,8 +148,17 @@ def train(exp_cfg_path):
         # Reinitalizing of all datasets
 
         checkpoint_callback = ModelCheckpoint(
-            dirpath=model_path, filename="task" + str(task_nr) + "-{epoch:02d}--{step:06d}", **exp["cb_checkpoint"]["cfg"]
+            dirpath=model_path,
+            filename="task" + str(task_nr) + "-{epoch:02d}--{step:06d}",
+            **exp["cb_checkpoint"]["cfg"],
         )
+
+        train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
+            copy.deepcopy(tg), 1, exp["loader"], exp["replay"]["cfg_ensemble"], env
+        )
+
+        print("train", len(train_dataloader.dataset.main_dataset))
+        print("val", len(val_dataloaders[1].dataset))
 
         train_dataloader, val_dataloaders, task_name = adapter_tg_to_dataloader(
             copy.deepcopy(tg), task_nr, exp["loader"], exp["replay"]["cfg_ensemble"], env
@@ -165,6 +173,7 @@ def train(exp_cfg_path):
             cfg = copy.deepcopy(exp["trainer"])
             cfg["max_epochs"] = 1
             cfg["limit_train_batches"] = 10
+            cfg["limit_val_batches"] = 10
             cfg["check_val_every_n_epoch"] = 1
 
             trainer = Trainer(
@@ -177,21 +186,23 @@ def train(exp_cfg_path):
             res = trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloaders)
         else:
             # TRAINING
-
+            exp["trainer"]["max_epochs"] = exp["task_specific_early_stopping"]["cfg"]["max_epoch_count"]
             trainer = Trainer(
                 **exp["trainer"], default_root_dir=model_path, callbacks=cb_ls + [checkpoint_callback], logger=logger
             )
 
             # Params to to determin lr_schedule
             if exp["trainer"]["limit_train_batches"] <= 1.0:
-                model.length_train_dataloader = len(train_dataloader) * exp["trainer"]["limit_train_batches"]
+                model.length_train_dataloader = len(train_dataloader) * exp["trainer"]["limit_train_batches"] + 10
             else:
-                model.length_train_dataloader = exp["trainer"]["limit_train_batches"]
+                model.length_train_dataloader = exp["trainer"]["limit_train_batches"] + 10
 
             model.max_epochs = exp["task_specific_early_stopping"]["cfg"]["max_epoch_count"]
             _ = trainer.fit(model=model, train_dataloaders=train_dataloader, val_dataloaders=val_dataloaders)
 
         shutil.copy(join(model_path, "last.ckpt"), join(model_path, f"task{task_nr}-last.ckpt"))
+
+    _ = trainer.test(model=model, dataloaders=val_dataloaders)
 
 
 if __name__ == "__main__":
@@ -199,7 +210,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument(
         "--exp",
-        default="exp.yml",
+        default="exp.yaml",
         help="Experiment yaml file.",
     )
 
@@ -210,6 +221,6 @@ if __name__ == "__main__":
     if not os.path.isabs(exp_cfg_path):
         exp_cfg_path = os.path.join(UCDR_ROOT_DIR, "cfg/exp", args.exp)
     print(exp_cfg_path)
-    
+
     train(exp_cfg_path)
     torch.cuda.empty_cache()

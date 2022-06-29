@@ -7,11 +7,11 @@ import torch
 from torch.utils.data import DataLoader
 from torchvision import transforms
 import numpy as np
+import os
 
 from ucdr.datasets import get_dataset
 from ucdr.datasets import Ensemble
 
-import os
 
 __all__ = ["adapter_tg_to_dataloader"]
 
@@ -151,7 +151,7 @@ def test():
 
     from ucdr.utils import load_yaml, load_env
 
-    exp = load_yaml(os.path.join(os.getcwd() + "/cfg/test/test.yml"))
+    exp = load_yaml(os.path.join(os.getcwd() + "/cfg/test/test.yaml"))
     env = load_env()
 
     from ucdr.task import TaskGeneratorScannet

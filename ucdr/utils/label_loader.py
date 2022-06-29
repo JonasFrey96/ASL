@@ -24,11 +24,12 @@ class LabelLoaderAuto:
         self.mask_low = np.right_shift(mask, 6, dtype=np.uint16)
 
     def get(self, path):
+        # returns  0  for invalid 1 for class 0 and 40 for class 39
         try:
             img = imageio.imread(path, format="PNG-FI")
         except:
             img = imageio.imread(path)
-            
+
         if len(img.shape) == 3:
             if img.shape[2] == 4:
                 H, W, _ = img.shape

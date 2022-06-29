@@ -1,3 +1,4 @@
+name: pred1
 global_checkpoint_load: scannet25k_24h_lr_decay_from_scratch/2021-06-05T14:36:26_scannet25k_24h_lr_decay_from_scratch/task0-epoch=64--step=158340.ckpt
 
 model:
@@ -20,17 +21,21 @@ model:
       - false
 
 evals:
-  - tag: scene0000
+  - tag: pred1_gen_val_25k
+    scenes: []
+    mode: val_25k
+  - tag: pred1_scene0000_val
     scenes: [scene0000]
-    checkpoint_load: scannet25k_24h_lr_decay_from_scratch/2021-06-05T14:36:26_scannet25k_24h_lr_decay_from_scratch/task0-epoch=64--step=158340.ckpt
-  - tag: scene0001
+    mode: val
+  - tag: pred1_scene0001_val
     scenes: [scene0001]
-  
-  - tag: scene0002
+    mode: val
+  - tag: pred1_scene0002_val
     scenes: [scene0002]
-  
-  - tag: scene0003
+    mode: val
+  - tag: pred1_scene0003_val
     scenes: [scene0003]
-
-  - tag: scene0004
+    mode: val
+  - tag: pred1_scene0004_val
     scenes: [scene0004]
+    mode: val

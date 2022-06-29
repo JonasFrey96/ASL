@@ -3,5 +3,5 @@ workstation: True
 base: results/learning
 labels_generic: results/labels_generated
 
-scannet_tar: "nan"
+scannet_tar: nan
 scannet: /media/Data/Datasets/scannet

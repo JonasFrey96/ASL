@@ -1,0 +1,71 @@
+name: pred2_00
+
+model:
+  name: Fast-SCNN
+  input_size:
+    - 320
+    - 640
+  cfg:
+    num_classes: 40
+    aux: false
+    extraction:
+      active: false
+      layer: 'learn_to_down'
+  freeze:
+    active: false
+    mask:
+      - false
+      - false
+      - false 
+      - false
+
+evals:
+  - tag: pred2_scene0000_r00_gen_val_25k
+    scenes: []
+    mode: val_25k
+    checkpoint_load: results/learning/cluster/pred2/scene0000_r00/task1-last.ckpt
+  - tag: pred2_scene0000_r00_val
+    scenes: [scene0000]
+    mode: val
+    checkpoint_load: results/learning/cluster/pred2/scene0000_r00/task1-last.ckpt
+
+  - tag: pred2_scene0001_r00_gen_val_25k
+    scenes: []
+    mode: val_25k
+    checkpoint_load: results/learning/cluster/pred2/scene0001_r00/task1-last.ckpt
+  - tag: pred2_scene0001_r00_val
+    scenes: [scene0001]
+    mode: val
+    checkpoint_load: results/learning/cluster/pred2/scene0001_r00/task1-last.ckpt
+
+
+  - tag: pred2_scene0002_r00_gen_val_25k
+    scenes: []
+    mode: val_25k
+    checkpoint_load: results/learning/cluster/pred2/scene0002_r00/task1-last.ckpt
+  - tag: pred2_scene0002_r00_val
+    scenes: [scene0002]
+    mode: val
+    checkpoint_load: results/learning/cluster/pred2/scene0002_r00/task1-last.ckpt
+
+
+  - tag: pred2_scene0003_r00_gen_val_25k
+    scenes: []
+    mode: val_25k
+    checkpoint_load: results/learning/cluster/pred2/scene0003_r00/task1-last.ckpt
+  - tag: pred2_scene0003_r00_val
+    scenes: [scene0003]
+    mode: val
+    checkpoint_load: results/learning/cluster/pred2/scene0003_r00/task1-last.ckpt
+
+
+  - tag: pred2_scene0004_r00_gen_val_25k
+    scenes: []
+    mode: val_25k
+    checkpoint_load: results/learning/cluster/pred2/scene0004_r00/task1-last.ckpt
+  - tag: pred2_scene0004_r00_val
+    scenes: [scene0004]
+    mode: val
+    checkpoint_load: results/learning/cluster/pred2/scene0004_r00/task1-last.ckpt
+
+

@@ -24,7 +24,7 @@ def load_yaml(path):
 
 
 def load_env():
-    env_cfg_path = os.path.join(UCDR_ROOT_DIR, "cfg/env", os.environ["ENV_WORKSTATION_NAME"] + ".yml")
+    env_cfg_path = os.path.join(UCDR_ROOT_DIR, "cfg/env", os.environ["ENV_WORKSTATION_NAME"] + ".yaml")
     env = load_yaml(env_cfg_path)
     for k in env.keys():
         if k == "workstation":
