@@ -1,6 +1,7 @@
 # Continual Adaptation of Semantic Segmentation **U**sing **C**omplementary 2D-3D **D**ata **R**epresentations
 ---
-Code, Model Checkpoints, Generated Data, Documentation, Installation Instructions.
+<h4 align="center">Code, Model Checkpoints, Generated Data, Documentation, Installation Instructions.</h4>
+
 <p align="center">
   <a href="#overview">Overview</a> •
   <a href="#citation">Citation</a> •
